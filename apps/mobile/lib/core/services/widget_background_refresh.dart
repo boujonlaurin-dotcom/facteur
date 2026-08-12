@@ -83,9 +83,14 @@ class WidgetBackgroundRefresh {
   /// quelques millisecondes) : elle tient largement dans la fenêtre incertaine
   /// de l'isolate `home_widget`.
   ///
-  /// `expedited` (via [OutOfQuotaPolicy]) demande à Android de la lancer sans
-  /// attendre — c'est ce qui rend le bouton perceptiblement rapide ; en cas de
-  /// quota épuisé elle retombe en tâche normale plutôt que d'être jetée.
+  /// Volontairement **sans** `outOfQuotaPolicy` : demander une tâche
+  /// *expedited* fait passer WorkManager par `setExpedited()`, qui lève si le
+  /// quota ou la configuration ne s'y prêtent pas — et une exception ici ne
+  /// coûte pas seulement la latence, elle prive le bouton de tout
+  /// rafraîchissement. Le gain était marginal : l'utilisateur vient de taper
+  /// son écran d'accueil, l'appareil est réveillé et une tâche one-shot sans
+  /// contrainte autre que le réseau démarre de toute façon en quelques
+  /// secondes.
   static Future<void> requestImmediateRefresh() async {
     if (kIsWeb || !Platform.isAndroid) return;
     try {
@@ -97,7 +102,6 @@ class WidgetBackgroundRefresh {
         // `replace` : deux appuis rapprochés ne doivent pas empiler deux
         // rafraîchissements réseau concurrents.
         existingWorkPolicy: ExistingWorkPolicy.replace,
-        outOfQuotaPolicy: OutOfQuotaPolicy.runAsNonExpeditedWorkRequest,
       );
     } catch (e) {
       debugPrint('WidgetBackgroundRefresh: immediate enqueue failed: $e');

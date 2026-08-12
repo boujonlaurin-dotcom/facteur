@@ -63,6 +63,11 @@ class DeepLinkService {
   /// Replayed once both conditions are met via [flushPendingIfReady].
   Uri? _pending;
 
+  /// `true` quand [_pending] vient d'un **cold start** ([seedPending]) et non
+  /// du flux à chaud. Ces URIs appartiennent exclusivement au `redirect` du
+  /// routeur ; voir [flushPendingIfReady].
+  bool _pendingIsInitialLink = false;
+
   /// `true` once a cold-start link has been seeded via [seedPending] (from
   /// `main.dart`). Lets [start] skip its own `getInitialLink` so the link isn't
   /// handled twice (which would double-navigate after the redirect consumed it).
@@ -161,18 +166,34 @@ class DeepLinkService {
     // Auth gate: if not authenticated yet, hold the URI and replay later.
     if (!_authenticated) {
       _pending = uri;
+      _pendingIsInitialLink = false;
       return;
     }
 
     _route(uri);
   }
 
-  /// Replay the pending URI if both router is bound and user is authenticated.
+  /// Rejoue l'URI en attente si le routeur est lié et l'utilisateur
+  /// authentifié.
+  ///
+  /// **Ne touche jamais à un lien de cold-start.** Ces liens-là sont consommés
+  /// par le bloc 3 du `redirect` (`routes.dart`), qui est le seul à savoir
+  /// composer la pile Flâner → lecteur. Laisser les deux chemins courir donnait
+  /// une course : `setAuthenticated(true)` déclenche ce flush dès que l'auth
+  /// bascule, le pending disparaissait, et le `redirect` — arrivé ensuite au
+  /// bloc 3 avec un pending vide — retombait sur son défaut `/flux-continu`.
+  /// L'utilisateur atterrissait sur L'Essentiel au lieu de son article.
+  ///
+  /// La course existait avant sans se voir : les deux chemins renvoyaient alors
+  /// la **même** route (`/flaner/content/<id>`), donc peu importait qui gagnait.
+  /// Elle est devenue visible quand le cold start s'est mis à composer une pile
+  /// en deux temps. Cf. docs/bugs/bug-widget-flaner-android.md (D9).
   void flushPendingIfReady() {
     final pending = _pending;
     if (pending == null) return;
     if (!_authenticated) return;
     if (_router == null) return;
+    if (_pendingIsInitialLink) return;
     _pending = null;
     _route(pending);
   }
@@ -185,6 +206,7 @@ class DeepLinkService {
   void seedPending(Uri uri) {
     if (uri.scheme != 'io.supabase.facteur') return;
     _pending = uri;
+    _pendingIsInitialLink = true;
     _initialLinkSeeded = true;
   }
 
@@ -267,12 +289,14 @@ class DeepLinkService {
   /// (no double navigation on cold-open).
   void clearPending() {
     _pending = null;
+    _pendingIsInitialLink = false;
   }
 
   void _route(Uri uri) {
     final router = _router;
     if (router == null) {
       _pending = uri;
+      _pendingIsInitialLink = false;
       return;
     }
 
@@ -495,6 +519,7 @@ class DeepLinkService {
     _sub = null;
     _router = null;
     _pending = null;
+    _pendingIsInitialLink = false;
     _onRefreshRequested = null;
     _initialLinkSeeded = false;
   }

@@ -32,15 +32,21 @@
 
             <ImageView
                 android:id="@+id/masthead_mark"
-                android:layout_width="26dp"
-                android:layout_height="26dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:src="@drawable/ic_facteur_logo"
                 android:scaleType="fitCenter"
                 android:contentDescription="Facteur" />
 
-            <!-- Fraunces Bold : la police de titre du design system
-                 (res/font/fraunces_bold.ttf). Un android:textStyle="bold"
-                 rendait le wordmark en gras système, hors charte. -->
+            <!-- Fraunces Bold (res/font/fraunces_bold.ttf), la police de titre
+                 du design system — la même que le wordmark in-app.
+
+                 `textStyle="bold"` est là en **filet** : un layout RemoteViews
+                 est inflaté dans le process du launcher, et si la police
+                 embarquée n'y est pas résolue, le texte retombe sur la
+                 fonte système — en graisse *normale*, ce qui donnait un
+                 wordmark maigre et hors charte. Avec les deux, on a Fraunces
+                 quand elle charge, et du gras dans tous les cas. -->
             <TextView
                 android:id="@+id/masthead_wordmark"
                 android:layout_width="wrap_content"
@@ -49,6 +55,7 @@
                 android:text="Facteur"
                 android:textSize="17sp"
                 android:fontFamily="@font/fraunces_bold"
+                android:textStyle="bold"
                 android:letterSpacing="-0.031"
                 android:textColor="@color/facteur_text_primary_light" />
         </LinearLayout>

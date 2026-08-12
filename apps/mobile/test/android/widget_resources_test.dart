@@ -59,16 +59,27 @@ void main() {
     });
 
     for (final theme in ['light', 'dark']) {
-      test('facteur_widget_$theme : wordmark en Fraunces, pas en gras système',
-          () {
+      test('facteur_widget_$theme : wordmark en Fraunces **et** en gras', () {
         final xml = layout('facteur_widget_$theme');
-        expect(xml, contains('android:fontFamily="@font/fraunces_bold"'));
-        // Le wordmark ne doit pas retomber sur le bold système.
         final wordmarkBlock = xml.substring(
           xml.indexOf('@+id/masthead_wordmark'),
           xml.indexOf('</LinearLayout>', xml.indexOf('@+id/masthead_wordmark')),
         );
-        expect(wordmarkBlock, isNot(contains('android:textStyle="bold"')));
+        expect(
+          wordmarkBlock,
+          contains('android:fontFamily="@font/fraunces_bold"'),
+          reason: 'même police que le wordmark in-app',
+        );
+        // Ceinture et bretelles, volontairement : un layout RemoteViews est
+        // inflaté dans le process du launcher, et si la police embarquée n'y
+        // est pas résolue le texte retombe sur la fonte système en graisse
+        // *normale* — d'où un wordmark maigre signalé en test device. Avec les
+        // deux attributs, on a Fraunces quand elle charge et du gras sinon.
+        expect(
+          wordmarkBlock,
+          contains('android:textStyle="bold"'),
+          reason: 'le repli système doit rester gras',
+        );
       });
 
       test('facteur_widget_$theme : le vrai logo de l’app, pas l’icône de notif',
@@ -109,20 +120,48 @@ void main() {
   });
 
   group('Logo — bitmaps exportés pour toutes les densités', () {
-    // Le logo officiel est un SVG Canva de 800 Ko (métadonnées C2PA, tracés
-    // massifs) : inexploitable en VectorDrawable. Il est donc rastérisé,
-    // détouré de son fond parchemin et de son filigrane, et exporté par
-    // densité. Ce test garde l'export : un logo manquant sur une densité
-    // donnerait un masthead vide sur les téléphones concernés.
-    for (final density in ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) {
-      test('drawable-$density/ic_facteur_logo.png présent et non vide', () {
+    // Le logo du masthead est rastérisé depuis l'icône principale de l'app
+    // (`assets/icons/logo_android_icon.png`, le personnage du facteur),
+    // détourée de son fond beige et exportée par densité. Un
+    // `VectorDrawable` n'est pas envisageable : le SVG source est un fichier
+    // Canva de 800 Ko avec métadonnées C2PA.
+    //
+    // La base est 32dp et non 26 : sous ce seuil le visage du personnage
+    // devient une tache sur les deux fonds du widget.
+    const expected = {
+      'mdpi': 32,
+      'hdpi': 48,
+      'xhdpi': 64,
+      'xxhdpi': 96,
+      'xxxhdpi': 128,
+    };
+    expected.forEach((density, side) {
+      test('drawable-$density/ic_facteur_logo.png fait ${side}px', () {
         final f = File(
           'android/app/src/main/res/drawable-$density/ic_facteur_logo.png',
         );
         expect(f.existsSync(), isTrue);
-        expect(f.lengthSync(), greaterThan(200));
+        // En-tête PNG : largeur et hauteur sont deux uint32 big-endian à
+        // l'offset 16. Lire les dimensions garde le rapport dp/densité, qu'un
+        // simple test de présence laisserait dériver.
+        final bytes = f.readAsBytesSync();
+        final w = bytes.buffer.asByteData().getUint32(16);
+        final h = bytes.buffer.asByteData().getUint32(20);
+        expect(w, side);
+        expect(h, side);
       });
-    }
+    });
+
+    test('le masthead affiche le logo à 32dp', () {
+      for (final theme in ['light', 'dark']) {
+        final xml = layout('facteur_widget_$theme');
+        final block = xml.substring(
+          xml.indexOf('@+id/masthead_mark'),
+          xml.indexOf('/>', xml.indexOf('@+id/masthead_mark')),
+        );
+        expect(block, contains('android:layout_width="32dp"'));
+      }
+    });
   });
 
   group('Rows — miroir de Flâner', () {
@@ -215,6 +254,41 @@ void main() {
         contains('isRefreshing'),
         reason: 'l’état doit être dérivé d’un horodatage, pas d’un drapeau '
             'que rien ne remet à false si le refresh n’aboutit pas',
+      );
+    });
+
+    test('une donnée plus fraîche annule à elle seule l’état « en cours »', () {
+      // Le marqueur ne doit pas dépendre du seul effacement par Dart : si la
+      // chaîne de fond ne rend jamais la main, le statut restait collé. Une
+      // écriture de `articles_updated_at` postérieure au début du
+      // rafraîchissement suffit à conclure qu'il a abouti.
+      expect(
+        kotlin('FacteurWidget'),
+        contains('readLongPref(context, UPDATED_AT_KEY) >= since'),
+      );
+    });
+
+    test('un repaint de sécurité est programmé au tap sur refresh', () {
+      // Sans lui, sortir de « Mise à jour… » supposait qu'un repaint arrive de
+      // quelque part — au pire l'alarme système, 30 min plus tard.
+      final kt = kotlin('FacteurWidget');
+      expect(kt, contains('ACTION_SETTLE'));
+      expect(kt, contains('scheduleSettle'));
+      expect(
+        kt,
+        contains('AlarmManager.RTC'),
+        reason: 'alarme inexacte : `setExact*` exigerait SCHEDULE_EXACT_ALARM',
+      );
+    });
+
+    test('le refresh immédiat n’est pas expedited', () {
+      // `setExpedited()` lève quand le quota ou la config ne s'y prêtent pas —
+      // et l'exception ne coûte pas de la latence, elle prive le bouton de
+      // tout rafraîchissement.
+      expect(
+        File('lib/core/services/widget_background_refresh.dart')
+            .readAsStringSync(),
+        isNot(contains('outOfQuotaPolicy:')),
       );
     });
 

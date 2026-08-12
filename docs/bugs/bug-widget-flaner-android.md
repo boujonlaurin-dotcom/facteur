@@ -253,6 +253,110 @@ du widget. Android exprimant `letterSpacing` en em, cela donne `-0.031` à
 
 ---
 
+## Itération 3 — retours device (11/08/2026, soir)
+
+Deux défauts restants après l'itération 2. Le second est une **régression que
+l'itération 2 a elle-même introduite** — elle mérite d'être racontée en entier,
+parce que la course existait depuis longtemps sans se voir.
+
+### D4-ter — « Mise à jour… » ne se résout jamais
+
+L'itération 2 a rendu le rafraîchissement fiable *quand la chaîne va au bout*.
+Elle a laissé un présupposé : que la sortie de l'état transitoire vienne de
+**Dart**, en fin de tâche. Si cette chaîne ne rend jamais la main — worker
+jamais exécuté, quota, process tué, `setExpedited()` qui lève à l'enqueue — plus
+rien n'efface le marqueur, et le seul repaint restant est l'alarme système
+`updatePeriodMillis`, **30 minutes** plus tard.
+
+Trois garanties indépendantes, pour qu'aucune ne soit un point de défaillance
+unique :
+
+1. **Auto-invalidation par la donnée.** `isRefreshing` répond `false` dès que
+   `articles_updated_at >= widget_refreshing_since` : une donnée poussée après
+   le début du rafraîchissement *prouve* qu'il a abouti, quel que soit le
+   chemin qui l'a produite. Plus fiable qu'un effacement explicite, qui suppose
+   que quelqu'un rende la main.
+2. **Repaint de sécurité.** Le tap sur 🔄 programme un `AlarmManager.set()`
+   (inexact — `setExact*` exigerait `SCHEDULE_EXACT_ALARM` depuis Android 12) à
+   TTL + 3 s, qui rediffuse `ACTION_SETTLE` au provider. Le statut se résout
+   donc en moins d'une minute même si tout l'aval échoue.
+3. **TTL ramené à 45 s**, et non plus 90.
+
+Retiré au passage : `outOfQuotaPolicy`. Demander une tâche *expedited* fait
+passer WorkManager par `setExpedited()`, qui lève quand le quota ou la
+configuration ne s'y prêtent pas — et cette exception ne coûte pas de la
+latence, elle prive le bouton de **tout** rafraîchissement. Le gain était
+marginal : l'utilisateur vient de taper son écran d'accueil, l'appareil est
+réveillé, une one-shot contrainte au seul réseau démarre de toute façon en
+quelques secondes.
+
+### D9 — cold start : atterrissage sur L'Essentiel au lieu de l'article
+
+**Régression introduite par D6.** Deux chemins consomment le lien de
+cold-start :
+
+- `DeepLinkService.flushPendingIfReady()`, déclenché par
+  `setAuthenticated(true)` dès que l'auth bascule ;
+- le bloc 3 du `redirect` (`routes.dart`), une fois l'auth résolue.
+
+C'est une course, et elle est **ancienne**. Elle était invisible parce que les
+deux chemins renvoyaient exactement la **même** route
+(`/flaner/content/<id>`) : peu importait qui gagnait.
+
+D6 a fait diverger les deux. Le cold start compose désormais une pile en deux
+temps — `/flaner` d'abord, lecteur empilé au frame suivant — pour que le retour
+arrière ait une destination. Dès lors, si `flushPendingIfReady` gagne la course,
+il consomme le pending ; le `redirect` arrive ensuite au bloc 3, n'y trouve
+rien, et retombe sur son défaut :
+
+```dart
+return RoutePaths.fluxContinu;   // ← L'Essentiel
+```
+
+…ce qui écrase le `go('/flaner')` que l'autre chemin venait de faire.
+
+Correctif : un lien de cold-start (`seedPending`) appartient **exclusivement**
+au `redirect`, seul à savoir composer la pile. `flushPendingIfReady` le laisse
+passer (`_pendingIsInitialLink`). Les liens arrivés à chaud, eux, gardent la
+voie du flush — c'est le seul chemin dont ils disposent, et un test dédié garde
+cette moitié-là de la bascule.
+
+> Leçon générale : deux chemins qui « font la même chose » ne sont pas
+> redondants, ils sont une course en sommeil. Elle se réveille au premier
+> changement qui les fait diverger.
+
+### D8-ter — mauvais logo (bis), et wordmark maigre
+
+Le masthead affichait la marque *origami* extraite de `facteur_logo.png`.
+C'est l'**ancien** logo : l'identité actuelle du produit est le personnage du
+facteur, celui de l'icône d'application
+(`assets/icons/logo_android_icon.png`, référencé par `flutter_launcher_icons`
+comme `image_path_android` **et** `adaptive_icon_foreground`). C'est donc lui
+qui est désormais rastérisé.
+
+Deux différences de traitement par rapport à l'itération 2 :
+
+- **Toutes les composantes sont conservées.** L'ancien logo demandait de ne
+  garder que la plus grande, pour écarter un filigrane. Ici les trois petits
+  traits près de l'enveloppe font partie du dessin — les jeter aurait amputé
+  le logo. Le détourage se fait donc sur l'union des pixels opaques après
+  suppression du fond beige par remplissage depuis les bords.
+- **La base passe de 26 à 32 dp.** À 26 dp le visage du personnage se réduit à
+  une tache sur les deux fonds du widget ; 32 dp est le premier palier
+  lisible, et n'agrandit pas le masthead (sa hauteur est déjà fixée par la
+  cible de tap de 40 dp du bouton 🔄). Un test lit les dimensions dans
+  l'en-tête PNG de chaque densité, pour que le rapport dp/densité ne dérive
+  pas.
+
+**Wordmark.** `android:fontFamily="@font/fraunces_bold"` seul ne suffit pas :
+un layout `RemoteViews` est inflaté dans le process du **launcher**, et si la
+police embarquée n'y est pas résolue, le texte retombe sur la fonte système —
+en graisse *normale*. D'où un « Facteur » maigre sur device, alors que le
+fichier est bien Fraunces Bold. `android:textStyle="bold"` est ajouté en
+filet : Fraunces quand elle charge, du gras dans tous les cas.
+
+---
+
 ## Correctifs
 
 ### Lot A — Le widget **est** Flâner (D1, D3)
