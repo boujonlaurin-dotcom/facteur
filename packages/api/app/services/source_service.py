@@ -14,10 +14,12 @@ from app.models.source import Source, UserSource
 from app.models.user_favorites import UserFavoriteSource
 from app.models.user_personalization import UserPersonalization
 from app.schemas.source import (
+    _UNSET,
     PremiumConnectionResponse,
     SourceCatalogResponse,
     SourceDetectResponse,
     SourceResponse,
+    _Unset,
 )
 from app.services.language_user_filter import recompute_auto_pref
 from app.services.premium_curated_sources import (
@@ -50,7 +52,11 @@ class SourceService:
         return is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP)
 
     @staticmethod
-    def _can_connect_login(s: Source) -> bool:
+    def _can_connect_login(
+        s: Source,
+        *,
+        connection: PremiumConnectionResponse | None | _Unset = _UNSET,
+    ) -> bool:
         """Une connexion (login) peut-elle être associée à cette source ?
 
         Vrai si une connexion premium se résout (config explicite / map curée /
@@ -63,14 +69,8 @@ class SourceService:
         blocklist : il bloque la connexion même si l'URL est valide (source dont la
         connexion WebView est connue comme incompatible).
         """
-        config = getattr(s, "premium_connection_config", None)
-        if PremiumConnectionResponse.is_explicitly_disabled(config):
-            return False
-        if SourceService._premium_connection(s) is not None:
-            return True
-        url = getattr(s, "url", None)
-        return isinstance(url, str) and url.strip().lower().startswith(
-            ("http://", "https://")
+        return PremiumConnectionResponse.can_connect_login(
+            s, curated_map=PREMIUM_CURATED_MAP, connection=connection
         )
 
     async def _load_user_source_context(
@@ -135,6 +135,7 @@ class SourceService:
         Helper synchrone pur — élimine la duplication du bloc SourceResponse(...)
         présent dans get_all_sources, get_curated_sources, get_trending_sources, etc.
         """
+        premium = self._premium_connection(s)
         return SourceResponse(
             id=s.id,
             name=s.name,
@@ -171,7 +172,8 @@ class SourceService:
             recommended_by=getattr(s, "recommended_by", None),
             recommendation_reason=getattr(s, "recommendation_reason", None),
             has_paywall=self._has_paywall(s),
-            premium_connection=self._premium_connection(s),
+            can_connect_login=self._can_connect_login(s, connection=premium),
+            premium_connection=premium,
         )
 
     async def get_all_sources(self, user_id: str) -> SourceCatalogResponse:
@@ -452,6 +454,7 @@ class SourceService:
         await self.db.flush()
         await recompute_auto_pref(self.db, user_uuid)
 
+        premium = self._premium_connection(source)
         return SourceResponse(
             id=source.id,
             name=source.name,
@@ -473,7 +476,8 @@ class SourceService:
             recommended_by=getattr(source, "recommended_by", None),
             recommendation_reason=getattr(source, "recommendation_reason", None),
             has_paywall=self._has_paywall(source),
-            premium_connection=self._premium_connection(source),
+            can_connect_login=self._can_connect_login(source, connection=premium),
+            premium_connection=premium,
         )
 
     async def delete_custom_source(self, user_id: str, source_id: str) -> bool:
@@ -624,6 +628,7 @@ class SourceService:
             has_subscription=has_subscription,
         )
 
+        premium = self._premium_connection(source)
         return SourceResponse(
             id=source.id,
             name=source.name,
@@ -648,7 +653,8 @@ class SourceService:
             recommended_by=getattr(source, "recommended_by", None),
             recommendation_reason=getattr(source, "recommendation_reason", None),
             has_paywall=self._has_paywall(source),
-            premium_connection=self._premium_connection(source),
+            can_connect_login=self._can_connect_login(source, connection=premium),
+            premium_connection=premium,
         )
 
     async def untrust_source(self, user_id: str, source_id: str) -> bool:

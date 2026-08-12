@@ -99,6 +99,14 @@ PremiumConnection? resolvePremiumConnection(Source source) {
   return _genericConnectionFor(source);
 }
 
+/// Resolves the connection offered by the onboarding subscription sheet.
+///
+/// Unlike [resolvePremiumConnection], this uses the backend capability flag so
+/// any HTTP(S) source can offer the generic WebView flow, while an explicit
+/// backend opt-out remains non-connectable.
+PremiumConnection? resolveOnboardingLoginConnection(Source source) =>
+    source.canConnectLogin ? forceGenericConnection(source) : null;
+
 /// Connexion à associer **intentionnellement** à une source (geste explicite de
 /// l'utilisateur « ce site demande un compte »), sans exiger [Source.hasPaywall].
 ///
@@ -152,6 +160,8 @@ class Source {
   /// Source payante (paywall détecté ou média curé). Pilote l'affichage des
   /// CTA "Lire avec mon abonnement" / "Associer mon abonnement". Défaut false.
   final bool hasPaywall;
+  /// Backend capability for offering a curated or generic login flow.
+  final bool canConnectLogin;
   final PremiumConnection? premiumConnection;
   final String? recommendedBy;
   final String? recommendationReason;
@@ -188,6 +198,7 @@ class Source {
     this.priorityMultiplier = 1.0,
     this.hasSubscription = false,
     this.hasPaywall = false,
+    this.canConnectLogin = false,
     this.premiumConnection,
     this.recommendedBy,
     this.recommendationReason,
@@ -221,6 +232,7 @@ class Source {
     double? priorityMultiplier,
     bool? hasSubscription,
     bool? hasPaywall,
+    bool? canConnectLogin,
     PremiumConnection? premiumConnection,
     String? recommendedBy,
     String? recommendationReason,
@@ -253,6 +265,7 @@ class Source {
       priorityMultiplier: priorityMultiplier ?? this.priorityMultiplier,
       hasSubscription: hasSubscription ?? this.hasSubscription,
       hasPaywall: hasPaywall ?? this.hasPaywall,
+      canConnectLogin: canConnectLogin ?? this.canConnectLogin,
       premiumConnection: premiumConnection ?? this.premiumConnection,
       recommendedBy: recommendedBy ?? this.recommendedBy,
       recommendationReason: recommendationReason ?? this.recommendationReason,
@@ -262,6 +275,10 @@ class Source {
 
   factory Source.fromJson(Map<String, dynamic> json) {
     try {
+      final premiumConnection = _parsePremiumConnection(
+        json['premium_connection'],
+      );
+      final hasPaywall = (json['has_paywall'] as bool?) ?? false;
       return Source(
         id: (json['id'] as String?) ?? '',
         name: (json['name'] as String?) ?? 'Unknown Source',
@@ -301,8 +318,12 @@ class Source {
         priorityMultiplier:
             (json['priority_multiplier'] as num?)?.toDouble() ?? 1.0,
         hasSubscription: (json['has_subscription'] as bool?) ?? false,
-        hasPaywall: (json['has_paywall'] as bool?) ?? false,
-        premiumConnection: _parsePremiumConnection(json['premium_connection']),
+        hasPaywall: hasPaywall,
+        // Older API responses did not expose can_connect_login. Preserve the
+        // previous premium-only behavior for those responses.
+        canConnectLogin: (json['can_connect_login'] as bool?) ??
+            (hasPaywall || premiumConnection != null),
+        premiumConnection: premiumConnection,
         recommendedBy: json['recommended_by'] as String?,
         recommendationReason: json['recommendation_reason'] as String?,
         language: json['language'] as String?,

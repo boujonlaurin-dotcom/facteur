@@ -176,6 +176,27 @@ def test_from_source_paywalled_but_non_http_url_returns_none():
     assert PremiumConnectionResponse.from_source(src, curated_map=MAP) is None
 
 
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        (_stub(url="https://free-paper.example/"), True),
+        (_stub(url="not-a-url"), False),
+        (
+            _stub(
+                url="https://known-incompatible.example/",
+                premium_connection_config={"enabled": False},
+            ),
+            False,
+        ),
+    ],
+)
+def test_can_connect_login_exposes_generic_login_capability(source, expected):
+    assert (
+        PremiumConnectionResponse.can_connect_login(source, curated_map=MAP)
+        is expected
+    )
+
+
 # ─── is_paywalled_source ──────────────────────────────────────────
 
 
@@ -268,3 +289,5 @@ async def test_curated_sources_expose_has_paywall(db_session: AsyncSession):
     )
     assert by_id[free_source.id].has_paywall is False
     assert by_id[free_source.id].premium_connection is None
+    assert by_id[map_source.id].can_connect_login is True
+    assert by_id[free_source.id].can_connect_login is True

@@ -49,10 +49,20 @@ class SourceResponse(BaseModel):
     recommended_by: str | None = None
     recommendation_reason: str | None = None
     has_paywall: bool = False
+    # Whether the mobile app may offer a generic or curated login flow. This
+    # is additive so older clients can safely ignore it.
+    can_connect_login: bool = False
     premium_connection: "PremiumConnectionResponse | None" = None
 
     class Config:
         from_attributes = True
+
+
+class _Unset:
+    """Sentinel distinguishing "not provided" from a real ``None`` connection."""
+
+
+_UNSET = _Unset()
 
 
 class PremiumConnectionResponse(BaseModel):
@@ -71,6 +81,35 @@ class PremiumConnectionResponse(BaseModel):
     def is_explicitly_disabled(config: object) -> bool:
         """True when a source opts out of the WebView subscription flow."""
         return isinstance(config, dict) and config.get("enabled") is False
+
+    @classmethod
+    def can_connect_login(
+        cls,
+        source: object,
+        *,
+        curated_map: dict,
+        connection: "PremiumConnectionResponse | None | _Unset" = _UNSET,
+    ) -> bool:
+        """Return whether a login can be associated with ``source``.
+
+        An explicit opt-out is authoritative. Otherwise a usable curated or
+        paywall connection is enough, as is any exploitable HTTP(S) source URL
+        for the generic WebView flow. Callers that already resolved the premium
+        connection can pass it via ``connection`` to skip a redundant
+        ``from_source`` computation on the list-serialization hot path.
+        """
+        config = getattr(source, "premium_connection_config", None)
+        if cls.is_explicitly_disabled(config):
+            return False
+        if connection is _UNSET:
+            connection = cls.from_source(source, curated_map=curated_map)
+        if connection is not None:
+            return True
+
+        # Import locally to avoid a schemas -> services import cycle.
+        from app.services.premium_curated_sources import origin_url
+
+        return bool(origin_url(getattr(source, "url", None)))
 
     @classmethod
     def from_config(cls, config: object) -> "PremiumConnectionResponse | None":

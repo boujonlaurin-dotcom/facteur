@@ -6,15 +6,14 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/onboarding/widgets/premium_sources_sheet.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 
-/// Item 4 du plan « Ajustements onboarding » : le CTA d'abonnement ne s'affiche
-/// que pour les sources payantes, avec « Connecter » (config curée) vs
-/// « Associer » (fallback générique). Les sources gratuites montrent « Suivie ✓ »
-/// sans CTA (donc plus de bouton no-op).
+/// The onboarding CTA is available for every backend-connectable HTTP source,
+/// not only sources marked as paywalled.
 Source _source({
   required String id,
   required String name,
   required bool hasPaywall,
   String? url,
+  bool canConnectLogin = true,
   PremiumConnection? premiumConnection,
 }) {
   return Source(
@@ -24,6 +23,7 @@ Source _source({
     url: url,
     isCurated: true,
     hasPaywall: hasPaywall,
+    canConnectLogin: canConnectLogin,
     premiumConnection: premiumConnection,
   );
 }
@@ -46,8 +46,7 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('source gratuite : « Suivie », aucun CTA de connexion',
-      (tester) async {
+  testWidgets('source HTTP sans paywall : « Connecter »', (tester) async {
     await pumpSheet(tester, [
       _source(
         id: 'free1',
@@ -57,38 +56,40 @@ void main() {
       ),
     ]);
 
-    expect(find.text('Suivie'), findsOneWidget);
-    expect(find.text('Connecter'), findsNothing);
+    expect(find.text('Connecter'), findsOneWidget);
+    expect(find.text('Suivie'), findsNothing);
     expect(find.text('Associer'), findsNothing);
   });
 
   testWidgets(
-      'source payante sans config premium : fallback générique « Associer »',
-      (tester) async {
-    await pumpSheet(tester, [
-      _source(
-        id: 'paid1',
-        name: 'Media Payant',
-        hasPaywall: true,
-        url: 'https://payant.example',
-        premiumConnection: null,
-      ),
-    ]);
+    'source payante sans config premium : fallback générique « Connecter »',
+    (tester) async {
+      await pumpSheet(tester, [
+        _source(
+          id: 'paid1',
+          name: 'Media Payant',
+          hasPaywall: true,
+          url: 'https://payant.example',
+          premiumConnection: null,
+        ),
+      ]);
 
-    // Plus de no-op : le bouton existe, labellé « Associer » (générique).
-    expect(find.text('Associer'), findsOneWidget);
-    expect(find.text('Connecter'), findsNothing);
-    expect(find.text('Suivie'), findsNothing);
-  });
+      expect(find.text('Connecter'), findsOneWidget);
+      expect(find.text('Associer'), findsNothing);
+      expect(find.text('Suivie'), findsNothing);
+    },
+  );
 
-  testWidgets('source payante avec config curée : « Connecter »',
-      (tester) async {
+  testWidgets('source payante avec config curée : « Connecter »', (
+    tester,
+  ) async {
     await pumpSheet(tester, [
       _source(
         id: 'paid2',
         name: 'Media Cure',
         hasPaywall: true,
         url: 'https://cure.example',
+        canConnectLogin: true,
         premiumConnection: const PremiumConnection(
           loginUrl: 'https://cure.example/login',
           testUrl: 'https://cure.example/article',
@@ -100,21 +101,37 @@ void main() {
     expect(find.text('Associer'), findsNothing);
   });
 
-  testWidgets(
-      'source payante sans URL valide : pas de CTA générique (« Suivie »)',
-      (tester) async {
+  testWidgets('source explicitement non connectable : « Suivie »', (
+    tester,
+  ) async {
     await pumpSheet(tester, [
       _source(
         id: 'paid3',
         name: 'Payant Sans Url',
         hasPaywall: true,
-        url: null,
+        url: 'https://incompatible.example',
+        canConnectLogin: false,
         premiumConnection: null,
       ),
     ]);
 
     expect(find.text('Suivie'), findsOneWidget);
     expect(find.text('Associer'), findsNothing);
+    expect(find.text('Connecter'), findsNothing);
+  });
+
+  testWidgets('source sans URL valide : « Suivie »', (tester) async {
+    await pumpSheet(tester, [
+      _source(
+        id: 'missing-url',
+        name: 'Sans URL',
+        hasPaywall: false,
+        url: null,
+        canConnectLogin: false,
+      ),
+    ]);
+
+    expect(find.text('Suivie'), findsOneWidget);
     expect(find.text('Connecter'), findsNothing);
   });
 }

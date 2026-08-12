@@ -326,6 +326,7 @@ def _source_to_response(
     user (used by the theme suggestions screen to show "déjà suivie").
     `follower_count` = nombre d'utilisateurs en état suivi/favori (header fiche).
     """
+    premium = PremiumConnectionResponse.from_source(s, curated_map=PREMIUM_CURATED_MAP)
     return SourceResponse(
         id=s.id,
         name=s.name,
@@ -352,9 +353,10 @@ def _source_to_response(
         recommended_by=getattr(s, "recommended_by", None),
         recommendation_reason=getattr(s, "recommendation_reason", None),
         has_paywall=is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP),
-        premium_connection=PremiumConnectionResponse.from_source(
-            s, curated_map=PREMIUM_CURATED_MAP
+        can_connect_login=PremiumConnectionResponse.can_connect_login(
+            s, curated_map=PREMIUM_CURATED_MAP, connection=premium
         ),
+        premium_connection=premium,
     )
 
 
