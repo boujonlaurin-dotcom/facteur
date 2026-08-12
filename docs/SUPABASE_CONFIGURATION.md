@@ -160,32 +160,15 @@ final redirectUrl = kIsWeb
 
 ---
 
-## 📧 Templates d'email Auth — VERSIONNÉS + SCRIPT (ne plus coller à la main)
+## 📧 Lien de soutien — livraison Resend suivie
 
-Les templates d'email Auth ne sont **pas** config-as-code Supabase (pas de
-`supabase/config.toml` dans le repo). Pour éviter qu'une « étape manuelle PO »
-(coller le HTML dans le dashboard) soit oubliée — ce qui a laissé l'email de
-soutien sur le template Supabase par défaut « Your Magic Link » —, la config est
-poussée par un **script idempotent** à partir des sources versionnées :
-
-```bash
-# Pré-requis : SUPABASE_ACCESS_TOKEN (PAT avec scope écriture)
-bash scripts/apply-supabase-auth-templates.sh            # applique
-DRY_RUN=1 bash scripts/apply-supabase-auth-templates.sh  # prévisualise sans écrire
-```
-
-Ce que le script applique (via Management API `PATCH /v1/projects/{ref}/config/auth`) :
-
-| Champ | Source |
-|-------|--------|
-| Template **Magic Link** (= email de soutien) | `apps/landing/emails/soutien-magic-link.html` |
-| Objet Magic Link | `Merci pour ta demande de soutien` |
-| Redirect URLs (`uri_allow_list`) | merge + `https://facteur.app/**` (redirect `/soutenir` du parcours Stripe) |
-
-> Le template « Magic Link » est **exclusivement** l'email de soutien (seul flux via
-> `/auth/v1/otp` ; le reset password utilise un autre template). Le brander « soutien »
-> à 100 % est sans effet de bord.
-> Repli manuel (si le PAT est read-only) documenté en tête du script.
+Le parcours « Nous soutenir » n'utilise plus le Magic Link Supabase. L'API
+envoie directement une enveloppe Resend vers l'adresse vérifiée du JWT, puis
+suit sa remise par webhook. Configurer sur Railway : `RESEND_API_KEY`,
+`RESEND_FROM_EMAIL` et `RESEND_WEBHOOK_SECRET`, puis enregistrer
+`https://facteur-production.up.railway.app/api/webhooks/resend` pour les events
+`email.sent`, `email.delivered`, `email.delivery_delayed`, `email.failed`,
+`email.bounced` et `email.suppressed`.
 
 ---
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,8 +14,7 @@ import '../../../shared/widgets/buttons/primary_button.dart';
 import '../providers/checkout_link_provider.dart';
 import '../soutien_copy.dart';
 
-/// Confirmation « lien envoyé » : enveloppe + cachet daté, retour lecture,
-/// renvoi du lien (429 Supabase → toast « patiente une minute »).
+/// Confirmation suivie : acceptation Resend, remise, retard ou échec terminal.
 class LinkSentScreen extends ConsumerStatefulWidget {
   const LinkSentScreen({super.key});
 
@@ -27,6 +28,7 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
   late final Animation<double> _stampScale;
 
   bool _frLocaleReady = false;
+  Timer? _deliveryPoller;
 
   @override
   void initState() {
@@ -40,6 +42,9 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
       vsync: this,
       duration: const Duration(milliseconds: 450),
     );
+    _deliveryPoller = Timer.periodic(const Duration(seconds: 5), (_) {
+      ref.read(checkoutLinkProvider.notifier).refreshStatus();
+    });
     _stampScale = CurvedAnimation(
       parent: _stampController,
       curve: Curves.easeOutBack,
@@ -57,6 +62,7 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
 
   @override
   void dispose() {
+    _deliveryPoller?.cancel();
     _stampController.dispose();
     super.dispose();
   }
@@ -75,6 +81,12 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final isResending = ref.watch(checkoutLinkProvider).isLoading;
+    final delivery = ref.watch(checkoutLinkProvider).valueOrNull;
+    final deliveryStatus = delivery?.status ?? 'queued';
+    final isDelivered = deliveryStatus == 'delivered';
+    // Terminal sauf « remis » = échec (failed/bounced/suppressed) : on réutilise
+    // le classement porté par le modèle plutôt que de relister les statuts.
+    final isFailed = (delivery?.isTerminal ?? false) && !isDelivered;
     final dateLabel = _frLocaleReady
         ? DateFormat('d MMM yyyy', 'fr').format(DateTime.now())
         : DateFormat('d MMM yyyy').format(DateTime.now());
@@ -114,7 +126,11 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
                         child: Column(
                           children: [
                             Text(
-                              SoutienCopy.linkSentStamp,
+                              isDelivered
+                                  ? SoutienCopy.linkDeliveredStamp
+                                  : isFailed
+                                  ? SoutienCopy.linkFailedStamp
+                                  : SoutienCopy.linkSentStamp,
                               style: GoogleFonts.courierPrime(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -140,7 +156,11 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
               ),
               const SizedBox(height: FacteurSpacing.space6),
               Text(
-                SoutienCopy.linkSentHeadline,
+                isDelivered
+                    ? SoutienCopy.linkDeliveredHeadline
+                    : isFailed
+                    ? SoutienCopy.linkFailedHeadline
+                    : SoutienCopy.linkSentHeadline,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.fraunces(
                   fontSize: 26,
@@ -151,7 +171,15 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
               ),
               const SizedBox(height: FacteurSpacing.space3),
               Text(
-                SoutienCopy.linkSentBody,
+                isDelivered
+                    ? SoutienCopy.linkDeliveredBody
+                    : isFailed
+                    ? SoutienCopy.linkFailedBody
+                    : deliveryStatus == 'delayed'
+                    ? SoutienCopy.linkDelayedBody
+                    : deliveryStatus == 'queued'
+                    ? SoutienCopy.linkQueuedBody
+                    : SoutienCopy.linkSentBody,
                 textAlign: TextAlign.center,
                 style: textTheme.bodyMedium?.copyWith(
                   color: colors.textSecondary,
@@ -160,7 +188,9 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
               ),
               const SizedBox(height: FacteurSpacing.space3),
               Text(
-                SoutienCopy.linkSentSpamHint,
+                isFailed
+                    ? SoutienCopy.linkFailedHint
+                    : SoutienCopy.linkSentSpamHint,
                 textAlign: TextAlign.center,
                 style: textTheme.bodySmall?.copyWith(
                   color: colors.textTertiary,
@@ -172,15 +202,18 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
                 onPressed: () => context.pop(),
               ),
               const SizedBox(height: FacteurSpacing.space2),
-              TextButton(
-                onPressed: isResending ? null : _resend,
-                child: Text(
-                  SoutienCopy.linkSentResend,
-                  style: textTheme.labelLarge?.copyWith(
-                    color: colors.textSecondary,
+              if (!isDelivered && !isFailed)
+                TextButton(
+                  onPressed: isResending || !(delivery?.canResend ?? false)
+                      ? null
+                      : _resend,
+                  child: Text(
+                    SoutienCopy.linkSentResend,
+                    style: textTheme.labelLarge?.copyWith(
+                      color: colors.textSecondary,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ),

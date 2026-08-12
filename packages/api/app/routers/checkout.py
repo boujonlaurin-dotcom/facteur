@@ -12,21 +12,28 @@ RevenueCat reste la source de vérité de l'entitlement `premium` après achat.
 Le webhook `/api/webhooks/revenuecat` met ensuite à jour `user_subscriptions`.
 """
 
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
+from uuid import UUID
 
 import certifi
 import httpx
 import sentry_sdk
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies import get_current_user_id
-from app.models.subscription import SupporterMessage
+from app.dependencies import CurrentUserIdentity, get_current_user_identity
+from app.models.subscription import (
+    SUPPORT_LINK_TERMINAL_STATUSES,
+    SupporterMessage,
+    SupportLinkDelivery,
+)
 from app.schemas.checkout import (
+    CheckoutLinkDeliveryResponse,
     CheckoutSendLinkRequest,
     CheckoutSendLinkResponse,
     CheckoutStartRequest,
@@ -37,12 +44,12 @@ from app.schemas.checkout import (
 )
 from app.services.checkout_token import (
     CheckoutTokenError,
-    mint_checkout_token,
     verify_checkout_token,
 )
 from app.services.posthog_client import get_posthog_client
 from app.services.stripe_service import create_support_subscription_session
 from app.services.subscription_service import SubscriptionService
+from app.services.support_link_email import attempt_support_link_delivery
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -205,153 +212,109 @@ async def start_passwordless(
     )
 
 
-async def _supabase_admin_get_user_email(user_id: str) -> str | None:
-    """Retourne l'email Supabase de ce user_id, ou None s'il est introuvable.
-
-    Les deux chemins qui renvoient None (config admin absente, ou appel admin
-    non-200 — typiquement une `SUPABASE_SERVICE_ROLE_KEY` manquante/rotée sur le
-    service prod) sont remontés à Sentry : sans ça, l'échec est « avalé » en un
-    404 générique côté `send_link` et reste invisible.
-    """
-    settings = get_settings()
-    if not (settings.supabase_url and settings.supabase_service_role_key):
-        logger.warning("checkout.supabase_admin_config_missing")
-        sentry_sdk.capture_message(
-            "checkout.supabase_admin_config_missing", level="warning"
-        )
-        return None
-
-    url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
-    headers = {
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-        "apikey": settings.supabase_service_role_key,
-    }
-    async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
-        resp = await client.get(url, headers=headers)
-    if resp.status_code != 200:
-        logger.warning(
-            "checkout.supabase_admin_get_user_email_failed",
-            status=resp.status_code,
-            body=resp.text[:500],
-        )
-        sentry_sdk.capture_message(
-            "checkout.supabase_admin_get_user_email_failed", level="warning"
-        )
-        return None
-    return resp.json().get("email") or None
+_SUPPORT_LINK_RESEND_COOLDOWN = timedelta(minutes=1)
 
 
-async def _supabase_send_magic_link(email: str, redirect_to: str) -> None:
-    """Envoie le magic link Supabase (OTP) qui redirige vers l'URL de checkout.
-
-    Supabase envoie l'email lui-même ; le rate-limit OTP (~1/min par email)
-    remonte en 429 côté client mobile pour le bouton « Renvoyer le lien ».
-    """
-    settings = get_settings()
-    if not (settings.supabase_url and settings.supabase_anon_key):
-        logger.warning("checkout.supabase_auth_config_missing")
-        sentry_sdk.capture_message(
-            "checkout.supabase_auth_config_missing", level="warning"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Supabase auth config missing",
-        )
-
-    url = (
-        f"{settings.supabase_url}/auth/v1/otp?{urlencode({'redirect_to': redirect_to})}"
+def _delivery_response(delivery: SupportLinkDelivery) -> CheckoutLinkDeliveryResponse:
+    now = datetime.now(UTC)
+    can_resend = (
+        delivery.status not in SUPPORT_LINK_TERMINAL_STATUSES
+        and delivery.created_at is not None
+        and now - delivery.created_at >= _SUPPORT_LINK_RESEND_COOLDOWN
     )
-    headers = {
-        "apikey": settings.supabase_anon_key,
-        "Content-Type": "application/json",
-    }
-    body = {"email": email, "create_user": False}
-    async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
-        resp = await client.post(url, headers=headers, json=body)
-
-    if resp.status_code == 429:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Magic link rate-limited, retry in a minute",
-        )
-    if resp.status_code not in (200, 204):
-        logger.warning(
-            "checkout.supabase_send_magic_link_failed",
-            status=resp.status_code,
-            body=resp.text[:500],
-        )
-        sentry_sdk.capture_message(
-            "checkout.supabase_send_magic_link_failed", level="warning"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not send checkout link",
-        )
+    return CheckoutLinkDeliveryResponse(
+        delivery_id=delivery.id,
+        status=delivery.status,
+        can_resend=can_resend,
+    )
 
 
-@router.post("/send-link", response_model=CheckoutSendLinkResponse)
+@router.post("/send-link", response_model=CheckoutSendLinkResponse, status_code=202)
 async def send_link(
     request: CheckoutSendLinkRequest,
-    user_id: str = Depends(get_current_user_id),
+    current_user: CurrentUserIdentity = Depends(get_current_user_identity),
     db: AsyncSession = Depends(get_db),
 ) -> CheckoutSendLinkResponse:
-    """Envoie par email le lien de checkout Web Billing à l'utilisateur courant.
+    """Demande la livraison Resend d'un lien Stripe au compte courant.
 
-    Le CTA mobile n'ouvre jamais un paiement in-app (règles stores) : on envoie
-    un magic link Supabase dont le redirect_to est l'URL RevenueCat Web Billing
-    pré-remplie avec l'app_user_id.
+    La réponse 202 signifie uniquement que la demande est durablement suivie;
+    l'écran mobile consulte ensuite son statut ``delivered`` ou ``failed``.
     """
-    email = await _supabase_admin_get_user_email(user_id)
-    if not email:
-        # Cause racine déjà remontée par `_supabase_admin_get_user_email`
-        # (config absente / appel admin non-200) ; on trace aussi le point de
-        # sortie 404 côté endpoint, avec le user_id, pour la corrélation.
-        logger.warning("checkout.send_link_user_email_not_found", user_id=user_id)
-        sentry_sdk.capture_message(
-            "checkout.send_link_user_email_not_found", level="warning"
-        )
+    settings = get_settings()
+    if not settings.support_link_delivery_enabled:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User email not found",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Support link delivery is not configured",
         )
 
-    # Option (c) — cutover env-gated : dès que le parcours Stripe est configuré
-    # (`stripe_secret_key` + `checkout_link_secret`), le magic link pointe vers
-    # la page « prix libre » `/soutenir?t=<token>`. Sinon on garde le pont
-    # RevenueCat Web Billing historique (repli à chaud = retirer les env vars).
-    settings = get_settings()
-    stripe_flow = settings.support_stripe_enabled
-    if stripe_flow:
-        token = mint_checkout_token(user_id, email)
-        redirect_to = (
-            f"{settings.public_web_base_url}/soutenir?{urlencode({'t': token})}"
+    user_id = UUID(current_user.user_id)
+    latest = (
+        await db.execute(
+            select(SupportLinkDelivery)
+            .where(SupportLinkDelivery.user_id == user_id)
+            .order_by(desc(SupportLinkDelivery.created_at))
+            .limit(1)
         )
-    else:
-        redirect_to = _build_bridge_url(_build_checkout_url(request.offering, user_id))
-    await _supabase_send_magic_link(email, redirect_to)
+    ).scalar_one_or_none()
+    if latest and datetime.now(UTC) - latest.created_at < _SUPPORT_LINK_RESEND_COOLDOWN:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Support link resend is rate-limited, retry in a minute",
+        )
 
     service = SubscriptionService(db)
-    await service._get_or_create_subscription(user_id)
+    await service._get_or_create_subscription(current_user.user_id)
+    delivery = SupportLinkDelivery(user_id=user_id, recipient_email=current_user.email)
+    db.add(delivery)
     await db.commit()
+    await db.refresh(delivery)
+    # Première tentative synchrone : on persiste le résultat (le service commit)
+    # et on ne remonte un 502 que sur un échec définitif, pour ne pas mentir au
+    # client. Une erreur temporaire laisse la relance différée prendre le relais.
+    error = await attempt_support_link_delivery(db, delivery, is_auto_retry=False)
+    if error is not None and not error.temporary:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not request support link delivery",
+        ) from error
 
     get_posthog_client().capture(
-        user_id=user_id,
+        user_id=str(user_id),
         event="checkout_link_sent",
         properties={
             "offering": request.offering,
             "resend": request.resend,
-            "flow": "stripe" if stripe_flow else "revenuecat",
+            "flow": "stripe_resend",
+            "delivery_status": delivery.status,
         },
     )
 
     logger.info(
         "checkout.send_link",
-        user_id=user_id,
+        user_id=str(user_id),
         offering=request.offering,
         resend=request.resend,
     )
 
-    return CheckoutSendLinkResponse(sent=True, email=email)
+    return CheckoutSendLinkResponse(
+        delivery_id=delivery.id,
+        status="accepted" if delivery.status == "accepted" else "queued",
+    )
+
+
+@router.get("/send-link/{delivery_id}", response_model=CheckoutLinkDeliveryResponse)
+async def support_link_delivery_status(
+    delivery_id: UUID,
+    current_user: CurrentUserIdentity = Depends(get_current_user_identity),
+    db: AsyncSession = Depends(get_db),
+) -> CheckoutLinkDeliveryResponse:
+    """Expose uniquement au propriétaire l'état fournisseur de son enveloppe."""
+    delivery = await db.get(SupportLinkDelivery, delivery_id)
+    if delivery is None or delivery.user_id != UUID(current_user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found"
+        )
+    return _delivery_response(delivery)
 
 
 @router.post("/create-stripe-session", response_model=CreateStripeSessionResponse)

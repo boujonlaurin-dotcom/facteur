@@ -107,17 +107,31 @@ class SoutienCopy {
   static const analysesPillPremium = 'Analyses illimitées · Fact·eur·isse';
 
   // ─── Confirmation « lien envoyé » ───
-  static const linkSentStamp = 'ENVOYÉ';
+  static const linkSentStamp = 'EN ROUTE';
   static const linkSentHeadline = 'Ton lien est en route.';
   static const linkSentBody =
-      'Le Facteur vient de déposer une enveloppe dans ta boîte mail. '
-      'Ouvre-la pour finaliser : ça prend une minute.';
-  static const linkSentSpamHint = 'Rien reçu ? Jette un œil à tes indésirables.';
+      'Le Facteur a confié ton enveloppe à notre service d’envoi. '
+      'On confirme ici dès qu’elle est remise à ta boîte mail.';
+  static const linkQueuedBody =
+      'Ton enveloppe est préparée. On la relance automatiquement si notre service d’envoi rencontre un contretemps.';
+  static const linkDelayedBody =
+      'Ta boîte mail prend un peu de temps à répondre. Le Facteur relancera une fois dans quelques minutes.';
+  static const linkDeliveredStamp = 'REMIS';
+  static const linkDeliveredHeadline = 'Ton lien est arrivé.';
+  static const linkDeliveredBody =
+      'Ton service mail a bien reçu l’enveloppe. Ouvre-la pour finaliser : ça prend une minute.';
+  static const linkFailedStamp = 'ENVOI BLOQUÉ';
+  static const linkFailedHeadline = 'Ton lien n’a pas pu être remis.';
+  static const linkFailedBody =
+      'Notre service d’envoi nous a signalé un blocage. Vérifie l’adresse liée à ton compte ou contacte-nous.';
+  static const linkFailedHint =
+      'Aucune autre enveloppe ne sera envoyée automatiquement.';
+  static const linkSentSpamHint =
+      'Rien reçu ? Jette un œil à tes indésirables.';
   static const linkSentBack = 'Retour à ma lecture';
   static const linkSentResend = 'Renvoyer le lien';
-  static const linkSentResendSuccess = 'Lien renvoyé !';
-  static const linkSentRateLimited =
-      'Patiente une minute avant de renvoyer.';
+  static const linkSentResendSuccess = 'Une nouvelle enveloppe est en route.';
+  static const linkSentRateLimited = 'Patiente une minute avant de renvoyer.';
   static const sendLinkError =
       'Souci de notre côté, on est prévenus. Réessaie dans un instant.';
   static const sendLinkAuthError =

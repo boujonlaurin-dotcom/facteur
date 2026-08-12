@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -35,10 +36,20 @@ class CheckoutSendLinkRequest(BaseModel):
 
 
 class CheckoutSendLinkResponse(BaseModel):
-    """Réponse : confirmation d'envoi + email masquable côté client."""
+    """Demande de livraison du lien, suivie par son identifiant."""
 
-    sent: bool
-    email: EmailStr
+    delivery_id: UUID
+    status: Literal["accepted", "queued"]
+
+
+class CheckoutLinkDeliveryResponse(BaseModel):
+    """État observable d'une demande de lien de soutien."""
+
+    delivery_id: UUID
+    status: Literal[
+        "accepted", "queued", "delivered", "delayed", "failed", "bounced", "suppressed"
+    ]
+    can_resend: bool
 
 
 class CreateStripeSessionRequest(BaseModel):
