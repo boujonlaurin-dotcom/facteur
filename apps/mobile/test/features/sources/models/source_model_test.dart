@@ -226,4 +226,76 @@ void main() {
       expect(source.hasPaywall, isFalse);
     });
   });
+
+  group('Source.fromJson canConnectLogin', () {
+    test('parses the backend capability flag', () {
+      final source = Source.fromJson({
+        'id': 'source-id',
+        'name': 'Free Source',
+        'type': 'article',
+        'can_connect_login': true,
+      });
+
+      expect(source.canConnectLogin, isTrue);
+    });
+
+    test('defaults to the previous premium behavior when absent', () {
+      final free = Source.fromJson({
+        'id': 'free-id',
+        'name': 'Free Source',
+        'type': 'article',
+      });
+      final paid = Source.fromJson({
+        'id': 'paid-id',
+        'name': 'Paid Source',
+        'type': 'article',
+        'has_paywall': true,
+      });
+
+      expect(free.canConnectLogin, isFalse);
+      expect(paid.canConnectLogin, isTrue);
+    });
+  });
+
+  group('resolveOnboardingLoginConnection', () {
+    test('connects a regular HTTP source without a paywall', () {
+      final source = Source(
+        id: 'free',
+        name: 'Free Source',
+        type: SourceType.article,
+        url: 'https://example.com/articles',
+        canConnectLogin: true,
+      );
+
+      final connection = resolveOnboardingLoginConnection(source);
+
+      expect(connection, isNotNull);
+      expect(connection!.isGeneric, isTrue);
+      expect(connection.loginUrl, 'https://example.com/');
+    });
+
+    test('keeps curated connections and blocks explicit opt-outs', () {
+      const curated = PremiumConnection(
+        loginUrl: 'https://example.com/login',
+        testUrl: 'https://example.com/article',
+      );
+      final source = Source(
+        id: 'curated',
+        name: 'Curated Source',
+        type: SourceType.article,
+        canConnectLogin: true,
+        premiumConnection: curated,
+      );
+      final blocked = Source(
+        id: 'blocked',
+        name: 'Blocked Source',
+        type: SourceType.article,
+        url: 'https://example.com',
+        canConnectLogin: false,
+      );
+
+      expect(resolveOnboardingLoginConnection(source), same(curated));
+      expect(resolveOnboardingLoginConnection(blocked), isNull);
+    });
+  });
 }

@@ -285,10 +285,9 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
     );
   }
 
-  /// Action de droite : « Dissocier » si déjà connectée, sinon un CTA de
-  /// connexion (« Connecter » config curée / « Associer » fallback générique)
-  /// uniquement pour les sources payantes. Les sources clairement gratuites
-  /// n'ont aucun abonnement à associer → simple état « Suivie ✓ ».
+  /// Action de droite : « Dissocier » si déjà connectée, sinon « Connecter »
+  /// for any source the backend marks as login-capable. Non-connectable
+  /// exceptions keep the simple « Suivie ✓ » state.
   Widget _buildTrailing(
       BuildContext context, Source source, bool isSubscribed) {
     final colors = context.facteurColors;
@@ -298,7 +297,7 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
         child: const Text('Dissocier'),
       );
     }
-    final connection = resolvePremiumConnection(source);
+    final connection = resolveOnboardingLoginConnection(source);
     if (connection == null) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
@@ -319,7 +318,7 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
     }
     return TextButton(
       onPressed: () => _connectSource(context, source, connection),
-      child: Text(connection.isGeneric ? 'Associer' : 'Connecter'),
+      child: const Text('Connecter'),
     );
   }
 

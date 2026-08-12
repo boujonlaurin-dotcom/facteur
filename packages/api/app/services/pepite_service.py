@@ -213,9 +213,16 @@ class PepiteService:
                 recommended_by=getattr(s, "recommended_by", None),
                 recommendation_reason=getattr(s, "recommendation_reason", None),
                 has_paywall=is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP),
-                premium_connection=PremiumConnectionResponse.from_source(
-                    s, curated_map=PREMIUM_CURATED_MAP
+                can_connect_login=PremiumConnectionResponse.can_connect_login(
+                    s,
+                    curated_map=PREMIUM_CURATED_MAP,
+                    connection=(
+                        premium := PremiumConnectionResponse.from_source(
+                            s, curated_map=PREMIUM_CURATED_MAP
+                        )
+                    ),
                 ),
+                premium_connection=premium,
             )
             for s, follower_count in selected
         ]
