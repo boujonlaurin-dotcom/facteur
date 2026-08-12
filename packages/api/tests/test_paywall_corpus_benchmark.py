@@ -11,16 +11,27 @@ que `False → True`) et rogne l'offre gratuite qui est la promesse de l'app.
 Tant que le corpus n'est pas collecté et étiqueté, les tests se skippent avec
 une raison explicite : un corpus absent ne doit jamais passer pour un corpus
 sans erreur.
+
+### Ce qui tourne en CI, et ce qui ne tourne qu'en local
+
+`labels.json` est versionné, `html/` et `rss/` ne le sont pas (contenu de presse
+sous droits, repo public). La CI voit donc l'étiquetage mais **jamais** les
+charges utiles. Les deux natures de test sont séparées en conséquence :
+
+- le **quota** ne lit que `labels.json` + le manifeste, donc il tourne partout,
+  y compris en CI, et garde la cohérence de l'étiquetage sous contrôle ;
+- la **mesure** (matrice de confusion) exige le HTML capturé. Sans lui, chaque
+  cas partirait avec `html_head=None`, le niveau 1 serait entièrement sauté et
+  la matrice mesurerait un détecteur amputé — un faux vert, exactement ce que ce
+  fichier existe pour empêcher. Elle se skippe donc faute de charges utiles.
 """
 
 import json
 
 import pytest
 
+from scripts.build_paywall_corpus import load_labels, load_manifest, quota_status
 from scripts.paywall_benchmark import BASELINE_PATH, evaluate, load_corpus
-
-MIN_PAID_PER_SOURCE = 3
-MIN_FREE_PER_SOURCE = 3
 
 
 @pytest.fixture(scope="module")
@@ -31,6 +42,13 @@ def corpus():
             "Corpus paywall non collecté ou non étiqueté — "
             "cf. scripts/build_paywall_corpus.py"
         )
+    if not any(case.html_head for case in cases):
+        pytest.skip(
+            "Étiquetage présent mais charges utiles absentes (html/ et rss/ ne "
+            "sont pas versionnés) : mesurer ici donnerait une matrice non "
+            "représentative, tous les cas ayant html_head=None. "
+            "Relancer PYTHONPATH=. python scripts/build_paywall_corpus.py"
+        )
     return cases
 
 
@@ -39,25 +57,37 @@ def measured(corpus):
     return evaluate(corpus)
 
 
-def test_corpus_has_free_articles_per_source(corpus):
+def test_corpus_has_free_articles_per_source():
     """Un corpus sans articles gratuits ne mesure aucun faux positif.
 
     C'est l'angle mort historique de la feature : on ne saurait pas dire si la
     détection masque déjà des articles gratuits aujourd'hui.
-    """
-    by_source: dict[str, dict[str, int]] = {}
-    for case in corpus:
-        counts = by_source.setdefault(case.source, {"paid": 0, "free": 0})
-        counts[case.label] += 1
 
-    incomplete = {
-        slug: counts
-        for slug, counts in by_source.items()
-        if counts["free"] < MIN_FREE_PER_SOURCE or counts["paid"] < MIN_PAID_PER_SOURCE
+    Le verdict ne porte que sur les sources dont l'étiquetage est **terminé**.
+    Une source à moitié étiquetée n'est pas un corpus défaillant, c'est un
+    travail en cours : la juger ferait échouer la suite pendant tout
+    l'étiquetage, qui s'étale sur plusieurs sessions et se fait média par média.
+    La règle exacte — et ses deux exemptions — vit dans `quota_status()`, avec
+    le collecteur qui l'applique aussi.
+    """
+    status = quota_status(load_manifest(), load_labels())
+    finished = {slug: state for slug, state in status.items() if state["complete"]}
+    if not finished:
+        reste = sum(state["unlabeled"] for state in status.values())
+        pytest.skip(
+            f"Aucune source entièrement étiquetée — {reste} articles restants "
+            "dans labels.json. Le quota se juge source par source, une fois "
+            "son étiquetage terminé."
+        )
+
+    manquantes = {
+        slug: f"{state['paid']} payants / {state['free']} gratuits"
+        for slug, state in finished.items()
+        if not state["meets_quota"]
     }
-    assert not incomplete, (
-        f"Sources sous quota {MIN_PAID_PER_SOURCE} payants / "
-        f"{MIN_FREE_PER_SOURCE} gratuits : {incomplete}"
+    assert not manquantes, (
+        "Sources entièrement étiquetées mais sous quota — il faut collecter "
+        f"plus d'articles pour elles, pas en étiqueter davantage : {manquantes}"
     )
 
 

@@ -204,12 +204,182 @@ Mais deux mesures la vident de son intérêt :
 Conclusion : ne pas toucher aux mots-clés tant qu'aucune mesure ne montre un
 gain. Le levier est le niveau 1, pas le niveau 2.
 
+### Fait — rendre le harnais compatible avec un étiquetage progressif
+
+L'étiquetage se fait par lots, sur plusieurs sessions. Deux défauts du harnais
+rendaient ce mode de travail impossible ; les deux ont été reproduits sur un
+`labels.json` simulé à 30 labels avant correction.
+
+**1. Le quota jugeait un étiquetage en cours.** `load_corpus()` ignore les
+`label: null`, donc dès le premier label posé le corpus n'était plus vide et
+`test_corpus_has_free_articles_per_source` passait de « skip » à **échec** sur
+les 12 sources à la fois. Comme `labels.json` est versionné, la CI virait au
+rouge aussi. Le quota ne juge désormais qu'une source dont l'étiquetage est
+**terminé** — une source à moitié étiquetée n'est pas un corpus défaillant,
+c'est un travail en cours.
+
+**2. La mesure tournait sans les charges utiles — et rendait un faux vert.**
+`html/` et `rss/` sont gitignorés, `labels.json` non : en CI, chaque cas partait
+donc avec `html_head=None`, le niveau 1 était intégralement sauté. Mesuré avec
+une baseline gelée et 30 labels : `test_false_positive_rate_never_regresses`
+**passait au vert** (FP = 0, puisque sans HTML plus rien n'est détecté) pendant
+que le test de FN échouait à tort. Le vert portait sur la métrique bloquante,
+c'est-à-dire au pire endroit possible. La mesure se skippe maintenant tant
+qu'aucun cas ne porte de HTML.
+
+Deux effets de bord corrigés au passage, sur le même comptage :
+
+| Cas | Avant | Après |
+|---|---|---|
+| `lesechos`, `lepoint` — au manifeste, 0 article collecté (403) | comptés « 0 payants / 0 gratuits, quota non tenu » à perpétuité | hors quota tant qu'ils sont hors corpus |
+| `contrepoints`, `bonpote` — médias 100 % gratuits | quota de 3 payants **inatteignable par construction** | `expects_paid: false` au manifeste ; le quota de gratuits, lui, s'applique toujours |
+
+La règle vit en un seul endroit (`quota_status()`, `build_paywall_corpus.py`) :
+le collecteur en fait un avertissement, le test un verdict. Elle est couverte
+par `tests/test_paywall_corpus_quota.py`, qui ne dépend d'aucune fixture — donc
+tourne en CI, là où le reste du harnais ne peut pas.
+
+### Fait — lot 1 d'étiquetage (2026-08-11) : 30 articles sur 120
+
+Étiquetés à la main, répartis sur les 12 sources du corpus pour observer le
+plus de sites possible avant d'approfondir une source.
+
+| Source | Payants | Gratuits | Source | Payants | Gratuits |
+|---|---|---|---|---|---|
+| novethic | 3 | 0 | lemonde | 1 | 1 |
+| philomag | 1 | 2 | lefigaro | 2 | 1 |
+| la-croix | 2 | 1 | mediapart | 2 | 0 |
+| lesjours | 3 | 0 | liberation | 1 | 1 |
+| cuisiner-jdf | 0 | 3 | telerama | 2 | 0 |
+| contrepoints | 0 | 2 | bonpote | 0 | 2 |
+
+Aucune source n'est encore complète, donc rien n'est mesurable : le harnais
+skippe, sans rougir — c'est exactement le comportement que le correctif
+ci-dessus a installé.
+
+Deux observations de ce lot, à confirmer sur le suivant : **Cuisiner** rend
+3 gratuits sur 3 alors qu'il figure au groupe « faux négatifs » ; **Les Jours**
+et **Novethic** rendent 3 payants sur 3, donc leur quota de gratuits exigera
+d'aller chercher plus loin dans le flux.
+
+### Découvert — le corpus décroît, et l'étiquetage se périme avec lui
+
+`labels.json` est versionné pour survivre au clone ; `html/` et `rss/` non. Or
+le collecteur reconstruit le corpus **à partir des flux vivants**, dont la
+fenêtre tourne vite. Mesuré le 2026-08-11 sur les 30 URL étiquetées du lot 1,
+collectées 3 jours plus tôt : **14 sur 30 sont encore au flux**, et les
+quotidiens sont à **0 sur 15** (Le Monde, Le Figaro, Libération, La Croix,
+Télérama, Mediapart ont intégralement tourné).
+
+Conséquence : dans un conteneur neuf, un label posé il y a plus de quelques
+jours n'a plus de charge utile à mesurer, et une simple recollecte ne la rend
+pas — elle ramène les articles *du jour*, qui sont non étiquetés. L'étiquetage
+humain, le seul travail non automatisable du chantier, se dévalue tout seul.
+
+La bonne nouvelle est que les pages, elles, restent servies hors flux. D'où
+`--refetch-from-labels` (`build_paywall_corpus.py`), qui part de `labels.json`
+— le vrai registre du corpus — au lieu du flux du jour, et re-fetch le HTML par
+URL. Résultat sur les 120 articles : **90 HTML récupérés**, soit les 9 sources
+dont la page est atteignable.
+
+| Re-fetch par URL | Sources |
+|---|---|
+| récupéré (10/10) | novethic, philomag, la-croix, cuisiner-jdf, lefigaro, telerama, contrepoints, bonpote, lemonde\* |
+| 403 anti-bot | lesjours, liberation |
+| TooManyRedirects | mediapart |
+
+Limite assumée du mode : le RSS d'un article sorti du flux est perdu sans
+recours, donc ces cas se rejouent avec titre et description vides. Sans effet
+tant que le niveau 2 est inerte, mais rédhibitoire pour qui voudrait mesurer le
+niveau 2.
+
+Deux constats de terrain, qui corrigent des affirmations antérieures de ce
+document :
+
+- **Mediapart est devenu inatteignable** (boucle de redirection) alors que la
+  collecte du 2026-08-08 en tirait 9 signaux sur 10. La posture anti-bot d'une
+  source change sans prévenir : le corpus ne décroît pas seulement par rotation
+  des flux, mais aussi par durcissement des sources.
+- **\*Le Monde répond 200 — mais ce n'est pas l'article.** Les 10 fichiers sont
+  identiques, 3 038 octets, `<title>Client Challenge</title>` : une page de
+  défi anti-bot servie avec un code de succès. C'est **pire que le 402** de la
+  collecte précédente, qui au moins s'annonçait comme un échec. Ici
+  `_fetch_html_head` accepte le 200, passe la page au niveau 1, qui n'y trouve
+  évidemment aucun marqueur et conclut « gratuit ». Un faux négatif silencieux,
+  indiscernable d'un article réellement sans marqueur.
+
+  Conséquence à instruire côté production : si l'IP Railway est challengée de
+  la même façon, tous les articles du Monde passent le niveau 1 sans signal.
+  Et la piste « lire le 402 comme marqueur de paywall », laissée ouverte plus
+  haut, est à écarter — le code varie d'une IP et d'un jour à l'autre.
+
+### Mesuré — première matrice de confusion réelle (2026-08-11, 30 articles)
+
+Corpus reconstitué par `--refetch-from-labels`, rejoué par `paywall_benchmark.py`
+sur les 30 articles étiquetés. **C'est la première mesure du chantier appuyée
+sur une vérité terrain humaine**, et elle tranche la question restée ouverte
+depuis février : *a-t-on déjà un problème de faux positifs ?*
+
+| Source | Articles | TP | FP | TN | FN |
+|---|---|---|---|---|---|
+| novethic | 3 | 3 | 0 | 0 | 0 |
+| philomag | 3 | 1 | 0 | 2 | 0 |
+| la-croix | 3 | 2 | 0 | 1 | 0 |
+| lefigaro | 3 | 2 | 0 | 1 | 0 |
+| cuisiner-jdf | 3 | 0 | 0 | 3 | 0 |
+| contrepoints | 2 | 0 | 0 | 2 | 0 |
+| bonpote | 2 | 0 | 0 | 2 | 0 |
+| lemonde | 2 | 0 | 0 | 1 | 1 |
+| liberation | 2 | 0 | 0 | 1 | 1 |
+| telerama | 2 | 0 | 0 | 0 | 2 |
+| mediapart | 2 | 0 | 0 | 0 | 2 |
+| lesjours | 3 | 0 | 0 | 0 | 3 |
+| **Global** | **30** | **8** | **0** | **13** | **9** |
+
+**Réponse : non, pas de faux positif.** 0 FP sur 13 articles gratuits, dont les
+4 du groupe piège (Contrepoints, Bon Pote). Le taux de faux négatifs est de
+53 % (9 sur 17 payants).
+
+Le correctif `@graph` est validé sur vérité terrain : **Novethic est à 3/3**,
+là où il ne produisait aucun signal avant.
+
+Les 9 faux négatifs se répartissent en deux familles, et une seule est un vrai
+défaut de détection :
+
+| Cause | FN | Détail |
+|---|---|---|
+| HTML inatteignable — le niveau 1 ne peut pas jouer | 6 | lesjours (3), mediapart (2), liberation (1) |
+| HTML présent, aucun marqueur exploitable | 3 | telerama (2), lemonde (1) |
+
+Sur les 3 derniers : Le Monde est le faux 200 décrit plus haut (page de défi,
+donc en réalité un HTML inatteignable déguisé). Télérama, lui, est un vrai
+angle mort : `og:article:content_tier` n'apparaît plus que sur **2 des 10**
+pages collectées, contre 10/10 le 2026-08-08, et les deux articles payants
+étiquetés n'en portent pas. Leur seul indice est un `tlr.user.subscriber ===
+false` en JavaScript — qui décrit l'**utilisateur**, pas l'article, et ne peut
+donc pas servir de marqueur.
+
+Relevé des marqueurs sur les 90 HTML, à jour du 2026-08-11 :
+
+| Marqueur | Sources qui l'émettent |
+|---|---|
+| `isAccessibleForFree` | la-croix 10/10, novethic 6/10, cuisiner-jdf 2/10, philomag 1/10 |
+| `isPremium` | lefigaro 10/10, **cuisiner-jdf 10/10** |
+| `og:article:content_tier` | telerama 2/10 (contre 10/10 le 2026-08-08) |
+
+**Baseline volontairement non gelée.** `--write-baseline` encoderait les
+accidents de collecte du jour — Mediapart devenu inatteignable, Télérama qui a
+changé de balisage, Le Monde qui sert un défi. Une baseline doit se figer sur
+un corpus stable et complètement étiqueté, sinon elle transforme une avarie
+réseau en contrat d'anti-régression.
+
 ### Reste à faire
 
-1. **Étiqueter à la main** `labels.json` (120 articles, `"paid"` / `"free"`).
-   C'est le seul geste qui reste et il est délibérément humain : un label
-   déduit de l'algo ferait valider l'algo par lui-même. Le harnais refuse de
-   mesurer tant que le quota 3 payants / 3 gratuits par source n'est pas tenu.
+1. **Étiqueter à la main** le reste de `labels.json` (90 articles sur 120).
+   Geste délibérément humain : un label déduit de l'algo ferait valider l'algo
+   par lui-même. Le harnais mesure dès qu'une source est complète ; le quota
+   3 payants / 3 gratuits se juge source par source, une fois son étiquetage
+   terminé.
 2. Geler la baseline (`paywall_benchmark.py --write-baseline`) et la reporter
    dans la description de PR — elle tranchera la question jamais résolue :
    a-t-on **déjà** un problème de faux positifs aujourd'hui ?
