@@ -20,9 +20,10 @@ part 'guided_tour_controller.g.dart';
 ///
 /// `null` = inactif. La séquence jouée est :
 /// `essentielHero → descendsCartes → favorisSheet → flaner → reglages →
-/// courrier → done`. [skip] et [finish]/`next()` sur la dernière étape mènent
-/// tous deux à [TourStep.done], persistent le flag « vu » et tirent `onComplete`
-/// **une seule fois** (rend la main au flow des modales post-onboarding).
+/// courrier → serein → done`. [skip] et [finish]/`next()` sur la dernière étape
+/// ([TourStep.serein]) mènent tous deux à [TourStep.done], persistent le flag
+/// « vu » et tirent `onComplete` **une seule fois** (rend la main au flow des
+/// modales post-onboarding).
 @Riverpod(keepAlive: true)
 class GuidedTourController extends _$GuidedTourController {
   VoidCallback? _onComplete;
@@ -62,7 +63,7 @@ class GuidedTourController extends _$GuidedTourController {
     state = TourStep.essentielHero;
   }
 
-  /// Avance d'une étape ; sur la dernière ([TourStep.courrier]), termine.
+  /// Avance d'une étape ; sur la dernière ([TourStep.serein]), termine.
   void next() {
     switch (state) {
       case TourStep.essentielHero:
@@ -76,6 +77,8 @@ class GuidedTourController extends _$GuidedTourController {
       case TourStep.reglages:
         state = TourStep.courrier;
       case TourStep.courrier:
+        state = TourStep.serein;
+      case TourStep.serein:
         finish();
       case TourStep.done:
       case null:

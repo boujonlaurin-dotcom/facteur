@@ -24,7 +24,7 @@ void main() {
     );
 
     expect(find.text(TourStrings.title(TourStep.essentielHero)), findsOneWidget);
-    expect(find.text('1 / 5'), findsOneWidget);
+    expect(find.text('1 / 6'), findsOneWidget);
     expect(find.text(TourStrings.next), findsOneWidget);
     expect(find.text(TourStrings.skip), findsOneWidget);
   });
@@ -51,7 +51,22 @@ void main() {
     expect(skip, 1);
   });
 
-  testWidgets('dernière étape affiche « Terminer »', (tester) async {
+  testWidgets('dernière étape (serein) affiche « Terminer »', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        GuidedTourCoachCard(
+          step: TourStep.serein,
+          onSkip: () {},
+          onNext: () {},
+        ),
+      ),
+    );
+    expect(find.text(TourStrings.finish), findsOneWidget);
+    expect(find.text('6 / 6'), findsOneWidget);
+  });
+
+  testWidgets('avant-dernière étape (courrier) affiche « Suivant »',
+      (tester) async {
     await tester.pumpWidget(
       _host(
         GuidedTourCoachCard(
@@ -61,8 +76,9 @@ void main() {
         ),
       ),
     );
-    expect(find.text(TourStrings.finish), findsOneWidget);
-    expect(find.text('5 / 5'), findsOneWidget);
+    expect(find.text(TourStrings.next), findsOneWidget);
+    expect(find.text(TourStrings.finish), findsNothing);
+    expect(find.text('5 / 6'), findsOneWidget);
   });
 
   testWidgets('carte de conclusion masque puces et boutons', (tester) async {

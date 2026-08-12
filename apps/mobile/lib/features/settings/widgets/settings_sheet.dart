@@ -24,6 +24,7 @@ import '../../soutien/providers/premium_gate_provider.dart';
 import '../../soutien/soutien_copy.dart';
 import '../../soutien/widgets/founder_photos.dart';
 import '../../soutien/widgets/paywall_sheet.dart';
+import '../../tour/tour_anchors.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_repository_provider.dart';
 import '../../../core/ui/notification_service.dart';
@@ -437,7 +438,11 @@ class _SereinSwitchTile extends ConsumerWidget {
     final canCustomize =
         ref.watch(premiumGateProvider.select((g) => g.canCustomizeSerein));
 
-    return _SheetCard(
+    // Clé d'ancrage du tour guidé (dernière étape « Mode Serein ») : le
+    // spotlight cerne cette tuile par-dessus la modale réglages.
+    return KeyedSubtree(
+      key: tourSereinTileKey,
+      child: _SheetCard(
       child: Column(
         children: [
           InkWell(
@@ -533,6 +538,7 @@ class _SereinSwitchTile extends ConsumerWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }

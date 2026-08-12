@@ -201,16 +201,15 @@ enum Section2Question {
 }
 
 /// Questions de la Section 3 (Source Preferences)
-/// Ordre : Thèmes → Subtopics → Swipe → Sources → [Mode serein] → Finalize
+/// Ordre : Thèmes → Subtopics → Swipe → Sources → Finalize
 /// La question d'intent (« curieux / je connais ») a été retirée (v7) : tout le
-/// monde passe par le swipe de calibration. `digestMode` n'apparaît que si
-/// l'objectif « anxiety » est coché (mode serein conditionnel, avant le final).
+/// monde passe par le swipe de calibration. Le mode serein n'est plus proposé
+/// en onboarding (v8) : il est présenté comme dernière étape du tour guidé.
 enum Section3Question {
   themes, // Q9: Vos thèmes préférés (cloud pur)
   subtopics, // Q9b: Affine tes centres d'intérêt (cards structurées)
   swipe, // Q9c: swipe de calibration (inconditionnel, cœur du parcours)
   sources, // Q10: Page sources « sur mesure » (suggestions pré-cochées)
-  digestMode, // Mode serein (conditionnel : objectif « anxiety » uniquement)
   finalize, // Écran de finalisation
 }
 
@@ -242,27 +241,17 @@ class OnboardingState {
   /// Nombre total de questions dans la Section 2
   int get section2QuestionCount => 2;
 
-  /// `true` si le mode serein doit être proposé (objectif « anxiety » coché).
-  bool get hasAnxietyObjective =>
-      answers.objectives?.contains('anxiety') ?? false;
-
-  /// Séquence active des questions de la Section 3 :
-  /// - `digestMode` est retiré quand le mode serein n'est pas proposé (pas
-  ///   d'objectif anxiety). Le swipe est désormais inconditionnel (v7).
+  /// Séquence des questions de la Section 3 : plus aucune branche conditionnelle
+  /// (v8, mode serein retiré de l'onboarding) — toujours themes → subtopics →
+  /// swipe → sources → finalize. Le swipe est inconditionnel (v7).
   List<Section3Question> get section3Sequence =>
-      Section3Question.values.where((q) {
-        if (q == Section3Question.digestMode && !hasAnxietyObjective) {
-          return false;
-        }
-        return true;
-      }).toList();
+      Section3Question.values.toList();
 
-  /// Nombre de questions effectives de la Section 3 (varie avec le mode serein
-  /// et le parcours sources, via [section3Sequence]).
+  /// Nombre de questions de la Section 3 (constant à 5 via [section3Sequence]).
   int get section3QuestionCount => section3Sequence.length;
 
-  /// Position (0-based) de la question Section 3 courante dans la séquence
-  /// active — gère le saut de `digestMode` pour le calcul de progression.
+  /// Position (0-based) de la question Section 3 courante dans la séquence,
+  /// pour le calcul de progression.
   int get _section3StepIndex {
     final pos = section3Sequence.indexOf(currentSection3Question);
     return pos < 0 ? currentQuestionIndex : pos;
@@ -377,7 +366,10 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   // changent à nouveau → bump obligatoire pour wiper les positions sauvegardées.
   // v7 : question `sourcesIntent` retirée (swipe inconditionnel). Les index
   // d'enum Section 3 changent encore → bump pour wiper les positions Hive.
-  static const int _currentVersion = 7;
+  // v8 : `digestMode` retirée de la Section 3 (mode serein déplacé vers le tour
+  // guidé). `finalize` passe de l'index 5 à 4 → bump obligatoire, sinon une
+  // position Hive de v7 restaure un index hors bornes (crash).
+  static const int _currentVersion = 8;
 
   /// Charge les réponses sauvegardées en cas de reprise
   Future<void> _loadSavedAnswers() async {
@@ -526,9 +518,8 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 
   /// Revient à la question précédente
   void goBack() {
-    // Section 3 : navigation selon la séquence active (digestMode conditionnel,
-    // donc on ne peut pas se contenter d'un index - 1 qui retomberait sur une
-    // question sautée).
+    // Section 3 : navigation via la séquence (robuste à d'éventuels sauts de
+    // question, même si la séquence est désormais linéaire en v8).
     if (state.currentSection == OnboardingSection.sourcePreferences) {
       final seq = state.section3Sequence;
       final pos = seq.indexOf(state.currentSection3Question);
@@ -600,31 +591,6 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     });
   }
 
-  /// Sélectionne le mode digest (Section 3, mode serein conditionnel) → finalize
-  void selectDigestMode(String mode) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(digestMode: mode),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: Section3Question.finalize.index,
-        isTransitioning: false,
-      );
-    });
-  }
-
-  /// Pré-sélectionne un mode digest SANS enchaîner vers la section 3.
-  /// Utilisé par le CTA "Personnaliser mon mode serein" : on marque le choix,
-  /// on ouvre la page Mes Intérêts, et au retour l'utilisateur retrouve la
-  /// question "Rester serein ?" avec "Oui" déjà coché — prêt à continuer.
-  void markDigestMode(String mode) {
-    state = state.copyWith(answers: state.answers.copyWith(digestMode: mode));
-    _saveAnswers();
-  }
-
   /// Passe la question courante en appliquant un défaut sain, puis avance.
   /// Conservé pour compatibilité interne/test uniquement : aucun bouton UI ne
   /// l'expose depuis [OnboardingState.isSkippable].
@@ -668,12 +634,6 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
             state = state.copyWith(
               answers: state.answers.copyWith(subtopics: const []),
               currentQuestionIndex: Section3Question.swipe.index,
-            );
-            _saveAnswers();
-          case Section3Question.digestMode:
-            state = state.copyWith(
-              answers: state.answers.copyWith(digestMode: 'pour_vous'),
-              currentQuestionIndex: Section3Question.finalize.index,
             );
             _saveAnswers();
           // Le swipe est inconditionnel (v7) → jamais « Passer » (cf.
@@ -755,15 +715,14 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   }
 
   /// Sélectionne les sources (Q10) puis route vers la fin de parcours.
-  /// Mode serein conditionnel : si l'objectif « anxiety » est coché → on insère
-  /// la question digestMode juste avant le final ; sinon on pose le défaut
-  /// neutre `pour_vous` et on saute directement au final.
+  /// Le mode serein n'est plus proposé en onboarding (v8, déplacé vers le tour
+  /// guidé) : on pose le défaut neutre `pour_vous` et on saute au final. Le
+  /// contrat API reste inchangé (`serein_enabled=false` par défaut).
   void selectSources(List<String> sources) {
-    final hasAnxiety = state.hasAnxietyObjective;
     state = state.copyWith(
       answers: state.answers.copyWith(
         preferredSources: sources,
-        digestMode: hasAnxiety ? state.answers.digestMode : 'pour_vous',
+        digestMode: 'pour_vous',
       ),
       isTransitioning: true,
     );
@@ -771,9 +730,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentQuestionIndex: hasAnxiety
-            ? Section3Question.digestMode.index
-            : Section3Question.finalize.index,
+        currentQuestionIndex: Section3Question.finalize.index,
         isTransitioning: false,
       );
     });

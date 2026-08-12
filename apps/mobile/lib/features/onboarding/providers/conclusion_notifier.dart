@@ -11,7 +11,6 @@ import '../../../models/onboarding_result.dart';
 import '../../../models/user_profile.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../custom_topics/providers/personalization_provider.dart';
-import '../../digest/providers/serein_toggle_provider.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../flux_continu/providers/flux_continu_provider.dart';
@@ -131,14 +130,10 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
 
       if (result.success) {
         await _saveProfileLocally(result.profile!);
-        // Pré-règle le mode serein dès l'entrée dans le feed depuis le choix
-        // d'onboarding, sans attendre /digest/both. La préférence est déjà
-        // persistée côté serveur (save_onboarding ⇒ serein_enabled='true') ;
-        // `commitFromOnboarding` écrit en plus le miroir local Hive pour que le
-        // choix survive au 1er cold start (avant que /digest/both ait répondu).
-        if (answers.digestMode == 'serein') {
-          _ref.read(sereinToggleProvider.notifier).commitFromOnboarding(true);
-        }
+        // Le mode serein n'est plus choisi en onboarding (v8, déplacé vers le
+        // tour guidé) : aucun commit local ici. Le défaut `pour_vous` envoie
+        // `serein_enabled=false` au serveur ; l'utilisateur active le mode
+        // depuis la dernière étape du tour, ou plus tard depuis les réglages.
         await _ref.read(onboardingProvider.notifier).clearSavedData();
         await _invalidatePostOnboardingState();
 

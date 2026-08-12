@@ -142,7 +142,7 @@ void main() {
 
       const section3 = OnboardingState(
         currentSection: OnboardingSection.sourcePreferences,
-        currentQuestionIndex: 5, // finalize
+        currentQuestionIndex: 4, // finalize (v8 : digestMode retirée, 5→4)
       );
       expect(section3.currentStepName, 'finalize');
     });

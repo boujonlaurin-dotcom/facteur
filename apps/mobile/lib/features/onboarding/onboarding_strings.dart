@@ -200,29 +200,6 @@ class OnboardingStrings {
   static const String articleCount7Label = '7 articles';
   static const String articleCount7Subtitle = 'Pour aller plus loin';
 
-  // Digest Mode
-  static const String digestModeTitle =
-      'Quel mode de récap quotidien préfères-tu ?';
-  static const String digestModeSubtitle = 'Tu pourras changer à tout moment.';
-
-  // Digest Mode — Rester serein (rich subtitle parts)
-  static const String digestModeSereinPart1 =
-      'Certains sujets peuvent être difficiles à lire. Active le ';
-  static const String digestModeSereinBold1 = 'mode serein';
-  static const String digestModeSereinPart2 = ' pour ';
-  static const String digestModeSereinBold2 = 'filtrer les contenus anxiogènes';
-  static const String digestModeSereinPart3 = '.\nTu pourras ';
-  static const String digestModeSereinBold3 = 'changer d\'avis à tout moment';
-  static const String digestModeSereinPart4 =
-      ' grâce au bouton dédié en haut de ton essentiel et du flux.';
-
-  // Réassurance affichée sous les choix du mode serein (sans tiret em).
-  static const String digestModeAnytimeNote =
-      'Tu pourras activer ou désactiver le mode serein à tout moment depuis Mes intérêts.';
-
-  // Personalised serein CTA (shown on the DigestMode question).
-  static const String personalizeSereinCta = 'Personnaliser mon mode serein';
-
   // Q10: Page sources « sur mesure »
   static const String sourcesSuggestionsTitle = 'Nos suggestions pour toi';
   static const String sourcesAlreadyFollowTitle = 'Tu suis déjà un média ?';

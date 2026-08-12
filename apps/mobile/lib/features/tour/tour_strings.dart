@@ -17,6 +17,7 @@ class TourStrings {
         TourStep.flaner => 'Flâner, à ton rythme',
         TourStep.reglages => 'Tes réglages',
         TourStep.courrier => 'Mon courrier',
+        TourStep.serein => 'Mode Serein',
         TourStep.done => 'C\'est parti !',
       };
 
@@ -34,6 +35,8 @@ class TourStrings {
           'Depuis ton profil, en haut à droite, tu ajustes tes réglages quand tu veux.',
         TourStep.courrier =>
           'Et toujours depuis ton profil, tu retrouves Mon courrier : tes articles sauvegardés et tes notes.',
+        TourStep.serein =>
+          'Certains sujets sont durs à lire. Le Mode Serein met de côté les contenus les plus anxiogènes, pour une lecture plus calme. Active-le ici si tu veux, et change d\'avis à tout moment.',
         TourStep.done => 'Tu connais l\'essentiel. À toi de jouer, bonne lecture !',
       };
 }

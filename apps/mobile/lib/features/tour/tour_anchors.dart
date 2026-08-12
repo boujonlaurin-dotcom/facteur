@@ -33,3 +33,10 @@ final GlobalKey tourProfileAvatarKey = GlobalKey(
 final GlobalKey tourFavorisSheetKey = GlobalKey(
   debugLabel: 'tourFavorisSheetKey',
 );
+
+/// Tuile « Mode Serein » de la modale réglages — étape 6. Montée une seule fois
+/// (à l'ouverture de la feuille réglages), donc jamais dupliquée. Le spotlight
+/// la cerne par-dessus la modale (overlay racine, cf. `settings_sheet.dart`).
+final GlobalKey tourSereinTileKey = GlobalKey(
+  debugLabel: 'tourSereinTileKey',
+);
