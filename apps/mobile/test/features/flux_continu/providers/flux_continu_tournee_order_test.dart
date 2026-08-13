@@ -1099,58 +1099,44 @@ void main() {
       return container;
     }
 
-    test('personnalisé + 13 favoris ⇒ 3 suggestions en queue, favoris intacts',
-        () async {
+    test(
+        'cap plein de favoris : aucun favori évincé, les suggestions cèdent '
+        'tous les slots', () async {
+      // Bug « blocs favoris absents de l'Essentiel » : avant, le quota 22.6
+      // réservait 3 slots aux suggestions en coupant 3 favoris (`cap - quota`).
+      // Un bloc placé par l'utilisateur ne disparaît plus jamais au profit
+      // d'une « Choisie pour vous ».
       final container = await personalized(
         suggestedSlugs: const ['sugA', 'sugB', 'sugC', 'sugD'],
         hiddenKeys: const [],
       );
       final sections = favoriteSections(container);
       expect(sections, hasLength(kTourneeVisibleCap));
-
-      final suggestedVisible = sections.where((s) => s.isSuggested).toList();
-      expect(suggestedVisible, hasLength(3), reason: 'quota garanti sous le cap');
-      // Best-first (daily_rank backend) : les 3 premières, pas sugD.
+      expect(sections.where((s) => s.isSuggested), isEmpty);
       expect(
-        suggestedVisible.map((s) => s.themeSlug).toList(),
-        ['sugA', 'sugB', 'sugC'],
+        sections.map((s) => s.themeSlug).toList(),
+        favSlugs,
+        reason: 'les 13 blocs choisis tiennent le cap, dans l\'ordre manuel',
       );
-      // Suggestions en queue ; les 10 premiers slots = favoris, ordre manuel
-      // strictement préservé (jamais permuté).
-      final favVisible = sections.where((s) => !s.isSuggested).toList();
-      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(10));
-      expect(sections.skip(10).every((s) => s.isSuggested), isTrue);
     });
 
-    test('suggestion cachée non comptée dans le quota', () async {
-      // 3 suggestions, 1 dismissée → 2 disponibles → quota 2.
+    test('un favori masqué rend son slot à une suggestion', () async {
+      // 12 blocs choisis (1 favori dismissé) ⇒ 1 slot libre ⇒ la meilleure
+      // suggestion le prend. Les suggestions vivent sur les restes, jamais aux
+      // dépens d'un favori.
       final container = await personalized(
         suggestedSlugs: const ['sugA', 'sugB', 'sugC'],
-        hiddenKeys: const ['theme:sugB'],
+        hiddenKeys: const ['theme:food'],
       );
       final sections = favoriteSections(container);
+      expect(sections, hasLength(kTourneeVisibleCap));
       final suggestedVisible = sections.where((s) => s.isSuggested).toList();
-      expect(suggestedVisible, hasLength(2));
+      expect(suggestedVisible.map((s) => s.themeSlug).toList(), ['sugA']);
+      final favVisible = sections.where((s) => !s.isSuggested).toList();
       expect(
-        suggestedVisible.map((s) => s.themeSlug).toList(),
-        ['sugA', 'sugC'],
-        reason: 'la suggestion cachée sort du quota, pas de re-comptage',
+        favVisible.map((s) => s.themeSlug).toList(),
+        favSlugs.where((s) => s != 'food'),
       );
-      final favVisible = sections.where((s) => !s.isSuggested).toList();
-      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(11));
-    });
-
-    test('1 seule suggestion dispo ⇒ quota 1', () async {
-      final container = await personalized(
-        suggestedSlugs: const ['sugA'],
-        hiddenKeys: const [],
-      );
-      final sections = favoriteSections(container);
-      final suggestedVisible = sections.where((s) => s.isSuggested).toList();
-      expect(suggestedVisible, hasLength(1));
-      expect(suggestedVisible.first.themeSlug, 'sugA');
-      final favVisible = sections.where((s) => !s.isSuggested).toList();
-      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(12));
     });
 
     test('non-personnalisé sous le cap ⇒ ordre naturel inchangé', () async {

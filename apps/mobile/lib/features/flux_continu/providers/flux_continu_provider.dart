@@ -1086,11 +1086,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   ///
   /// Aucune circularité : cette passe appelle [_orderedTourneeKeys] **sans**
   /// `scoreOrder` (ordre par défaut, non cappé) — les scores ne dépendent donc
-  /// pas de leur propre résultat. Corollaire assumé : la dédup inter-sections
-  /// arbitre ici les doublons dans l'ordre **par défaut**, donc un article
-  /// partagé peut être attribué à une autre section que dans le rendu trié. Le
-  /// score reste déterministe et c'est le comportement d'avant PR-4 ; l'inverse
-  /// (dédupliquer dans l'ordre trié) rendrait les scores fonction d'eux-mêmes.
+  /// pas de leur propre résultat. La dédup inter-sections arbitre ici les
+  /// doublons dans l'ordre **par défaut**, mais elle ne pèse plus sur le score :
+  /// un article partagé compte pour **chacune** des sections qui l'a servi (cf.
+  /// `scorable` plus bas), donc l'attribution d'un doublon ne déplace plus le
+  /// classement.
   ({Set<String> thinKeys, int richCount, Map<String, double> blockScores})
       _classifyFavoriteSections({
     required bool isSerene,
@@ -1133,7 +1133,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         if (key != kTourneeGrilleKey && sectionByKey[key] != null)
           sectionByKey[key]!,
     ];
-    final deduped = _dedupeSectionsInOrder(_filterSections(rawOrdered));
+    // Bug « blocs favoris absents de l'Essentiel » — on capture ici aussi les
+    // articles strippés par la dédup inter-sections : ils comptent dans le
+    // **score** du bloc (cf. plus bas), pas dans sa maigreur.
+    final removedByKey = <String, List<Content>>{};
+    final deduped = _dedupeSectionsInOrder(
+      _filterSections(rawOrdered),
+      removedByKey: removedByKey,
+    );
 
     final thinKeys = <String>{};
     final blockScores = <String, double>{};
@@ -1141,6 +1148,20 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     for (final s in deduped) {
       if (s is! FeedThemeSection) continue;
       final k = sectionKey(s);
+      // Le score juge la **qualité du bloc**, pas ce que la dédup lui a laissé :
+      // on score sur les articles que le backend a réellement servis pour ce
+      // bloc, retirés compris. Sans ça, un thème dont les meilleurs articles
+      // sont montés dans le héros (ou dans les Actus du jour) — donc précisément
+      // un thème très pertinent ce matin-là — se retrouvait vidé par
+      // [_dedupeSectionsInOrder], scorait ~0 et coulait en bas de Tournée, voire
+      // hors du cap. C'est le cas rapporté : « j'avais des articles tech/climat
+      // dans ma pile de tri et je n'ai pas vu ces sections ».
+      //
+      // La maigreur (`thinKeys`), elle, continue de se mesurer sur les
+      // survivants : elle décrit ce qui sera **affiché** et pilote le backfill.
+      final scorable = removedByKey[k] == null
+          ? s.items
+          : <Content>[...s.items, ...removedByKey[k]!];
       // Score de bloc : toute section résolue portant au moins un article scoré.
       // Une section dont **aucun** article n'a de `recommendationReason` (bloc
       // éditorial, veille sans scoring, coquille de boot) reste hors de la map
@@ -1151,8 +1172,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // `block_score` à `null` sur `article_impression` (PR-1) — donc
       // aveuglerait l'instrument même qui sert à juger le tri.
       if (_resolvedSectionKeys.contains(k) &&
-          s.items.any((c) => c.recommendationReason != null)) {
-        blockScores[k] = blockScore(s.items);
+          scorable.any((c) => c.recommendationReason != null)) {
+        blockScores[k] = blockScore(scorable);
       }
       if (!eligible.contains(k)) continue;
       final n = s.items.length;
@@ -2757,37 +2778,47 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       ordered.insert(actusIndex >= 0 ? actusIndex + 1 : 0, kTourneeGrilleKey);
     }
 
-    if (cap == null) return ordered.toList(growable: false);
+    if (cap == null || ordered.length <= cap) {
+      return ordered.toList(growable: false);
+    }
 
-    // Story 22.6 — quota de suggestions garanti sous le cap. Un ordre
-    // personnalisé (`applyOrder` sticky) relègue les sections « Choisie pour
-    // vous » en fin de liste, où `take(cap)` les coupait toutes (« plus tu
-    // configures, moins tu vois de suggestions »). On réserve jusqu'à
-    // `kTourneeSuggestQuota` slots en queue du cap aux premières suggestions
-    // disponibles, **sans jamais permuter l'ordre relatif des favoris**. No-op
-    // quand `take(cap)` en contient déjà assez (cas non-personnalisé) ou
-    // qu'aucune suggestion ne survit aux `hiddenKeys` (quota 0 rend tous les
-    // slots aux favoris).
+    // Bug « blocs favoris absents de l'Essentiel » — le cap ne coupe **jamais**
+    // un bloc que l'utilisateur a placé dans son Essentiel (cartes éditoriales
+    // + favoris thème/source/veille) au profit d'une « Choisie pour vous ».
+    // Avant : `take(cap)` tranchait à l'aveugle et le quota 22.6 réservait des
+    // slots aux suggestions **en évinçant des favoris** (`cap - quota`) ; comme
+    // le tri par score du jour ([applyScoreOrder]) intercale suggestions et
+    // favoris dans un même classement, un bloc explicitement choisi pouvait
+    // passer sous le cap et disparaître — sans empty-state ni « Peu d'articles »,
+    // donc indistinguable d'un bug pour l'utilisateur.
+    //
+    // Les suggestions restent un **accent quotidien** : elles n'occupent que les
+    // slots laissés libres par les blocs choisis. L'esprit de la Story 22.6 (ne
+    // pas voir *moins* de suggestions parce qu'on a personnalisé) tient toujours
+    // dans le cas nominal — ≤ 7 favoris backend + 3 cartes éditoriales = 10 sur
+    // 13 → il reste des slots ; seul un compte qui a lui-même rempli le cap de
+    // blocs choisis n'a plus de place pour une suggestion.
     final suggestedKeySet = suggestedKeys.toSet();
+    final chosenKeys = [
+      for (final key in ordered)
+        if (!suggestedKeySet.contains(key)) key,
+    ];
+    // Si l'utilisateur a lui-même plus de blocs que le cap, c'est la queue de
+    // **son** ordre qui tombe — jamais un arbitrage de la Tournée.
+    final keptChosen = chosenKeys.take(cap).toSet();
+    final freeSlots = math.max(0, cap - keptChosen.length);
     final orderedSuggested = [
       for (final key in ordered)
         if (suggestedKeySet.contains(key)) key,
     ];
-    final quota = math.min(orderedSuggested.length, kTourneeSuggestQuota);
-    final capped = ordered.take(cap).toList(growable: false);
-    final visibleSuggested = capped.where(suggestedKeySet.contains).length;
-    // Couvre aussi `quota == 0` (aucune suggestion) : `0 >= 0` rend tous les
-    // slots aux favoris sans branche dédiée.
-    if (visibleSuggested >= quota) return capped;
+    final keptSuggested = orderedSuggested.take(freeSlots).toSet();
 
-    // Rééquilibrage : favoris/éditorial dans l'ordre appliqué, tronqués à
-    // `cap - quota` (ordre préservé), puis les `quota` premières suggestions.
-    final favSlots = math.max(0, cap - quota);
-    final head = [
+    // Ré-émission dans l'ordre d'affichage : le tri par score a pu intercaler
+    // une suggestion entre deux favoris, on ne la relègue pas en queue.
+    return [
       for (final key in ordered)
-        if (!suggestedKeySet.contains(key)) key,
-    ].take(favSlots);
-    return [...head, ...orderedSuggested.take(quota)].toList(growable: false);
+        if (keptChosen.contains(key) || keptSuggested.contains(key)) key,
+    ].toList(growable: false);
   }
 
   /// Renvoie [themeKeys] avec, en tête, la clé du thème auquel l'utilisateur a

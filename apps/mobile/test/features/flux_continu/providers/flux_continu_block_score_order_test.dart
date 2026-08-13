@@ -87,20 +87,28 @@ class _StubUserSourcesNotifier extends UserSourcesNotifier {
 
 /// [score] non nul ⇒ chaque article porte un `recommendationReason` : c'est le
 /// seul input du classement des blocs.
-FeedResponse _feed(List<String> ids, {double? score}) {
+FeedResponse _feed(List<String> ids, {double? score}) =>
+    _feedOf([for (final id in ids) (id: id, score: score)]);
+
+/// Variante à score **par article** — nécessaire dès qu'un bloc mélange des
+/// articles que la dédup inter-sections lui prendra et des articles à lui.
+FeedResponse _feedOf(List<({String id, double? score})> items) {
   return FeedResponse(
     items: [
-      for (final id in ids)
+      for (final item in items)
         Content(
-          id: id,
-          title: 'title-$id',
-          url: 'https://x.test/$id',
+          id: item.id,
+          title: 'title-${item.id}',
+          url: 'https://x.test/${item.id}',
           contentType: ContentType.article,
           publishedAt: DateTime(2026, 1, 1),
           source: Source(id: 's', name: 'S', type: SourceType.article),
-          recommendationReason: score == null
+          recommendationReason: item.score == null
               ? null
-              : RecommendationReason(label: 'Recommandé', scoreTotal: score),
+              : RecommendationReason(
+                  label: 'Recommandé',
+                  scoreTotal: item.score!,
+                ),
         ),
     ],
     pagination: Pagination(page: 1, perPage: 10, total: 0, hasNext: false),
@@ -410,6 +418,51 @@ void main() {
       // Par défaut les suggérées sont composées APRÈS les favoris ; le score
       // (300 vs 50) inverse l'ordre.
       expect(themeOrder(state), ['cinema', 'tech']);
+    });
+
+    test(
+        'un bloc dépouillé par la dédup garde son rang : le score compte ses '
+        'articles servis, pas ses survivants', () async {
+      // Bug « blocs favoris absents de l'Essentiel ». La dédup inter-sections
+      // retire d'un bloc les articles déjà rendus plus haut (héros, Actus, bloc
+      // précédent). Scorer les seuls survivants punissait donc le bloc le plus
+      // pertinent du jour — celui dont les meilleurs articles sont montés dans
+      // la pile de tri — qui coulait en bas de Tournée, voire hors du cap.
+      //
+      // 'a' sert s1..s3 (100 chacun) ; 'b' sert les MÊMES s1..s3 plus b1 (10).
+      // Après dédup 'b' ne garde que b1 : score des survivants = 10 (il coulait
+      // sous 'c' à 150), score des articles servis = 300 (il tient son rang).
+      when(() => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            topic: any(named: 'topic'),
+            sourceId: any(named: 'sourceId'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          )).thenAnswer((invocation) async {
+        const List<({String id, double? score})> shared = [
+          (id: 's1', score: 100.0),
+          (id: 's2', score: 100.0),
+          (id: 's3', score: 100.0),
+        ];
+        return switch (invocation.namedArguments[#theme] as String?) {
+          'a' => _feedOf(shared),
+          'b' => _feedOf([...shared, (id: 'b1', score: 10.0)]),
+          'c' => _feedOf(const [
+              (id: 'c1', score: 50.0),
+              (id: 'c2', score: 50.0),
+              (id: 'c3', score: 50.0),
+            ]),
+          _ => _feedOf(const []),
+        };
+      });
+      final container = await buildContainer(themeSlugs: ['a', 'b', 'c']);
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      expect(themeOrder(state), ['a', 'b', 'c']);
     });
 
     test('à score égal, l\'ordre manuel départage (compte personnalisé)',
