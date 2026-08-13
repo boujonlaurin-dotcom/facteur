@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="/facteur/preview/essentiel-swipe/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Facteur">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Facteur</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; background-color: #0a0a0f; color: white;">
+    <div style="text-align: center;">
+      <div style="width: 40px; height: 40px; border: 3px solid #16161f; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
+      <p>Chargement de Facteur...</p>
+      <p style="font-size: 0.8rem; color: #94a3b8;">(Le premier démarrage peut prendre quelques secondes)</p>
+    </div>
+  </div>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* Prevent browser native pull-to-refresh so Flutter's RefreshIndicator works */
+    html, body { overscroll-behavior-y: contain; }
+  </style>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
