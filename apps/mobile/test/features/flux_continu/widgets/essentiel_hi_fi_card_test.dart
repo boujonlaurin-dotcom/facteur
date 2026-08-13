@@ -288,6 +288,54 @@ void main() {
     });
 
     testWidgets(
+        'sur une lettre passée, la description suit la sélection '
+        '(plus de « choisis »)', (tester) async {
+      final yesterday = editionPastDays(1).first;
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          selectedEditionDateProvider.overrideWith(
+            (ref) => EditionPastDay(yesterday),
+          ),
+        ],
+      ));
+
+      expect(find.textContaining('Hier'), findsOneWidget);
+      expect(
+        find.text('Voici les articles de ton Essentiel d\'hier. '
+            'Bonne lecture.'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Choisis les articles'),
+        findsNothing,
+        reason: 'une lettre passée est figée : aucun tri à y faire',
+      );
+    });
+
+    testWidgets('en rétro hebdo, la description annonce le récap',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          selectedEditionDateProvider.overrideWith((ref) => const EditionWeek()),
+        ],
+      ));
+
+      expect(
+        find.text('Voici le récap de ta semaine. Bonne lecture.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Choisis les articles'), findsNothing);
+    });
+
+    testWidgets(
         'la tuile lead affiche le filet et la double coche quand '
         'l\'article est lu jusqu\'au bout', (tester) async {
       // Impossible avant : la copie locale de la pastille codait `check` en

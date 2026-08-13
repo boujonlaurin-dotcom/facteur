@@ -324,6 +324,10 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     final missedYesterday =
         isToday && ref.watch(editionReadStatusProvider).missedYesterday();
     final headerTitle = isToday ? 'Ton Essentiel' : editionPillLabel(selection);
+    // La ligne sous le titre suit la même sélection que lui : « choisis » ne
+    // vaut que pour la pile du jour, une lettre passée ou la rétro hebdo se
+    // présentent (cf. `editionSubtitleLabel`).
+    final headerSubtitle = editionSubtitleLabel(selection);
 
     // Story 33.1 — la carte est une pile à trier tant que le tri du jour n'est
     // pas fini. Jamais sur une édition passée : une lettre passée est figée,
@@ -515,6 +519,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
               _Header(
                 accent: accent,
                 title: headerTitle,
+                subtitle: headerSubtitle,
                 rewind: EditionRewindTrigger(
                   onTap: () => EditionTimelineSheet.show(context),
                   // today à jour → icône seule ; lettre passée → « Revenir » fixe.
@@ -901,6 +906,9 @@ class _Header extends StatelessWidget {
   /// lettre sélectionnée (« Hier », « Cette semaine », « mar. 24 »).
   final String title;
 
+  /// Ligne sous le titre, accordée à la sélection (cf. `editionSubtitleLabel`).
+  final String subtitle;
+
   /// Déclencheur « rewind » (timeline overlay), posé à droite du titre. Toujours
   /// fourni par la carte (today ET lettre passée).
   final Widget? rewind;
@@ -908,6 +916,7 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.accent,
     required this.title,
+    required this.subtitle,
     this.rewind,
   });
 
@@ -952,9 +961,10 @@ class _Header extends StatelessWidget {
               // articles du jour, basé sur tes intérêts » devenait faux dès
               // qu'on touchait « Plus d'articles », et annonçait un sommaire
               // là où il y a un geste. « Ton Essentiel » n'est pas répété : le
-              // titre juste au-dessus le porte déjà.
+              // titre juste au-dessus le porte déjà. Sur une lettre passée, le
+              // geste n'existe plus : le texte suit la sélection.
               Text(
-                'Choisis les articles que tu liras aujourd\'hui.',
+                subtitle,
                 style: FacteurTypography.bodySmall(
                   colors.textSecondary,
                 ).copyWith(height: 1.35),

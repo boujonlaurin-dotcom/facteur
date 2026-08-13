@@ -98,4 +98,38 @@ void main() {
       );
     });
   });
+
+  group('editionSubtitleLabel', () {
+    final now = DateTime.utc(2026, 6, 23, 12); // mardi, 14h Paris
+
+    test('aujourd\'hui → le geste de tri', () {
+      expect(
+        editionSubtitleLabel(const EditionToday(), now: now),
+        'Choisis les articles que tu liras aujourd\'hui.',
+      );
+    });
+
+    test('J-1 → présente la lettre d\'hier, pas un geste', () {
+      final label =
+          editionSubtitleLabel(EditionPastDay(DateTime(2026, 6, 22)), now: now);
+      expect(label, 'Voici les articles de ton Essentiel d\'hier. '
+          'Bonne lecture.');
+      expect(label, isNot(contains('Choisis')));
+    });
+
+    test('J-2 et au-delà → date longue', () {
+      expect(
+        editionSubtitleLabel(EditionPastDay(DateTime(2026, 6, 19)), now: now),
+        'Voici les articles de ton Essentiel du vendredi 19 juin. '
+            'Bonne lecture.',
+      );
+    });
+
+    test('rétro hebdo → récap de la semaine', () {
+      expect(
+        editionSubtitleLabel(const EditionWeek(), now: now),
+        'Voici le récap de ta semaine. Bonne lecture.',
+      );
+    });
+  });
 }
