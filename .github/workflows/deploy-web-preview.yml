@@ -19,13 +19,13 @@ name: Deploy Web Preview
 on:
   push:
     branches:
-      - 'claude/facteur-article-swipe-nav-cd6pv0'
+      - 'claude/essentiel-swipe-consistency-1y8nd2'
   workflow_dispatch:
     inputs:
       slug:
-        description: 'Sous-chemin de la preview (ex. swipe-nav)'
+        description: 'Sous-chemin de la preview (ex. essentiel-swipe)'
         required: true
-        default: 'swipe-nav'
+        default: 'essentiel-swipe'
       api_base_url:
         description: 'URL de l API visée par le build'
         required: true
@@ -47,7 +47,7 @@ jobs:
       - name: Résoudre le slug de preview
         id: cfg
         run: |
-          SLUG="${{ github.event.inputs.slug || 'swipe-nav' }}"
+          SLUG="${{ github.event.inputs.slug || 'essentiel-swipe' }}"
           echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
           echo "base_href=/facteur/preview/$SLUG/" >> "$GITHUB_OUTPUT"
 
