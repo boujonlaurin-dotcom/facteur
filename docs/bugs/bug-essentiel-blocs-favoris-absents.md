@@ -117,3 +117,47 @@ Aucun changement backend, aucune migration.
 ⚠️ Le SDK Flutter n'est pas installé dans l'environnement d'exécution distant de
 cette session : `flutter test` / `flutter analyze` n'ont **pas** pu être lancés
 ici. La suite mobile doit être rejouée en local (ou en CI) avant merge.
+
+---
+
+## Itération 2 — l'ordre composé n'était toujours pas celui rendu
+
+**Retour PO après déploiement du 1ᵉʳ correctif** : l'ordre des blocs dans « Mes
+favoris » (Actus, Environnement, International, Technologie, Politique, Bonnes,
+Ma veille) ne correspond pas à l'ordre rendu dans la Tournée, et Technologie
+reste introuvable dans le feed.
+
+### Cause (ordre)
+
+`_orderedTourneeKeys` applique `applyScoreOrder` **après** `applyOrder` : le tri
+par score du jour repositionne donc les blocs que l'utilisateur a lui-même
+rangés. C'était un arbitrage explicite de PR-4 (« le score l'emporte sur l'ordre
+manuel quand il départage »), testé comme tel — mais il rend la modal « Mes
+favoris » mensongère : on y compose un ordre qui n'est pas celui affiché.
+
+Aggravant : l'ordre trié est **gelé pour la journée tournée** (frontière 07h30
+Paris). Un réordre fait le soir n'a donc aucun effet visible avant le lendemain,
+même sur les blocs que le tri aurait laissés en place.
+
+### Correctif
+
+Une clé présente dans `order` (l'ordre composé dans « Mes favoris ») n'entre plus
+dans le tri du jour : son rang est un choix, pas une estimation. Le tri conserve
+tout son rôle sur les blocs que l'utilisateur n'a **pas** placés — sections
+« Choisie pour vous », favori tout juste ajouté — qui sont classés entre eux dans
+les slots laissés libres.
+
+Conséquence assumée sur la Story 10.2 : la clé `source:<id>` d'une source
+favorite sert **aussi** de marqueur de mode (« Essentiel » ⟺ clé dans
+`tournee_order_v1`), donc une source favorite est toujours « placée » et suit
+l'ordre composé. C'est cohérent avec `applyOrder`, qui traitait déjà `order`
+comme un arrangement (les clés ordonnées passent devant les non-ordonnées).
+
+### Non élucidé à ce stade
+
+L'**absence** de la section Technologie n'est pas expliquée par ce correctif et
+ne l'était pas non plus par ceux de l'itération 1 : aucun chemin de composition
+lu jusqu'ici ne retire une `FeedThemeSection` favorite (ni `_filterSections`, ni
+`_dedupeSectionsInOrder`, ni `_dropEmptySuggested`, ni `_capSectionsToFit`), et
+une section favorite vide se rend en empty-state visible. Deux pistes restent à
+départager côté terrain, cf. la PR.

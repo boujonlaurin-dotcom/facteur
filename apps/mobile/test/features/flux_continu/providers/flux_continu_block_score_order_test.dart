@@ -483,13 +483,17 @@ void main() {
       expect(themeOrder(state), ['c', 'b', 'a']);
     });
 
-    test('mais le score l\'emporte sur l\'ordre manuel quand il départage',
+    test('un bloc placé par l\'utilisateur n\'est jamais déplacé par le score',
         () async {
+      // Bug « l'ordre des favoris ne se reflète pas dans la Tournée ». Avant,
+      // le score l'emportait sur l'ordre manuel dès qu'il départageait : 'c',
+      // placé en tête mais pauvre (1 article), coulait en queue — l'ordre
+      // composé dans « Mes favoris » n'était donc pas celui rendu. Le rang d'un
+      // bloc placé est un choix, pas une estimation.
       SharedPreferences.setMockInitialValues(<String, Object>{
         'tournee_customized_v1': true,
         'tournee_order_v1': ['theme:c', 'theme:b', 'theme:a'],
       });
-      // 'c' est manuellement en tête mais n'a qu'un article : il coule.
       stubThemes(
         {'a': 3, 'b': 3, 'c': 1},
         scores: const {'a': 100, 'b': 100, 'c': 100},
@@ -499,7 +503,30 @@ void main() {
 
       final state = await settle(container);
 
-      expect(themeOrder(state), ['b', 'a', 'c']);
+      expect(themeOrder(state), ['c', 'b', 'a']);
+    });
+
+    test(
+        'le score classe encore les blocs que l\'utilisateur n\'a pas placés',
+        () async {
+      // 'b' est placé (immobile) ; 'a' et 'c' ne le sont pas → ils se classent
+      // entre eux par score, dans les slots que 'b' laisse libres.
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_customized_v1': true,
+        'tournee_order_v1': ['theme:b'],
+      });
+      stubThemes(
+        {'a': 1, 'b': 3, 'c': 3},
+        scores: const {'a': 100, 'b': 100, 'c': 100},
+      );
+      final container = await buildContainer(themeSlugs: ['a', 'b', 'c']);
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      // 'b' placé ⇒ 1ᵉʳ slot (applyOrder). Restent les slots 2 et 3 pour 'a'
+      // (1 article, score 100) et 'c' (3 articles, score 300) : 'c' devant.
+      expect(themeOrder(state), ['b', 'c', 'a']);
     });
   });
 
@@ -587,13 +614,20 @@ void main() {
       expect(sectionOrder(state), ['cinema', 'tech', 'source:media-1']);
     });
 
-    test('une source **favorite** reste, elle, classée par son score',
-        () async {
-      // Le filtre ne vise que la voie « Choisie pour vous » : une source que
-      // l'utilisateur a explicitement mise en favori garde son tri au score.
-      // (Story 10.2 — une source favorite n'est rendue dans la Tournée que si
-      // sa clé est en mode « Essentiel », donc présente dans `tournee_order_v1`
-      // ; l'ordre y place le thème en tête, c'est bien le score qui l'inverse.)
+    test(
+        'une source **favorite** reste dans le classement, mais l\'ordre '
+        'composé par l\'utilisateur prime', () async {
+      // Le filtre 22.7 ne vise que la voie « Choisie pour vous » : une source
+      // mise en favori reste **mesurée et classable** (elle est dans
+      // `blockScores` et dans l'ordre gelé), contrairement à une source
+      // suggérée qui en est exclue.
+      //
+      // Story 10.2 — une source favorite n'est rendue dans la Tournée que si sa
+      // clé est en mode « Essentiel », donc présente dans `tournee_order_v1` :
+      // elle est de ce fait toujours **placée** par l'utilisateur, et son rang
+      // suit l'ordre composé dans « Mes favoris », pas son score. C'est le sens
+      // du correctif : ici le thème pauvre reste devant le média bien scoré,
+      // parce que c'est comme ça que l'utilisateur les a rangés.
       SharedPreferences.setMockInitialValues(<String, Object>{
         'tournee_order_v1': ['theme:tech', 'source:media-1'],
       });
@@ -612,7 +646,10 @@ void main() {
 
       final state = await settle(container);
 
-      expect(sectionOrder(state), ['source:media-1', 'tech']);
+      expect(sectionOrder(state), ['tech', 'source:media-1']);
+      // La mesure, elle, reste intacte pour les deux blocs (PR-1) — c'est ce
+      // qui distingue une source favorite d'une source suggérée.
+      expect(state.blockScores.keys, containsAll(['theme:tech', 'source:media-1']));
     });
   });
 }

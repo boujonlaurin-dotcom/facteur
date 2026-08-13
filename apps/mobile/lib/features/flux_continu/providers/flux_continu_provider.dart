@@ -2765,8 +2765,21 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // exactement la sémantique de `mergeVisibleReorder`, réutilisée par
     // [applyScoreOrder] (`applyOrder` les aurait poussées en queue → coupées
     // par le cap).
+    //
+    // Bug « l'ordre des favoris ne se reflète pas dans la Tournée » : un bloc
+    // que l'utilisateur a lui-même placé (clé présente dans `order`, l'ordre
+    // qu'il compose dans « Mes favoris ») n'est plus déplacé par le tri du jour.
+    // Son rang est un **choix**, pas une estimation — et comme l'ordre est gelé
+    // à la journée, un réordre fait le soir ne se voyait pas avant le lendemain.
+    // Le tri garde tout son rôle sur les blocs que l'utilisateur n'a PAS placés
+    // (« Choisie pour vous », favori tout juste ajouté) : ils sont classés entre
+    // eux, dans les slots que les blocs placés laissent libres.
     if (scoreOrder != null) {
-      ordered = applyScoreOrder(ordered, scoreOrder);
+      final placedByUser = order.toSet();
+      ordered = applyScoreOrder(ordered, [
+        for (final key in scoreOrder)
+          if (!placedByUser.contains(key)) key,
+      ]);
     }
 
     // Épingle la Grille immédiatement après les Actus du jour (ou en tête si
