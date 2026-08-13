@@ -19,13 +19,13 @@ name: Deploy Web Preview
 on:
   push:
     branches:
-      - 'claude/facteur-article-swipe-nav-cd6pv0'
+      - 'claude/missing-favorite-sections-bug-syquh8'
   workflow_dispatch:
     inputs:
       slug:
         description: 'Sous-chemin de la preview (ex. swipe-nav)'
         required: true
-        default: 'swipe-nav'
+        default: 'blocs-favoris'
       api_base_url:
         description: 'URL de l API visée par le build'
         required: true
@@ -47,7 +47,7 @@ jobs:
       - name: Résoudre le slug de preview
         id: cfg
         run: |
-          SLUG="${{ github.event.inputs.slug || 'swipe-nav' }}"
+          SLUG="${{ github.event.inputs.slug || 'blocs-favoris' }}"
           echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
           echo "base_href=/facteur/preview/$SLUG/" >> "$GITHUB_OUTPUT"
 
