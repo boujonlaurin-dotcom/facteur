@@ -15,7 +15,7 @@ import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/feed_carousel.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
-import '../widgets/flux_continu_article_card.dart';
+import '../widgets/dismissible_article_card.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/suggestion_reason_sheet.dart';
 import '../widgets/theme_detail_footer.dart';
@@ -333,8 +333,10 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
         SliverList(
           delegate: SliverChildBuilderDelegate((context, index) {
             final item = _items[index];
-            return FluxContinuArticleCard(
+            return DismissibleArticleCard(
+              key: ValueKey('source_section_${item.id}'),
               article: item,
+              analyticsOrigin: 'section_source',
               onTap: () => _openArticle(
                 context,
                 item,

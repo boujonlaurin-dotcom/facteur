@@ -16,7 +16,7 @@ import '../../feed/widgets/feed_carousel.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
 import '../providers/theme_discovery_provider.dart';
-import '../widgets/flux_continu_article_card.dart';
+import '../widgets/dismissible_article_card.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/suggestion_reason_sheet.dart';
 import '../widgets/theme_detail_footer.dart';
@@ -324,8 +324,10 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
           SliverList(
             delegate: SliverChildBuilderDelegate((context, index) {
               final item = section.items[index];
-              return FluxContinuArticleCard(
+              return DismissibleArticleCard(
+                key: ValueKey('theme_section_${item.id}'),
                 article: item,
+                analyticsOrigin: 'section_theme',
                 onTap: () => _openArticle(
                   context,
                   item,
@@ -364,8 +366,10 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
         final row = rows[index];
         return switch (row) {
           VeilleHeaderRow(:final label) => VeilleGroupHeader(label: label),
-          VeilleArticleRow(:final content) => FluxContinuArticleCard(
+          VeilleArticleRow(:final content) => DismissibleArticleCard(
+              key: ValueKey('veille_section_${content.id}'),
               article: content,
+              analyticsOrigin: 'section_veille',
               onTap: () => _openArticle(
                 context,
                 content,
@@ -442,8 +446,10 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
             SliverList(
               delegate: SliverChildBuilderDelegate((context, index) {
                 final article = discovery[index];
-                return FluxContinuArticleCard(
+                return DismissibleArticleCard(
+                  key: ValueKey('theme_discovery_${article.id}'),
                   article: article,
+                  analyticsOrigin: 'section_theme_discovery',
                   onTap: () => _openArticle(
                     context,
                     article,

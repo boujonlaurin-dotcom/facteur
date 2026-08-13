@@ -10,7 +10,7 @@ import '../../detail/deck/models/article_deck.dart';
 import '../../digest/models/digest_models.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
-import '../widgets/flux_continu_article_card.dart';
+import '../widgets/dismissible_article_card.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/theme_detail_footer.dart';
 
@@ -174,8 +174,10 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
           delegate: SliverChildBuilderDelegate((context, index) {
             final topic = section.topics[index];
             final lead = pickTopicLead(topic);
-            return FluxContinuArticleCard(
+            return DismissibleArticleCard(
+              key: ValueKey('digest_section_${lead.contentId}'),
               article: lead,
+              analyticsOrigin: 'section_digest',
               sourceCount: topic.coverageCount,
               perspectiveSources: topic.perspectiveSources,
               divergenceLevel: topic.divergenceLevel,
