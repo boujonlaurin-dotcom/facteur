@@ -12,7 +12,7 @@ import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart'
-    show kTourneeVisibleCap, kRichSectionMinItems;
+    show kSectionMinItems;
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
@@ -266,7 +266,7 @@ void main() {
       'thèmes, avec nom + logo', () async {
     stubFeed(
       themeIds: {
-        'tech': ['t1', 't2']
+        'tech': ['t1', 't2', 't3']
       },
       sourceIds: {
         'src1': ['a1', 'a2', 'a3']
@@ -306,13 +306,14 @@ void main() {
       'n\'apparaît que dans le thème', () async {
     stubFeed(
       themeIds: {
-        'tech': ['shared', 't2']
+        'tech': ['shared', 't2', 't3']
       },
-      // src1 garde 2 survivants uniques (a2/a3) après dédup ⇒ section **riche**,
-      // donc pas de réinjection (backfill) qui repiocherait l'article partagé :
-      // on teste ici la seule règle de dédup (le thème au-dessus gagne).
+      // src1 garde 3 survivants uniques (a2/a3/a4) après dédup ⇒ au plancher
+      // d'affichage, donc ni backfill (qui repiocherait l'article partagé) ni
+      // masquage : on teste ici la seule règle de dédup (le thème au-dessus
+      // gagne l'article partagé).
       sourceIds: {
-        'src1': ['shared', 'a2', 'a3']
+        'src1': ['shared', 'a2', 'a3', 'a4']
       },
     );
     final container = await buildContainer(
@@ -333,12 +334,17 @@ void main() {
     expect(theme.items.map((c) => c.id), contains('shared'));
     expect(source.items.map((c) => c.id), isNot(contains('shared')),
         reason: 'le thème au-dessus gagne l\'article partagé');
-    expect(source.items.map((c) => c.id), ['a2', 'a3']);
+    expect(source.items.map((c) => c.id), ['a2', 'a3', 'a4']);
   });
 
   test(
-      'source sans article frais : section TOUJOURS visible (items vides), '
-      'jamais masquée', () async {
+      'source sans article frais : section masquée (plancher d\'affichage) '
+      'mais signalée à la modal', () async {
+    // Renversement assumé de l'ancien contrat « section source toujours
+    // visible, même vide » (parité veille) : la règle PO V1 préfère un flux
+    // propre à un empty-state, à condition que le masquage soit **dit**
+    // (`starvedFavoriteKeys` → badge « Pas assez d'articles » dans « Mes
+    // favoris »). Une disparition silencieuse resterait interdite.
     stubFeed(
       themeIds: const {},
       sourceIds: {'src1': const []},
@@ -353,14 +359,12 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await settle(container);
-    final sections = feedSections(container);
-
-    final source = sections.where((s) => s.kind == SectionKind.source).toList();
-    expect(source, hasLength(1),
-        reason: 'la section source reste rendue même vide (parité veille)');
-    expect(source.first.items, isEmpty);
-    expect(source.first.sourceId, 'src1');
+    final state = await settle(container);
+    final source =
+        feedSections(container).where((s) => s.kind == SectionKind.source);
+    expect(source, isEmpty, reason: 'sous le plancher ⇒ hors du flux');
+    expect(state.starvedFavoriteKeys, contains('source:src1'),
+        reason: 'masqué n\'est pas silencieux : la modal doit pouvoir le dire');
   });
 
   test(
@@ -369,20 +373,20 @@ void main() {
     stubFeed(
       themeIds: const {},
       sourceIds: {
-        'a': ['a1', 'a2'],
-        'b': ['b1', 'b2'],
-        'c': ['c1', 'c2'],
-        'd': ['d1', 'd2'],
-        'e': ['e1', 'e2'],
-        'f': ['f1', 'f2'],
-        'g': ['g1', 'g2'],
-        'h': ['h1', 'h2'],
-        'i': ['i1', 'i2'],
-        'j': ['j1', 'j2'],
-        'k': ['k1', 'k2'],
-        'l': ['l1', 'l2'],
-        'm': ['m1', 'm2'],
-        'n': ['n1', 'n2'],
+        'a': ['a1', 'a2', 'a3'],
+        'b': ['b1', 'b2', 'b3'],
+        'c': ['c1', 'c2', 'c3'],
+        'd': ['d1', 'd2', 'd3'],
+        'e': ['e1', 'e2', 'e3'],
+        'f': ['f1', 'f2', 'f3'],
+        'g': ['g1', 'g2', 'g3'],
+        'h': ['h1', 'h2', 'h3'],
+        'i': ['i1', 'i2', 'i3'],
+        'j': ['j1', 'j2', 'j3'],
+        'k': ['k1', 'k2', 'k3'],
+        'l': ['l1', 'l2', 'l3'],
+        'm': ['m1', 'm2', 'm3'],
+        'n': ['n1', 'n2', 'n3'],
       },
     );
     final container = await buildContainer(
@@ -451,17 +455,17 @@ void main() {
     );
   });
 
-  // ── Cohérence Tournée : dépriorisation / enrichissement des maigres ────────
-  group('cohérence Tournée (maigre/riche)', () {
+  // ── Compromis d'affichage V1 : masquage (pénurie) / déclassement (pauvreté) ─
+  group('compromis d\'affichage (masquage / déclassement)', () {
     test(
-        'classification : un favori à 1 survivant ∈ thinFavoriteKeys ; '
-        'à ≥2 absent', () async {
+        'masquage : un bloc résolu sous le plancher sort du flux et part dans '
+        'starvedFavoriteKeys', () async {
       stubFeed(
         themeIds: {
-          'tech': ['t1', 't2'] // riche (2)
+          'tech': ['t1', 't2', 't3'] // au plancher → reste
         },
         sourceIds: {
-          'src1': ['b1'] // maigre (1)
+          'src1': ['b1'] // sous le plancher, rien à réinjecter → masqué
         },
       );
       final container = await buildContainer(
@@ -475,37 +479,67 @@ void main() {
       addTearDown(container.dispose);
 
       final state = await settle(container);
-      expect(state.thinFavoriteKeys, contains('source:src1'));
-      expect(state.thinFavoriteKeys, isNot(contains('theme:tech')));
-
-      // La section riche n'est jamais marquée underfilled.
-      final theme = feedSections(container)
-          .firstWhere((s) => s.kind == SectionKind.theme);
-      expect(theme.underfilled, isFalse);
+      final kinds = feedSections(container).map((s) => s.kind).toList();
+      expect(kinds, contains(SectionKind.theme));
+      expect(kinds, isNot(contains(SectionKind.source)));
+      expect(state.starvedFavoriteKeys, contains('source:src1'));
+      expect(state.starvedFavoriteKeys, isNot(contains('theme:tech')));
     });
 
     test(
-        'tri par score : 5 riches + 1 maigre → le maigre coule, par le score '
-        '(les slots manquants comptent 0)', () async {
-      // Même intention qu'avant PR-4 (« le bloc à 1 article ne doit pas rester
-      // au-dessus du pli »), mécanisme différent : ce n'est plus la partition
-      // binaire riches/maigres mais la somme des 3 meilleurs scores. À
-      // `score_total` par article **identique** (100), un bloc à 2 articles vaut
-      // 200 et le bloc à 1 article vaut 100 → il coule sans être un cas spécial.
+        'backfill : un bloc vidé par la dédup est renfloué jusqu\'au plancher '
+        'et RESTE affiché (cas Technologie/Environnement)', () async {
+      // Le bug d'origine : les meilleurs articles d'un thème remontent dans le
+      // bloc amont, la dédup vide le thème, et il disparaissait. Ici tout est
+      // partagé → 0 survivant → le backfill doit le ramener à 3.
       stubFeed(
         themeIds: {
-          'tech': ['tc1', 'tc2'],
-          'science': ['sc1', 'sc2'],
-          'culture': ['cu1'], // 1 seul article → 100 vs 200
-          'economy': ['ec1', 'ec2'],
-          'politics': ['po1', 'po2'],
-          'environment': ['en1', 'en2'],
+          'tech': ['s1', 's2', 's3'] // gagne les 3 articles
+        },
+        sourceIds: {
+          'src1': ['s1', 's2', 's3'] // tout partagé → 0 survivant
+        },
+      );
+      final container = await buildContainer(
+        interests: _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
+        sourcesState: _sourcesState(
+          favorites: [SourceFavoriteRef(sourceId: 'src1', position: 0)],
+        ),
+        catalog: [_source('src1', theme: 'society')],
+        tourneeOrder: const ['theme:tech', 'source:src1'],
+      );
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+      final source = feedSections(container)
+          .firstWhere((s) => s.kind == SectionKind.source);
+      expect(source.items, hasLength(kSectionMinItems));
+      expect(source.items.map((c) => c.id), containsAll(['s1', 's2', 's3']));
+      expect(source.underfilled, isTrue);
+      expect(state.starvedFavoriteKeys, isEmpty,
+          reason: 'renfloué ⇒ affiché ⇒ pas de masquage à expliquer');
+    });
+
+    test(
+        'déclassement : un bloc pauvre descend sous les autres favoris mais '
+        'reste affiché', () async {
+      // 5 blocs à 300 (3 × 100) et un à 30 : médiane 300, seuil 150 → seul
+      // 'culture' est déclassé. Il descend en fin de bloc favori, il ne
+      // disparaît pas.
+      stubFeed(
+        themeIds: {
+          'tech': ['tc1', 'tc2', 'tc3'],
+          'science': ['sc1', 'sc2', 'sc3'],
+          'culture': ['cu1', 'cu2', 'cu3'],
+          'economy': ['ec1', 'ec2', 'ec3'],
+          'politics': ['po1', 'po2', 'po3'],
+          'environment': ['en1', 'en2', 'en3'],
         },
         sourceIds: const {},
         themeScores: const {
           'tech': 100,
           'science': 100,
-          'culture': 100,
+          'culture': 10, // 30 < 150 ⇒ pauvre
           'economy': 100,
           'politics': 100,
           'environment': 100,
@@ -527,35 +561,93 @@ void main() {
       );
       addTearDown(container.dispose);
 
+      final state = await settle(container);
+      final order = feedSections(container)
+          .where((s) => s.kind == SectionKind.theme)
+          .map((s) => s.themeSlug)
+          .toList();
+      expect(order, hasLength(6), reason: 'un bloc pauvre reste affiché');
+      expect(order.last, 'culture');
+      expect(state.starvedFavoriteKeys, isEmpty);
+    });
+
+    test('déclassement inactif quand tous les blocs se valent', () async {
+      // Médiane 300, seuil 150, tout le monde à 300 : personne n'est en retrait
+      // → l'ordre composé par l'utilisateur est rendu tel quel.
+      stubFeed(
+        themeIds: {
+          'tech': ['tc1', 'tc2', 'tc3'],
+          'science': ['sc1', 'sc2', 'sc3'],
+          'culture': ['cu1', 'cu2', 'cu3'],
+        },
+        sourceIds: const {},
+        themeScores: const {'tech': 100, 'science': 100, 'culture': 100},
+      );
+      final container = await buildContainer(
+        interests: _interestsState(
+          favorites: const [
+            ThemeFavoriteRef(slug: 'tech'),
+            ThemeFavoriteRef(slug: 'science'),
+            ThemeFavoriteRef(slug: 'culture'),
+          ],
+        ),
+        sourcesState: _sourcesState(),
+        catalog: const [],
+      );
+      addTearDown(container.dispose);
+
       await settle(container);
       final order = feedSections(container)
           .where((s) => s.kind == SectionKind.theme)
           .map((s) => s.themeSlug)
           .toList();
-      // Les 5 blocs à 200 d'abord (à score égal le tri est stable : l'ordre des
-      // favoris départage), 'culture' à 100 en fin.
-      expect(order, [
-        'tech',
-        'science',
-        'economy',
-        'politics',
-        'environment',
-        'culture',
-      ]);
+      expect(order, ['tech', 'science', 'culture']);
+    });
+
+    test(
+        'déclassement inactif sous kPoorDemotionMinBlocks blocs scorés '
+        '(médiane non significative)', () async {
+      stubFeed(
+        themeIds: {
+          'tech': ['tc1', 'tc2', 'tc3'],
+          'culture': ['cu1', 'cu2', 'cu3'],
+        },
+        sourceIds: const {},
+        themeScores: const {'tech': 100, 'culture': 1},
+      );
+      final container = await buildContainer(
+        interests: _interestsState(
+          favorites: const [
+            ThemeFavoriteRef(slug: 'tech'),
+            ThemeFavoriteRef(slug: 'culture'),
+          ],
+        ),
+        sourcesState: _sourcesState(),
+        catalog: const [],
+      );
+      addTearDown(container.dispose);
+
+      await settle(container);
+      final order = feedSections(container)
+          .where((s) => s.kind == SectionKind.theme)
+          .map((s) => s.themeSlug)
+          .toList();
+      // 2 blocs scorés < 3 ⇒ aucun déclassement : 'culture' garde son rang.
+      expect(order, ['tech', 'culture']);
     });
 
     test('aucun article scoré ⇒ ordre inchangé (sentinelle)', () async {
       // Sans `recommendationReason`, aucune section n'entre dans `blockScores` :
-      // le classement est vide et chaque bloc garde sa position absolue — y
-      // compris le bloc à 1 article. C'est le filet qui protège les blocs non
-      // scorés (éditoriaux, veille sans scoring) de couler à 0.
+      // ni tri ni déclassement, chaque bloc garde sa position absolue. C'est le
+      // filet qui protège les blocs non scorés (éditoriaux, veille sans
+      // scoring) de couler à 0.
       stubFeed(
         themeIds: {
-          'tech': ['tc1', 'tc2'],
-          'science': ['sc1', 'sc2'],
-          'culture': ['cu1'], // 1 article, en 3ᵉ position
-          'economy': ['ec1', 'ec2'],
-          'politics': ['po1', 'po2'],
+          'tech': ['tc1', 'tc2', 'tc3'],
+          'science': ['sc1', 'sc2', 'sc3'],
+          'culture': ['cu1', 'cu2', 'cu3'],
+          'economy': ['ec1', 'ec2', 'ec3'],
+          'politics': ['po1', 'po2', 'po3'],
         },
         sourceIds: const {},
       );
@@ -579,120 +671,7 @@ void main() {
           .where((s) => s.kind == SectionKind.theme)
           .map((s) => s.themeSlug)
           .toList();
-      // Aucun score ⇒ aucun tri : 'culture' reste à sa place.
       expect(order, ['tech', 'science', 'culture', 'economy', 'politics']);
-    });
-
-    test(
-        'cap : >13 favoris dont un maigre → le maigre est coupé des sections '
-        'mais présent dans thinFavoriteKeys', () async {
-      stubFeed(
-        themeIds: {
-          'tech': ['tc1', 'tc2'],
-          'science': ['sc1', 'sc2'],
-          'economy': ['ec1', 'ec2'],
-          'politics': ['po1', 'po2'],
-          'environment': ['en1', 'en2'],
-          'culture': ['cu1'], // maigre → dépriorisé en fin → coupé par le cap
-        },
-        sourceIds: {
-          'a': ['a1', 'a2'],
-          'b': ['b1', 'b2'],
-          'c': ['c1', 'c2'],
-          'd': ['d1', 'd2'],
-          'e': ['e1', 'e2'],
-          'f': ['f1', 'f2'],
-          'g': ['g1', 'g2'],
-          'h': ['h1', 'h2'],
-        },
-      );
-      final container = await buildContainer(
-        interests: _interestsState(
-          favorites: const [
-            ThemeFavoriteRef(slug: 'tech'),
-            ThemeFavoriteRef(slug: 'science'),
-            ThemeFavoriteRef(slug: 'economy'),
-            ThemeFavoriteRef(slug: 'politics'),
-            ThemeFavoriteRef(slug: 'environment'),
-            ThemeFavoriteRef(slug: 'culture'),
-          ],
-        ),
-        sourcesState: _sourcesState(
-          favorites: const [
-            SourceFavoriteRef(sourceId: 'a', position: 0),
-            SourceFavoriteRef(sourceId: 'b', position: 1),
-            SourceFavoriteRef(sourceId: 'c', position: 2),
-            SourceFavoriteRef(sourceId: 'd', position: 3),
-            SourceFavoriteRef(sourceId: 'e', position: 4),
-            SourceFavoriteRef(sourceId: 'f', position: 5),
-            SourceFavoriteRef(sourceId: 'g', position: 6),
-            SourceFavoriteRef(sourceId: 'h', position: 7),
-          ],
-        ),
-        catalog: [
-          _source('a'),
-          _source('b'),
-          _source('c'),
-          _source('d'),
-          _source('e'),
-          _source('f'),
-          _source('g'),
-          _source('h'),
-        ],
-        tourneeOrder: const [
-          'source:a',
-          'source:b',
-          'source:c',
-          'source:d',
-          'source:e',
-          'source:f',
-          'source:g',
-          'source:h',
-        ],
-      );
-      addTearDown(container.dispose);
-
-      final state = await settle(container);
-      final slugs = feedSections(container)
-          .where((s) => s.kind == SectionKind.theme)
-          .map((s) => s.themeSlug)
-          .toList();
-      // 14 favoris (8 sources + 6 thèmes), cap 13 ⇒ le maigre 'culture'
-      // (dépriorisé en dernier) est coupé, mais reste signalé pour la modal.
-      expect(state.sections.length, kTourneeVisibleCap);
-      expect(slugs, isNot(contains('culture')));
-      expect(state.thinFavoriteKeys, contains('theme:culture'));
-    });
-
-    test(
-        'backfill : une source maigre affichée est réinjectée jusqu\'à 2 items '
-        '+ underfilled (doublons inter-sections tolérés)', () async {
-      stubFeed(
-        themeIds: {
-          'tech': ['s1', 's2'] // riche, gagne s1/s2
-        },
-        sourceIds: {
-          'src1': ['s1', 's2'] // tout partagé → 0 survivant → maigre
-        },
-      );
-      final container = await buildContainer(
-        interests: _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
-        sourcesState: _sourcesState(
-          favorites: [SourceFavoriteRef(sourceId: 'src1', position: 0)],
-        ),
-        catalog: [_source('src1', theme: 'society')],
-        tourneeOrder: const ['theme:tech', 'source:src1'],
-      );
-      addTearDown(container.dispose);
-
-      final state = await settle(container);
-      final source = feedSections(container)
-          .firstWhere((s) => s.kind == SectionKind.source);
-      // Réinjection bornée à kRichSectionMinItems (2), depuis les retirés.
-      expect(source.items.length, kRichSectionMinItems);
-      expect(source.items.map((c) => c.id), containsAll(['s1', 's2']));
-      expect(source.underfilled, isTrue);
-      expect(state.thinFavoriteKeys, contains('source:src1'));
     });
   });
 }

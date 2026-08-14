@@ -186,13 +186,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   bool _closingPersistQueued = false;
   bool _essentielViewedMarked = false;
 
-  /// `sectionKey` des sections favorites (thème/source/veille) dont le fetch du
-  /// fan-out a **résolu** ce cycle (réponse arrivée, vide ou non). La
-  /// classification maigre/riche ([_classifyFavoriteSections]) n'inspecte que ces
+  /// `sectionKey` des sections dont le fetch du fan-out a **résolu** ce cycle
+  /// (réponse arrivée, vide ou non) — favorites comme suggérées.
+  /// [_classifyFavoriteSections] et [_dropStarvedSections] n'inspectent que ces
   /// clés : une coquille seedée non encore résolue (0 item au boot) ne doit pas
-  /// être classée maigre → faux positif de dépriorisation/CTA. Réinitialisé au
-  /// reseed complet ([_buildStateFromPayload]), augmenté au fil du fan-out et des
-  /// refetch partiels.
+  /// être jugée en pénurie → elle serait masquée puis rendue à l'arrivée de sa
+  /// réponse, soit un clignotement à chaque recomposition du fan-out.
+  /// Réinitialisé au reseed complet ([_buildStateFromPayload]), augmenté au fil
+  /// du fan-out et des refetch partiels.
   final Set<String> _resolvedSectionKeys = <String>{};
 
   /// PR-4 — ordre des blocs par score **gelé pour la journée tournée**
@@ -207,6 +208,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// partiels, load-more).
   String? _scoreOrderDayKey;
   List<String>? _scoreOrderKeys;
+
+  /// Blocs favoris jugés **pauvres** (curation du jour), gelés au même instant
+  /// et depuis les mêmes scores que [_scoreOrderKeys] — donc stables toute la
+  /// journée et cohérents avec l'ordre. Sans ce gel, un « Voir +10 » sur un bloc
+  /// déclassé le ferait remonter sous les doigts de l'utilisateur.
+  Set<String> _poorBlockKeys = const {};
 
   /// Armé à la complétion du fan-out, consommé par le [_compose] qui suit
   /// immédiatement : c'est lui qui gèle l'ordre, à partir des scores qu'il a
@@ -967,7 +974,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // l'ordre par défaut **non cappé** (la maigreur comme le score ne se
     // connaissent qu'après dédup, cf. plan). `thinKeys` sert au backfill et à la
     // modal favoris ; `blockScores` sert à l'ordre (gelé) et à la mesure.
-    final (:thinKeys, :richCount, :blockScores) = _classifyFavoriteSections(
+    final (:thinKeys, :blockScores) = _classifyFavoriteSections(
       isSerene: isSerene,
       tournee: tournee,
       sectionByKey: sectionByKey,
@@ -981,11 +988,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       _freezeScoreOrderOnNextCompose = false;
       _freezeScoreOrder(blockScores);
     }
-    // PR-4 — le tri par score remplace la dépriorisation binaire et la subsume
-    // (un bloc à 1 article coule structurellement). Le kill-switch restaure
-    // l'ancienne partition à l'identique.
-    final demote =
-        !kTourneeScoreSortEnabled && richCount >= kThinDemotionRichThreshold;
 
     final orderedKeys = _orderedTourneeKeys(
       isSerene: isSerene,
@@ -994,8 +996,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       grilleAvailable: grilleAvailable,
       hiddenKeys: tournee.hiddenKeys,
       order: tournee.order,
-      thinKeys: thinKeys,
-      demote: demote,
+      // Déclassement qualité — gelé avec l'ordre du jour, donc vide tant que le
+      // 1ᵉʳ fan-out n'a pas abouti (aucun bloc ne bouge pendant le remplissage).
+      poorKeys: _poorBlockKeys,
       // Ordre **gelé pour la journée** (null tant que le 1ᵉʳ fan-out du jour
       // n'a pas abouti) : zéro saut de bloc pendant le remplissage progressif.
       scoreOrder: _scoreOrderKeys,
@@ -1038,11 +1041,19 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       _filterSections(rawOrdered),
       removedByKey: removedByKey,
     );
+    // Masquage (règle PO V1) : un bloc sous le plancher [kSectionMinItems]
+    // **après** backfill n'a rien à montrer → il sort du flux, et sa clé part à
+    // la modal pour que l'utilisateur sache pourquoi (jamais de disparition
+    // silencieuse, cf. `bug-essentiel-blocs-favoris-absents.md`).
+    final starvedKeys = <String>{};
     final finalSections = _capSectionsToFit(
-      _backfillThinSections(
-        _dropEmptySuggested(deduped),
-        thinKeys,
-        removedByKey,
+      _dropStarvedSections(
+        _backfillThinSections(
+          _dropEmptySuggested(deduped),
+          thinKeys,
+          removedByKey,
+        ),
+        starvedKeys,
       ),
       usableHeight,
     );
@@ -1063,22 +1074,26 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // Toutes les clés maigres (affichées ou hors cap) → la modal sait
       // lesquelles signaler.
       thinFavoriteKeys: thinKeys,
+      // Blocs retirés du flux faute d'articles → la modal l'explique au lieu de
+      // laisser l'utilisateur devant une section absente sans raison.
+      starvedFavoriteKeys: Set.unmodifiable(starvedKeys),
       // PR-1 — dénominateur du CTR par bloc : le screen le repasse au
       // `SectionBlock` qui le porte jusqu'à l'event `article_impression`.
       blockScores: Map.unmodifiable(blockScores),
     );
   }
 
-  /// Classifie les sections **favorites** (thème/source validés) en maigres
-  /// (≤ [kThinSectionMaxItems] survivants post-dédup) / riches (≥
-  /// [kRichSectionMinItems]) sur l'ordre par défaut **non cappé**. Exclut
-  /// veille / éditorial / suggérées / Grille. N'inspecte que les sections au
-  /// fetch résolu ([_resolvedSectionKeys]) → pas de faux positif sur des
+  /// Repère les sections **choisies** (thème/source/veille) qui n'atteignent pas
+  /// le plancher d'affichage [kSectionMinItems] une fois la dédup inter-sections
+  /// passée, sur l'ordre par défaut **non cappé** : ce sont les blocs à renflouer
+  /// ([_backfillThinSections]) avant que le masquage ([_dropStarvedSections]) ne
+  /// tranche. Exclut éditorial / suggérées / Grille. N'inspecte que les sections
+  /// au fetch résolu ([_resolvedSectionKeys]) → pas de faux positif sur des
   /// coquilles de boot.
   ///
   /// PR-4 — la même passe calcule les **scores de bloc** (`blockScores`, cf.
   /// `section_score_order.dart`), sur une portée volontairement **plus large**
-  /// que la classification maigre/riche : toute `FeedThemeSection` résolue y
+  /// que le repérage des blocs sous plancher : toute `FeedThemeSection` résolue y
   /// entre, veille et « Choisie pour vous » comprises (une veille pauvre coule
   /// désormais elle aussi, décision PO). La map est en ordre d'affichage
   /// (insertion = parcours de `deduped`) : ses clés servent telles quelles de
@@ -1091,15 +1106,18 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// un article partagé compte pour **chacune** des sections qui l'a servi (cf.
   /// `scorable` plus bas), donc l'attribution d'un doublon ne déplace plus le
   /// classement.
-  ({Set<String> thinKeys, int richCount, Map<String, double> blockScores})
+  ({Set<String> thinKeys, Map<String, double> blockScores})
       _classifyFavoriteSections({
     required bool isSerene,
     required TourneeOrderState tournee,
     required Map<String, FluxSection> sectionByKey,
   }) {
+    // Veille incluse : elle est un bloc de la Tournée comme un autre, donc elle
+    // profite du backfill avant d'être jugée en pénurie (le CTA « Ajouter des
+    // sources » que porte `underfilled` reste, lui, réservé aux thèmes, cf.
+    // `section_block.dart`).
     final favKeys = <String>{
-      for (final s in _themes)
-        if (s.kind == SectionKind.theme) sectionKey(s),
+      for (final s in _themes) sectionKey(s),
       for (final s in _sources) sectionKey(s),
     };
     final eligible = {
@@ -1113,7 +1131,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (eligible.isEmpty && _resolvedSectionKeys.isEmpty) {
       return (
         thinKeys: const <String>{},
-        richCount: 0,
         blockScores: const <String, double>{},
       );
     }
@@ -1126,6 +1143,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       hiddenKeys: tournee.hiddenKeys,
       order: tournee.order,
       cap: null, // passe non cappée : la maigreur se mesure sur tout l'ordre
+      // Pas de `poorKeys` ici : la passe de classification produit les scores
+      // dont le déclassement est dérivé — l'y appliquer serait circulaire.
     );
     final rawOrdered = <FluxSection>[
       if (_essentiel != null) _essentiel!,
@@ -1144,7 +1163,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
     final thinKeys = <String>{};
     final blockScores = <String, double>{};
-    var richCount = 0;
     for (final s in deduped) {
       if (s is! FeedThemeSection) continue;
       final k = sectionKey(s);
@@ -1176,26 +1194,96 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         blockScores[k] = blockScore(scorable);
       }
       if (!eligible.contains(k)) continue;
-      final n = s.items.length;
-      if (n <= kThinSectionMaxItems) {
-        thinKeys.add(k);
-      } else if (n >= kRichSectionMinItems) {
-        richCount++;
-      }
+      // « Maigre » = sous le plancher d'affichage : c'est exactement l'ensemble
+      // des blocs qu'il faut tenter de renflouer avant de décider un masquage.
+      if (s.items.length < kSectionMinItems) thinKeys.add(k);
     }
     return (
       thinKeys: thinKeys,
-      richCount: richCount,
       blockScores: blockScores,
     );
   }
 
+  /// Blocs favoris dont la **curation du jour** est pauvre : score de bloc sous
+  /// [kPoorBlockScoreRatio] × la médiane des blocs favoris scorés.
+  ///
+  /// Médiane plutôt que moyenne (insensible au bloc vedette qui écraserait tout)
+  /// et seuil **relatif** plutôt qu'absolu : `blockScore` est une somme de scores
+  /// backend, dont l'échelle varie d'un utilisateur et d'un jour à l'autre. Le
+  /// jour où tout est bon, personne n'est déclassé — c'est l'effet voulu, le
+  /// déclassement dit « ce bloc est en retrait *aujourd'hui* », pas « ce bloc est
+  /// mauvais ».
+  ///
+  /// Ne juge que les blocs **choisis** (thème/source/veille) : une suggestion
+  /// n'a pas à peser sur la médiane, elle passe déjà après eux.
+  Set<String> _poorFavoriteKeys(Map<String, double> blockScores) {
+    final favKeys = <String>{
+      for (final s in _themes) sectionKey(s),
+      for (final s in _sources) sectionKey(s),
+    };
+    final scored = <String, double>{
+      for (final e in blockScores.entries)
+        if (favKeys.contains(e.key)) e.key: e.value,
+    };
+    if (scored.length < kPoorDemotionMinBlocks) return const {};
+
+    final values = scored.values.toList()..sort();
+    final mid = values.length ~/ 2;
+    final median = values.length.isOdd
+        ? values[mid]
+        : (values[mid - 1] + values[mid]) / 2;
+    // Médiane nulle : tous les blocs sont à 0 (aucun article scoré ce jour-là).
+    // Rien à départager — déclasser la moitié du flux au hasard serait pire.
+    if (median <= 0) return const {};
+
+    final threshold = median * kPoorBlockScoreRatio;
+    return {
+      for (final e in scored.entries)
+        if (e.value < threshold) e.key,
+    };
+  }
+
+  /// Retire du flux les blocs qui n'atteignent pas le plancher d'affichage
+  /// [kSectionMinItems] — après backfill, donc en dernier recours — et collecte
+  /// leurs clés dans [starvedKeys] pour la modal « Mes favoris ».
+  ///
+  /// Deux garde-fous contre le clignotement pendant le fan-out (10-15
+  /// recompositions) : on ne juge que les sections dont le fetch a **résolu**
+  /// ([_resolvedSectionKeys]) et jamais une coquille de squelette
+  /// (`isPlaceholder`) — sinon chaque bloc disparaîtrait puis réapparaîtrait à
+  /// l'arrivée de sa réponse.
+  List<FluxSection> _dropStarvedSections(
+    List<FluxSection> sections,
+    Set<String> starvedKeys,
+  ) {
+    final kept = <FluxSection>[];
+    for (final s in sections) {
+      if (s is! FeedThemeSection || s.isPlaceholder) {
+        kept.add(s);
+        continue;
+      }
+      final k = sectionKey(s);
+      if (!_resolvedSectionKeys.contains(k) ||
+          s.items.length >= kSectionMinItems) {
+        kept.add(s);
+        continue;
+      }
+      starvedKeys.add(k);
+    }
+    return kept;
+  }
+
   /// Réinjecte dans chaque section favorite **maigre affichée** (clé ∈
   /// [thinKeys]) des articles strippés par la dédup ([removedByKey]) jusqu'à
-  /// [kRichSectionMinItems], et marque la section `underfilled` (pilote le CTA
+  /// [kSectionMinItems], et marque la section `underfilled` (pilote le CTA
   /// thème « Ajouter plus de sources »). Doublons inter-sections assumés (PO) ;
-  /// dédup intra-section préservée. Une source maigre sans retirés garde son
-  /// filet d'empty-state existant.
+  /// dédup intra-section préservée.
+  ///
+  /// C'est la **dernière chance** d'un bloc avant [_dropStarvedSections] : le
+  /// backfill vise donc le plancher d'affichage, pas un palier intermédiaire.
+  /// Un thème dont le héros a pris les meilleurs articles les récupère ici et
+  /// reste affiché — c'est précisément le cas qui faisait disparaître Technologie
+  /// et Environnement.
   List<FluxSection> _backfillThinSections(
     List<FluxSection> sections,
     Set<String> thinKeys,
@@ -1218,7 +1306,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final seen = {for (final c in s.items) c.id};
     final additions = <Content>[];
     for (final c in removed) {
-      if (s.items.length + additions.length >= kRichSectionMinItems) break;
+      if (s.items.length + additions.length >= kSectionMinItems) break;
       if (seen.add(c.id)) additions.add(c);
     }
     // `underfilled` toujours vrai (section maigre affichée) → CTA thème même si
@@ -1796,18 +1884,22 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (!kTourneeScoreSortEnabled) {
       _scoreOrderDayKey = null;
       _scoreOrderKeys = null;
+      _poorBlockKeys = const {};
       return;
     }
     final today = TourneeProgressService.dayKey(DateTime.now());
     if (_scoreOrderDayKey == today) return;
     _scoreOrderDayKey = null;
     _scoreOrderKeys = null;
-    final loaded = await ref
-        .read(tourneeProgressServiceProvider)
-        .loadScoreOrderForToday();
+    _poorBlockKeys = const {};
+    final service = ref.read(tourneeProgressServiceProvider);
+    final loaded = await service.loadScoreOrderForToday();
     if (loaded != null && loaded.isNotEmpty) {
       _scoreOrderDayKey = today;
       _scoreOrderKeys = loaded;
+      // Déclassement gelé le même jour, dans la même entrée : il ne survit
+      // jamais à l'ordre auquel il appartient.
+      _poorBlockKeys = await service.loadPoorKeysForToday() ?? const {};
     }
   }
 
@@ -1841,10 +1933,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ];
     // Que des sections-source suggérées → rien à trier.
     if (frozen.isEmpty) return;
+    // Le déclassement qualité est gelé **ici**, depuis les mêmes scores que
+    // l'ordre : les deux ne peuvent donc pas diverger, et un « Voir +10 » plus
+    // tard dans la journée ne fait pas remonter un bloc déclassé.
+    final poor = _poorFavoriteKeys(scores);
     _scoreOrderDayKey = today;
     _scoreOrderKeys = frozen;
+    _poorBlockKeys = poor;
     unawaited(
-      ref.read(tourneeProgressServiceProvider).setScoreOrderToday(frozen),
+      ref
+          .read(tourneeProgressServiceProvider)
+          .setScoreOrderToday(frozen, poorKeys: poor),
     );
   }
 
@@ -2673,13 +2772,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required bool grilleAvailable,
     required Set<String> hiddenKeys,
     required List<String> order,
-    // Cohérence Tournée : clés favorites maigres + bascule de dépriorisation.
-    // Quand [demote], les favoris maigres sont stable-partitionnés **après** les
-    // riches dans le bloc favori (ordre relatif préservé) → le contenu dense
-    // remonte au-dessus du pli. N'affecte que l'ordre **par défaut** : un ordre
-    // personnalisé (`customized`) reste sticky via `applyOrder`.
-    Set<String> thinKeys = const {},
-    bool demote = false,
+    // Blocs favoris à **déclasser** (curation pauvre du jour, cf.
+    // [_poorFavoriteKeys]) : ils descendent sous les autres favoris sans jamais
+    // passer sous une « Choisie pour vous ». Gelé à la journée comme
+    // [scoreOrder] ⇒ vide pendant le fan-out.
+    Set<String> poorKeys = const {},
     // PR-4 — ordre des blocs par score, **gelé pour la journée** (cf.
     // [_freezeScoreOrderIfNeeded]). Appliqué après l'ordre manuel (`applyOrder`,
     // qui reste la base et départage à score égal) et avant l'épingle Grille.
@@ -2705,19 +2802,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // personnalisé (`customized`) est respecté tel quel par `applyOrder`.
     final orderedThemeKeys =
         customized ? themeKeys : _biasThemeKeysByMostFollowed(themeKeys);
-    var favoriteKeys = [...orderedThemeKeys, ...sourceKeys, ...veilleKeys];
-    // Dépriorisation : partition **stable** riches-d'abord / maigres-ensuite du
-    // bloc favori. La veille (jamais dans `thinKeys` — exclue de la
-    // classification) reste dans le groupe « non maigre ». Ordre relatif
-    // conservé dans chaque groupe.
-    if (demote && thinKeys.isNotEmpty) {
-      favoriteKeys = [
-        for (final k in favoriteKeys)
-          if (!thinKeys.contains(k)) k,
-        for (final k in favoriteKeys)
-          if (thinKeys.contains(k)) k,
-      ];
-    }
+    final favoriteKeys = [...orderedThemeKeys, ...sourceKeys, ...veilleKeys];
     // Story 22.3 — clés des sections « Choisie pour vous », best-first par
     // daily_rank (`_suggested` arrive déjà trié du backend). Insérées APRÈS les
     // validées (jamais devant) et dédupliquées contre elles : un compte
@@ -2731,6 +2816,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             !favoriteKeySet.contains(sectionKey(section)))
           sectionKey(section),
     ];
+    final suggestedKeySet = suggestedKeys.toSet();
     // Ordre par défaut unifié (normal & serein). Pour les comptes **non
     // personnalisés** (tous les nouveaux utilisateurs), on démarre la Tournée
     // par les Actus du jour — la section éditoriale cœur du rituel — puis les
@@ -2782,6 +2868,19 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       ]);
     }
 
+    // Déclassement qualité (règle PO V1) — un bloc choisi dont la curation du
+    // jour est pauvre ne disparaît pas : il descend simplement sous les autres
+    // blocs choisis. Appliqué **après** l'ordre manuel et le tri du jour, sur
+    // les seuls slots occupés par des blocs choisis ou suggérés : les cartes
+    // éditoriales (Actus, Bonnes) gardent leur position absolue, comme sous
+    // [applyScoreOrder].
+    ordered = _demotePoorBlocks(
+      ordered,
+      poorKeys: poorKeys,
+      favoriteKeys: favoriteKeySet,
+      suggestedKeys: suggestedKeySet,
+    );
+
     // Épingle la Grille immédiatement après les Actus du jour (ou en tête si
     // les Actus sont masqués/absents). C'est le seul point qui fixe la position
     // de la Grille — feed, sticky header (« Mot du jour ») et carte CTA en
@@ -2811,7 +2910,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // dans le cas nominal — ≤ 7 favoris backend + 3 cartes éditoriales = 10 sur
     // 13 → il reste des slots ; seul un compte qui a lui-même rempli le cap de
     // blocs choisis n'a plus de place pour une suggestion.
-    final suggestedKeySet = suggestedKeys.toSet();
     final chosenKeys = [
       for (final key in ordered)
         if (!suggestedKeySet.contains(key)) key,
@@ -2832,6 +2930,49 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final key in ordered)
         if (keptChosen.contains(key) || keptSuggested.contains(key)) key,
     ].toList(growable: false);
+  }
+
+  /// Fait descendre les blocs de [poorKeys] sous les autres blocs choisis, sans
+  /// jamais les faire passer sous une section « Choisie pour vous ».
+  ///
+  /// Ne redistribue que les slots déjà occupés par un bloc choisi ou suggéré :
+  /// les cartes éditoriales (Actus, Bonnes) et tout ce qui n'est ni l'un ni
+  /// l'autre gardent leur **position absolue** — même sémantique que
+  /// [applyScoreOrder], sans quoi le déclassement d'un thème ferait glisser le
+  /// rituel éditorial.
+  ///
+  /// No-op quand aucun bloc n'est pauvre : l'entrelacement favoris/suggestions
+  /// produit par le tri du jour reste alors intact.
+  List<String> _demotePoorBlocks(
+    List<String> ordered, {
+    required Set<String> poorKeys,
+    required Set<String> favoriteKeys,
+    required Set<String> suggestedKeys,
+  }) {
+    if (poorKeys.isEmpty) return ordered;
+
+    final slots = <int>[];
+    final healthy = <String>[];
+    final poor = <String>[];
+    final suggested = <String>[];
+    for (var i = 0; i < ordered.length; i++) {
+      final k = ordered[i];
+      if (suggestedKeys.contains(k)) {
+        slots.add(i);
+        suggested.add(k);
+      } else if (favoriteKeys.contains(k)) {
+        slots.add(i);
+        (poorKeys.contains(k) ? poor : healthy).add(k);
+      }
+    }
+    if (poor.isEmpty) return ordered;
+
+    final refilled = [...healthy, ...poor, ...suggested];
+    final out = [...ordered];
+    for (var i = 0; i < slots.length; i++) {
+      out[slots[i]] = refilled[i];
+    }
+    return out;
   }
 
   /// Renvoie [themeKeys] avec, en tête, la clé du thème auquel l'utilisateur a

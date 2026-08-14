@@ -161,3 +161,117 @@ lu jusqu'ici ne retire une `FeedThemeSection` favorite (ni `_filterSections`, ni
 `_dedupeSectionsInOrder`, ni `_dropEmptySuggested`, ni `_capSectionsToFit`), et
 une section favorite vide se rend en empty-state visible. Deux pistes restent à
 départager côté terrain, cf. la PR.
+
+---
+
+## Itération 3 — compromis d'affichage V1 (règles PO)
+
+**Cadrage PO du 2026-08-14.** Les itérations 1 et 2 traitaient la composition
+comme un problème d'*ordre*. Le PO tranche autrement : le vrai sujet est ce
+qu'on fait d'un bloc **pauvre**, et il faut deux réponses distinctes plutôt
+qu'une seule. Cette itération remplace donc les filets hérités (seuils
+maigre/riche, dépriorisation binaire) par un contrat explicite en deux régimes.
+
+> **La pénurie masque, la pauvreté déclasse.** Un bloc n'est jamais retiré
+> parce qu'il est *moins bon* — seulement parce qu'il n'a rien à montrer. Et un
+> bloc masqué doit toujours pouvoir être expliqué à l'utilisateur.
+
+### Règle 1 — déclassement (contenu faible / curation pauvre)
+
+Un bloc qui a de quoi s'afficher mais dont la curation du jour est en retrait
+**reste affiché** : il descend sous les autres blocs choisis, et **garde sa
+priorité sur les sections « Choisie pour vous »**. Un choix de l'utilisateur
+passe toujours avant une suggestion.
+
+Critère : score de bloc < `kPoorBlockScoreRatio` (0,5) × la **médiane** des
+blocs favoris scorés du jour. Médiane et non moyenne (insensible au bloc
+vedette) ; seuil relatif et non absolu, parce que `blockScore` est une somme de
+scores backend dont l'échelle varie selon l'utilisateur et le jour. Inactif
+sous `kPoorDemotionMinBlocks` (3) blocs scorés — une médiane sur 2 points ne
+veut rien dire. Le jour où tout est bon, personne n'est déclassé : le
+déclassement dit « ce bloc est en retrait *aujourd'hui* », jamais « ce bloc est
+mauvais ».
+
+Le déclassement est **gelé avec l'ordre du jour**, dans la même entrée de prefs
+(`tournee_score_order_v1`, champ `poor`) et à partir des mêmes scores. Sans ce
+gel, un « Voir +10 » ferait remonter un bloc déclassé sous les doigts de
+l'utilisateur.
+
+**Arbitrage avec l'itération 2.** Un bloc *placé* par l'utilisateur pouvait
+jusqu'ici être déclassé — c'est la seule exception au « le score ne déplace pas
+un bloc placé », et elle est assumée : elle ne mord que sous la moitié de la
+médiane, et elle **relègue** au lieu de masquer. L'ordre composé continue de
+gouverner entre blocs sains.
+
+### Règle 2 — masquage (bloc vide)
+
+Un bloc qui n'atteint pas `kSectionMinItems` (3) articles **après** réinjection
+de ceux que la dédup inter-sections lui avait pris sort du flux. Le backfill
+vise donc désormais le plancher d'affichage (au lieu de 2) : c'est la dernière
+chance d'un bloc avant masquage, et c'est ce qui sauve le cas rapporté — un
+thème dont le héros a pris les meilleurs articles les récupère et reste affiché.
+
+Renversement assumé du contrat « section source/veille toujours visible, même
+vide » (empty-state) : le PO préfère un flux propre, **à la condition stricte**
+que le masquage soit dit. Deux garde-fous anti-clignotement : seules les
+sections au fetch **résolu** (`_resolvedSectionKeys`) et non-`isPlaceholder`
+sont jugées — sinon chaque bloc disparaîtrait puis réapparaîtrait au fil des
+10-15 recompositions du fan-out.
+
+### Règle 3 — la modal doit l'expliquer (point de vigilance)
+
+`FluxContinuState.starvedFavoriteKeys` porte les clés retirées faute
+d'articles. « Mes favoris » les rend explicites, à deux niveaux :
+
+- un bandeau en tête de la section « Blocs de ta page L'Essentiel » quand au
+  moins un bloc est masqué (« … pas assez d'articles disponibles. Il revient
+  dès qu'il y en a. ») ;
+- un badge `_StarvedBadge` « Pas assez d'articles » sur la ligne concernée, qui
+  **prime** sur le badge « Peu d'articles » (plus précis).
+
+Le favori reste listé et gardera sa place demain : masqué pour la journée n'est
+pas retiré des favoris. C'est ce qui distingue le nouveau comportement du bug
+d'origine — la disparition silencieuse reste interdite.
+
+### Fichiers
+
+- `providers/tournee_order_prefs_provider.dart` — `kSectionMinItems`,
+  `kPoorBlockScoreRatio`, `kPoorDemotionMinBlocks` remplacent
+  `kThinSectionMaxItems` / `kRichSectionMinItems` / `kThinDemotionRichThreshold`.
+- `providers/flux_continu_provider.dart` — `_poorFavoriteKeys`,
+  `_demotePoorBlocks`, `_dropStarvedSections` ; backfill au plancher ; gel du
+  déclassement dans `_freezeScoreOrder` / `_loadScoreOrderForToday`. L'ancien
+  couple `thinKeys`/`demote` de `_orderedTourneeKeys` (mort depuis que
+  `kTourneeScoreSortEnabled` est à `true`) disparaît.
+- `services/tournee_progress_service.dart` — `poor` dans l'entrée du jour +
+  `loadPoorKeysForToday`. Rétro-compatible : entrée sans `poor` ⇒ ensemble vide,
+  pas d'invalidation.
+- `models/flux_continu_models.dart` — `starvedFavoriteKeys`.
+- `widgets/manage_favorites_sheet.dart` — `_StarvedHint` + `_StarvedBadge`.
+
+Aucun changement backend, aucune migration.
+
+### Tests
+
+`flux_continu_sources_test.dart` — nouveau groupe « compromis d'affichage » :
+masquage + `starvedFavoriteKeys`, backfill qui sauve un bloc vidé par la dédup
+(cas Technologie/Environnement), déclassement d'un bloc pauvre qui **reste**
+affiché, inactivité du déclassement quand les blocs se valent et sous 3 blocs
+scorés.
+`flux_continu_block_score_order_test.dart` — l'exception « bloc placé mais
+pauvre » est testée explicitement, en regard du cas nominal (ordre composé
+rendu tel quel).
+`flux_continu_tournee_order_test.dart` — le test « thème à 1 item jamais
+masqué » devient « masqué, et dit comme tel ».
+
+Les fichiers qui testent l'**ordre** ou des **courses** padent leurs fixtures au
+plancher (`_atLeastFloor`, padding non scoré pour ne pas fausser `blockScore`) :
+sans quoi une fixture à 1-2 articles serait masquée et rendrait inobservable ce
+que ces tests visent.
+
+### Vérification
+
+Suite mobile rejouée localement sur le SDK épinglé (Flutter 3.38.6) :
+`flutter test test/features/flux_continu` ⇒ 726 tests, 1 échec **préexistant**
+(`theme_section_screen_test.dart` — « ThemeDetailFooter + discovery render even
+when section.hasMore is true »), identique avant et après ce changement.

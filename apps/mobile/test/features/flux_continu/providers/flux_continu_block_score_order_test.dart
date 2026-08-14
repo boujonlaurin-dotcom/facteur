@@ -15,6 +15,8 @@ import 'package:facteur/features/feed/providers/feed_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart'
+    show kSectionMinItems;
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
 import 'package:facteur/features/flux_continu/services/tournee_progress_service.dart';
@@ -92,7 +94,26 @@ FeedResponse _feed(List<String> ids, {double? score}) =>
 
 /// Variante à score **par article** — nécessaire dès qu'un bloc mélange des
 /// articles que la dédup inter-sections lui prendra et des articles à lui.
-FeedResponse _feedOf(List<({String id, double? score})> items) {
+/// Complète un bloc **non vide** jusqu'au plancher d'affichage
+/// [kSectionMinItems] avec des articles **non scorés**.
+///
+/// Deux propriétés indispensables ici : le bloc atteint le plancher (sinon il
+/// serait masqué et l'ordre testé deviendrait inobservable), et son score reste
+/// **exactement** celui des articles écrits par le test — un article sans
+/// `recommendationReason` ne contribue pas à `blockScore`.
+List<({String id, double? score})> _atLeastFloor(
+  List<({String id, double? score})> items,
+) =>
+    items.isEmpty
+        ? items
+        : [
+            ...items,
+            for (var i = items.length; i < kSectionMinItems; i++)
+              (id: '${items.first.id}_pad$i', score: null),
+          ];
+
+FeedResponse _feedOf(List<({String id, double? score})> rawItems) {
+  final items = _atLeastFloor(rawItems);
   return FeedResponse(
     items: [
       for (final item in items)
@@ -483,13 +504,36 @@ void main() {
       expect(themeOrder(state), ['c', 'b', 'a']);
     });
 
-    test('un bloc placé par l\'utilisateur n\'est jamais déplacé par le score',
-        () async {
-      // Bug « l'ordre des favoris ne se reflète pas dans la Tournée ». Avant,
-      // le score l'emportait sur l'ordre manuel dès qu'il départageait : 'c',
-      // placé en tête mais pauvre (1 article), coulait en queue — l'ordre
-      // composé dans « Mes favoris » n'était donc pas celui rendu. Le rang d'un
-      // bloc placé est un choix, pas une estimation.
+    test('le score ne déplace pas un bloc placé par l\'utilisateur', () async {
+      // Bug « l'ordre des favoris ne se reflète pas dans la Tournée » : le rang
+      // d'un bloc placé est un choix, pas une estimation. Ici les trois blocs
+      // sont également fournis (300 chacun) ⇒ aucun n'est en retrait ⇒ l'ordre
+      // composé dans « Mes favoris » est rendu tel quel.
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_customized_v1': true,
+        'tournee_order_v1': ['theme:c', 'theme:b', 'theme:a'],
+      });
+      stubThemes(
+        {'a': 3, 'b': 3, 'c': 3},
+        scores: const {'a': 100, 'b': 100, 'c': 100},
+      );
+      final container = await buildContainer(themeSlugs: ['a', 'b', 'c']);
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      expect(themeOrder(state), ['c', 'b', 'a']);
+    });
+
+    test(
+        'seule exception : un bloc placé mais pauvre est déclassé en queue de '
+        'bloc favori (règle PO V1)', () async {
+      // Arbitrage assumé entre deux règles produit : « l'ordre composé est
+      // respecté » et « un bloc de curation pauvre est déclassé ». La seconde
+      // ne l'emporte que dans un cas net — score sous la moitié de la médiane
+      // des blocs favoris du jour — et elle **relègue** sans jamais masquer :
+      // 'c' reste rendu, il passe simplement derrière 'b' et 'a'.
+      // Médiane {c:100, b:300, a:300} = 300 ⇒ seuil 150 ⇒ seul 'c' est pauvre.
       SharedPreferences.setMockInitialValues(<String, Object>{
         'tournee_customized_v1': true,
         'tournee_order_v1': ['theme:c', 'theme:b', 'theme:a'],
@@ -503,7 +547,8 @@ void main() {
 
       final state = await settle(container);
 
-      expect(themeOrder(state), ['c', 'b', 'a']);
+      // 'b' puis 'a' gardent leur ordre composé relatif ; 'c' passe en queue.
+      expect(themeOrder(state), ['b', 'a', 'c']);
     });
 
     test(
