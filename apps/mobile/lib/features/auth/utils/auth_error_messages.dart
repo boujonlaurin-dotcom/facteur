@@ -92,12 +92,38 @@ class AuthErrorMessages {
     // OAuth / Social login
     // ============================================
 
+    // GoTrue renvoie ce message quand le provider n'est pas activé côté
+    // Supabase. Sans cas dédié, il tombait dans le fourre-tout `provider`
+    // ci-dessous — un « Erreur lors de la connexion avec ce service » qui ne
+    // dit ni à l'utilisateur ni au support que la config serveur est en cause.
+    // Cf. docs/bugs/bug-apple-sso-provider-not-enabled.md.
+    if (lowerMessage.contains('provider is not enabled') ||
+        lowerMessage.contains('unsupported provider')) {
+      return 'Cette méthode de connexion est momentanément indisponible. '
+          'Utilise ton email et ton mot de passe en attendant.';
+    }
+
+    // Nonce rejeté par GoTrue : le jeton Apple ne correspond pas au nonce
+    // envoyé. Rejouer le flux depuis zéro règle le cas.
+    if (lowerMessage.contains('nonce')) {
+      return 'La connexion a expiré avant d\'aboutir. Réessaie.';
+    }
+
+    // Le Bundle ID n'est pas déclaré dans les client IDs autorisés du provider
+    // Apple côté Supabase — même symptôme utilisateur, cause serveur.
+    if (lowerMessage.contains('audience') ||
+        lowerMessage.contains('invalid client')) {
+      return 'Cette méthode de connexion est momentanément indisponible. '
+          'Utilise ton email et ton mot de passe en attendant.';
+    }
+
     if (lowerMessage.contains('oauth') || lowerMessage.contains('provider')) {
       return 'Erreur lors de la connexion avec ce service.';
     }
 
     if (lowerMessage.contains('popup closed') ||
-        lowerMessage.contains('cancelled')) {
+        lowerMessage.contains('cancelled') ||
+        lowerMessage.contains('canceled')) {
       return 'Connexion annulée.';
     }
 
