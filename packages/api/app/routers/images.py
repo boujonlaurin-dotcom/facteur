@@ -64,5 +64,12 @@ async def proxy_image(url: str = Query(..., min_length=8, max_length=2048)) -> R
     return Response(
         content=body,
         media_type=content_type,
-        headers=_CACHE_HEADERS,
+        headers={
+            **_CACHE_HEADERS,
+            # Opt-out explicite du GZipMiddleware global (`app/main.py`) :
+            # JPEG/PNG/WebP sont déjà compressés, les regzipper coûte du CPU sur
+            # l'unique worker uvicorn pour ~0 octet gagné. Starlette saute la
+            # compression dès qu'une réponse pose elle-même `Content-Encoding`.
+            "Content-Encoding": "identity",
+        },
     )

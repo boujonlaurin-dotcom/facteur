@@ -497,34 +497,62 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   Future<FluxContinuState> _fetchAll() async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
 
+    final digestFuture = _safe<DualDigestResponse>(
+      () => _digestRepo.fetchBothDigests(),
+      'fetchBothDigests',
+    );
+    final topThemesFuture = _safe<List<TopTheme>>(
+      () => _fluxRepo.getTopThemes(),
+      'getTopThemes',
+      fallback: const <TopTheme>[],
+    );
+    final essentielFuture = _safe<EssentielFetchResult>(
+      // Passe le mode explicitement : `isSerene` est posé en synchrone avant
+      // l'`invalidateSelf` du listener serein, donc à jour ici — pas de
+      // dépendance à la persistance DB de la préférence au moment du refetch.
+      () async =>
+          (await _essentielRepo.fetch(serein: isSerene)) ??
+          (
+            articles: const <EssentielArticle>[],
+            newSinceMorning: 0,
+            carousel: null,
+          ),
+      'fetchEssentiel',
+      fallback: (
+        articles: const <EssentielArticle>[],
+        newSinceMorning: 0,
+        carousel: null,
+      ),
+    );
+
+    // Le héros ne dépend QUE de `/api/essentiel`, mais attendait jusqu'ici le
+    // `Future.wait` complet — donc la plus lente des trois, en pratique
+    // `/api/digest/both` (deux digests rendus, chacun portant le texte intégral
+    // des articles). On peint donc la pile dès que l'Essentiel atterrit, sans
+    // attendre le digest : c'est le premier contenu réel que l'utilisateur voit.
+    //
+    // L'émission reste un **squelette** (`_composeSkeleton`, `isSkeleton: true`)
+    // : seul le héros s'hydrate, les sections aval gardent leurs placeholders.
+    // C'est ce qui préserve les invariants existants — `emitProgressive`
+    // (plus bas) teste `mounted.isSkeleton` pour décider d'émettre la Phase 1,
+    // et un état non-squelette ici l'aurait désarmé, figeant la page haute.
+    unawaited(
+      essentielFuture.then((early) {
+        if (_disposed || early == null || early.articles.isEmpty) return;
+        if (!(state.valueOrNull?.isSkeleton ?? false)) return;
+        _essentielCarousel = early.carousel;
+        _essentiel = _buildEssentielSection(
+          early.articles,
+          newSinceMorning: early.newSinceMorning,
+        );
+        state = AsyncData(_composeSkeleton(isSerene));
+      }),
+    );
+
     final results = await Future.wait([
-      _safe<DualDigestResponse>(
-        () => _digestRepo.fetchBothDigests(),
-        'fetchBothDigests',
-      ),
-      _safe<List<TopTheme>>(
-        () => _fluxRepo.getTopThemes(),
-        'getTopThemes',
-        fallback: const <TopTheme>[],
-      ),
-      _safe<EssentielFetchResult>(
-        // Passe le mode explicitement : `isSerene` est posé en synchrone avant
-        // l'`invalidateSelf` du listener serein, donc à jour ici — pas de
-        // dépendance à la persistance DB de la préférence au moment du refetch.
-        () async =>
-            (await _essentielRepo.fetch(serein: isSerene)) ??
-            (
-              articles: const <EssentielArticle>[],
-              newSinceMorning: 0,
-              carousel: null,
-            ),
-        'fetchEssentiel',
-        fallback: (
-          articles: const <EssentielArticle>[],
-          newSinceMorning: 0,
-          carousel: null,
-        ),
-      ),
+      digestFuture,
+      topThemesFuture,
+      essentielFuture,
     ]);
     final dual = results[0] as DualDigestResponse?;
     final topThemes = (results[1] as List<TopTheme>?) ?? const <TopTheme>[];
