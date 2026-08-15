@@ -65,9 +65,9 @@ const RESOURCES = {"version.json": "f054a6f707f540f8ea20652a32028be8",
 "assets/packages/phosphor_flutter/lib/fonts/Phosphor-Bold.ttf": "8fedcf7067a22a2a320214168689b05c",
 "assets/packages/phosphor_flutter/lib/fonts/Phosphor.ttf": "003d691b53ee8fab57d5db497ddc54db",
 "reset-password.html": "55abf02dbadfe0e9c531305c62fbf29d",
-"main.dart.js": "f4c77605b88c34d15786aa6d1c32d1ff",
+"main.dart.js": "8ece567f6497df1d6a82c08df4c467a5",
 "email-confirmation.html": "ac115775cbd8a949a4c666e687510e43",
-"flutter_bootstrap.js": "ef5285656b4dbf4cd411d53636d9c09f",
+"flutter_bootstrap.js": "13813425f87f0d8506e339e235d910ee",
 "manifest.json": "d7eddc4cd63df39a919eddaf81649c6f"};
 // The application shell files that are downloaded before a service worker can
 // start.
