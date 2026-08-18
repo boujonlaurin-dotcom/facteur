@@ -7,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../models/article_deck.dart';
+import 'next_section_hint.dart';
 
 /// Part de largeur d'écran dont la page **de gauche** retarde pendant le
 /// mouvement. 0 = pas de parallaxe, 1 = page figée. Repris de la sémantique
@@ -45,6 +46,27 @@ const double _kEndBumpMax = 32;
 /// et un retour haptique calé dessus ne se déclencherait jamais.
 const double _kEndBumpHapticAt = _kEndBumpMax * 0.6;
 
+/// Amplitude du rebond de rappel (Story 34.2) : de quoi découvrir la tranche de
+/// l'article suivant, pas de quoi croire qu'on a changé de page.
+const double _kSwipeHintTravel = 34;
+
+/// Délai après l'ouverture du deck avant de jouer le rebond — le temps que le
+/// reader ait fini de se poser, sinon le rappel se joue sur un écran encore en
+/// train d'apparaître et ne se voit pas.
+const Duration _kSwipeHintDelay = Duration(milliseconds: 900);
+
+const Duration _kSwipeHintOut = Duration(milliseconds: 240);
+const Duration _kSwipeHintBack = Duration(milliseconds: 380);
+
+/// Hauteur réservée sous la bulle « section suivante » : le pill du footer du
+/// reader (82 + 8) et la ligne du nudge de scroll qui le surplombe. La bulle se
+/// pose au-dessus des deux, jamais par-dessus.
+const double _kNextSectionHintInset = 150;
+
+/// Durée d'affichage de la bulle avant qu'elle ne s'efface d'elle-même. Elle
+/// souffle la suite, elle ne la réclame pas : rien à fermer, rien à viser.
+const Duration _kNextSectionHintDuration = Duration(milliseconds: 3600);
+
 /// Pile d'articles navigable au swipe horizontal.
 ///
 /// Une page = un article. Le rendu de la page est délégué à [pageBuilder], qui
@@ -61,6 +83,9 @@ class ArticleDeckView extends StatefulWidget {
     required this.deck,
     required this.pageBuilder,
     this.onArticleChanged,
+    this.shouldPlaySwipeHint,
+    this.onSwipeHintPlayed,
+    this.onAdvanceToSection,
   });
 
   final ArticleDeckPayload deck;
@@ -71,6 +96,17 @@ class ArticleDeckView extends StatefulWidget {
   /// Notifie un changement d'article **validé** (fin de geste), jamais un
   /// simple survol pendant le drag.
   final void Function(int fromIndex, int toIndex)? onArticleChanged;
+
+  /// Consulté une fois à l'ouverture du deck : faut-il jouer le rebond qui
+  /// rappelle que le swipe existe (Story 34.2) ? `null` = jamais.
+  final Future<bool> Function()? shouldPlaySwipeHint;
+
+  /// Le rebond a effectivement été joué (à comptabiliser côté planificateur).
+  final VoidCallback? onSwipeHintPlayed;
+
+  /// L'utilisateur demande la section suivante depuis le dernier article.
+  /// L'hôte remplace alors le deck courant par [ArticleDeckPayload] fourni.
+  final void Function(ArticleDeckPayload next)? onAdvanceToSection;
 
   @override
   State<ArticleDeckView> createState() => _ArticleDeckViewState();
@@ -86,10 +122,35 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
   /// Course de sur-défilement en tête de deck (1ᵉʳ article tiré vers la droite).
   final ValueNotifier<double> _backPull = ValueNotifier<double>(0);
 
+  /// Course de sur-défilement en fin de deck (dernier article tiré vers la
+  /// gauche), quand une section suivante existe.
+  final ValueNotifier<double> _forwardPull = ValueNotifier<double>(0);
+
+  /// Bulle « glisse pour {section suivante} » actuellement soufflée.
+  bool _showNextSectionHint = false;
+  Timer? _nextSectionHintTimer;
+
   /// Vrai tant que le retour haptique du mur de fin n'a pas été rejoué : il ne
   /// se réarme qu'une fois le geste revenu au repos, sinon un doigt maintenu
   /// contre le mur ferait vibrer en continu.
   bool _endBumpArmed = true;
+
+  /// Rebond de rappel en cours : un vrai drag l'annule (le geste réel prime
+  /// toujours sur l'indice), un simple tap le laisse finir sa course.
+  bool _hintPlaying = false;
+
+  /// Le doigt a touché l'écran : plus aucun rappel sur ce deck.
+  bool _hintBlocked = false;
+
+  /// Deck de la section suivante, résolu une fois à l'ouverture : le bouton doit
+  /// être monté **avant** qu'on arrive au dernier article, sinon il apparaît
+  /// d'un coup au lieu de se lever. Coût : la mise à plat d'**une** section, le
+  /// chaînage restant paresseux au-delà (cf. `tourneeArticleDeck`).
+  ArticleDeckPayload? _nextSectionDeck;
+
+  bool get _isLastArticle => _settledIndex == widget.deck.articles.length - 1;
+
+  bool get _hasNextSection => _nextSectionDeck != null;
 
   @override
   void initState() {
@@ -97,14 +158,19 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
     _settledIndex = widget.deck.initialIndex;
     _controller = PageController(initialPage: _settledIndex);
     _webViewLock.addListener(_onWebViewLockChanged);
+    _nextSectionDeck = widget.deck.nextSectionDeck?.call();
+    _scheduleSwipeHint();
+    if (_isLastArticle) _flashNextSectionHint();
   }
 
   @override
   void dispose() {
     _webViewLock.removeListener(_onWebViewLockChanged);
+    _nextSectionHintTimer?.cancel();
     _controller.dispose();
     _webViewLock.dispose();
     _backPull.dispose();
+    _forwardPull.dispose();
     super.dispose();
   }
 
@@ -128,12 +194,28 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification.depth != 0) return false;
 
+    // Le doigt prend la main sur la pile : le rebond de rappel s'efface. Sa
+    // trajectoire est de toute façon supplantée par le drag ; ce drapeau
+    // l'empêche seulement de « ramener » la pile après coup, en travers du
+    // geste réel.
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _hintPlaying = false;
+    }
+
     if (notification is ScrollUpdateNotification ||
         notification is ScrollEndNotification) {
       final metrics = notification.metrics;
       final overscroll = metrics.minScrollExtent - metrics.pixels;
       _backPull.value = overscroll > 0 ? overscroll : 0;
-      _handleEndBump(metrics.pixels - metrics.maxScrollExtent);
+      final forward = metrics.pixels - metrics.maxScrollExtent;
+      if (_hasNextSection) {
+        // Fin de deck avec une suite : le sur-défilement n'est plus un mur mais
+        // une porte — il porte l'affordance « → {section suivante} ».
+        _forwardPull.value = forward > 0 ? forward : 0;
+      } else {
+        _handleEndBump(forward);
+      }
     }
 
     if (notification is ScrollEndNotification) {
@@ -149,6 +231,7 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
       if (target != _settledIndex) {
         final previous = _settledIndex;
         setState(() => _settledIndex = target);
+        if (_isLastArticle) _flashNextSectionHint();
         unawaited(HapticFeedback.selectionClick());
         // La surface d'origine suit la lecture pour se rouvrir au bon endroit
         // (cf. `ArticleDeckPayload.onArticleSettled`). Notifié d'ici, et non du
@@ -200,12 +283,92 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
     }
   }
 
+  /// Arme le rebond de rappel du geste (Story 34.2).
+  ///
+  /// Muet sur le dernier article : il n'y a rien à découvrir derrière lui, le
+  /// rebond ne montrerait que le mur de fin de deck.
+  void _scheduleSwipeHint() {
+    final shouldPlay = widget.shouldPlaySwipeHint;
+    if (shouldPlay == null || _isLastArticle) return;
+    Future<void>.delayed(_kSwipeHintDelay, () async {
+      if (!_canPlaySwipeHint) return;
+      if (!await shouldPlay()) return;
+      if (!_canPlaySwipeHint) return;
+      await _playSwipeHint();
+    });
+  }
+
+  bool get _canPlaySwipeHint =>
+      mounted &&
+      !_hintBlocked &&
+      !_isLastArticle &&
+      !_webViewLock.value &&
+      _controller.hasClients &&
+      _controller.position.hasContentDimensions;
+
+  /// La pile part vers la gauche et revient : c'est la **vraie** transition du
+  /// deck jouée au ralenti (l'article suivant apparaît sur la tranche, avec sa
+  /// parallaxe et son ombre d'arête), pas une décoration posée par-dessus.
+  Future<void> _playSwipeHint() async {
+    final base = _controller.position.pixels;
+    _hintPlaying = true;
+    widget.onSwipeHintPlayed?.call();
+    await _controller.animateTo(
+      base + _kSwipeHintTravel,
+      duration: _kSwipeHintOut,
+      curve: Curves.easeOutCubic,
+    );
+    // Le doigt a repris la main pendant l'aller : on ne ramène rien, la
+    // physique du geste réel a déjà pris le relais.
+    if (!mounted || !_hintPlaying || !_controller.hasClients) {
+      _hintPlaying = false;
+      return;
+    }
+    await _controller.animateTo(
+      base,
+      duration: _kSwipeHintBack,
+      curve: Curves.easeOutCubic,
+    );
+    _hintPlaying = false;
+  }
+
+  void _resetPulls() {
+    _backPull.value = 0;
+    _forwardPull.value = 0;
+  }
+
+  void _onPointerDown() {
+    // Un doigt sur l'écran = l'utilisateur pilote : plus de rappel à venir sur
+    // ce deck. Un rappel *déjà en cours* n'est pas annulé ici — un simple tap
+    // ne déplace pas la pile, et l'abandonner en plein aller la laisserait
+    // décalée, sans physique pour la ramener (cf. `_ensureResting`). Seul un
+    // vrai drag l'interrompt (cf. `_onScrollNotification`).
+    _hintBlocked = true;
+  }
+
   void _onPointerUp() {
     if (_backPull.value >= _kBackPullCommit && _settledIndex == 0) {
       _backPull.value = 0;
       unawaited(HapticFeedback.lightImpact());
       Navigator.of(context).maybePop(widget.deck.articles[_settledIndex]);
+      return;
     }
+    // Tirage franc au-delà du dernier article : on passe à la section suivante.
+    // Même grammaire qu'en tête de deck (tirer révèle, relâcher valide) — la
+    // séquence se déroule donc de bout en bout au même geste, sans jamais viser
+    // un bouton.
+    final next = _nextSectionDeck;
+    if (next != null &&
+        _isLastArticle &&
+        _forwardPull.value >= _kBackPullCommit) {
+      _forwardPull.value = 0;
+      _advanceToSection(next);
+    }
+  }
+
+  void _advanceToSection(ArticleDeckPayload next) {
+    unawaited(HapticFeedback.lightImpact());
+    widget.onAdvanceToSection?.call(next);
   }
 
   @override
@@ -222,8 +385,9 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
         // l'écran apparaît sous la page qui glisse vers la droite.
         _buildBackAffordance(context),
         Listener(
+          onPointerDown: (_) => _onPointerDown(),
           onPointerUp: (_) => _onPointerUp(),
-          onPointerCancel: (_) => _backPull.value = 0,
+          onPointerCancel: (_) => _resetPulls(),
           child: NotificationListener<ScrollNotification>(
             onNotification: _onScrollNotification,
             child: PageView.builder(
@@ -233,15 +397,20 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
               // rebond qui porte l'affordance de retour en tête de deck, et il
               // doit se comporter pareil sur Android et iOS. Borné en fin de
               // deck (cf. `DeckBumpScrollPhysics`).
+              // Le mur de fin ne se dresse que s'il n'y a **rien** derrière :
+              // avec une section suivante, le rebond redevient libre — c'est
+              // lui qui porte l'affordance « → {section} », comme en tête de
+              // deck.
               physics: locked
                   ? const NeverScrollableScrollPhysics()
-                  : const PageScrollPhysics(parent: DeckBumpScrollPhysics()),
+                  : PageScrollPhysics(
+                      parent: DeckBumpScrollPhysics(walled: !_hasNextSection),
+                    ),
               itemBuilder: (context, index) {
                 final slot = ArticleDeckSlot(
                   index: index,
                   length: widget.deck.articles.length,
                   isActive: index == _settledIndex,
-                  showSegments: widget.deck.showPositionIndicator,
                   webViewLock: _webViewLock,
                 );
                 return AnimatedBuilder(
@@ -256,7 +425,112 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
             ),
           ),
         ),
+        // Bout de section : la suite de la tournée, nommée. Deux temps, aucun
+        // bouton — une bulle qui souffle le geste à l'arrivée, puis
+        // l'affordance révélée pendant le tirage.
+        if (!locked) ...[
+          _buildForwardAffordance(context),
+          _buildNextSectionHint(context),
+        ],
       ],
+    );
+  }
+
+  /// Souffle la bulle « glisse pour {section} », puis la laisse s'effacer.
+  ///
+  /// Rejouée à chaque arrivée sur le dernier article : c'est une indication de
+  /// bout de section, pas un rappel d'apprentissage — elle ne se mérite pas et
+  /// ne se referme pas à la main.
+  void _flashNextSectionHint() {
+    if (!_hasNextSection) return;
+    _nextSectionHintTimer?.cancel();
+    setState(() => _showNextSectionHint = true);
+    _nextSectionHintTimer = Timer(_kNextSectionHintDuration, () {
+      if (mounted) setState(() => _showNextSectionHint = false);
+    });
+  }
+
+  /// Bulle éphémère du bout de section. **Jamais interactive** : elle passe les
+  /// gestes à l'article en dessous et s'efface seule.
+  Widget _buildNextSectionHint(BuildContext context) {
+    final next = _nextSectionDeck;
+    if (next == null) return const SizedBox.shrink();
+    final visible = _showNextSectionHint && _isLastArticle;
+    return Positioned(
+      left: FacteurSpacing.space4,
+      right: FacteurSpacing.space4,
+      bottom: MediaQuery.viewPaddingOf(context).bottom + _kNextSectionHintInset,
+      child: IgnorePointer(
+        child: AnimatedSlide(
+          offset: visible ? Offset.zero : const Offset(0, 0.3),
+          duration: FacteurDurations.medium,
+          curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            opacity: visible ? 1 : 0,
+            duration: FacteurDurations.medium,
+            child: Align(child: NextSectionHint(label: next.sectionLabel)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// « {section suivante} → » révélé sous la page quand on tire le **dernier**
+  /// article vers la gauche. Miroir exact de l'affordance de retour en tête de
+  /// deck : tirer révèle, relâcher valide.
+  Widget _buildForwardAffordance(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final next = _nextSectionDeck;
+    if (next == null) return const SizedBox.shrink();
+    return ValueListenableBuilder<double>(
+      valueListenable: _forwardPull,
+      builder: (context, pull, _) {
+        if (pull <= 0 || !_isLastArticle) return const SizedBox.shrink();
+        final t = (pull / _kBackPullReveal).clamp(0.0, 1.0);
+        final armed = pull >= _kBackPullCommit;
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.only(right: FacteurSpacing.space4),
+            child: Opacity(
+              opacity: t,
+              child: Transform.translate(
+                offset: Offset(12 * (1 - t), 0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Icon(
+                      PhosphorIcons.arrowRight(
+                        armed
+                            ? PhosphorIconsStyle.bold
+                            : PhosphorIconsStyle.regular,
+                      ),
+                      size: 20,
+                      color: armed ? colors.primary : colors.textTertiary,
+                    ),
+                    const SizedBox(height: FacteurSpacing.space2),
+                    SizedBox(
+                      width: 90,
+                      child: Text(
+                        next.sectionLabel,
+                        textAlign: TextAlign.end,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: armed ? colors.primary : colors.textTertiary,
+                          fontWeight: armed ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -372,8 +646,7 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
                         overflow: TextOverflow.ellipsis,
                         style: textTheme.bodySmall?.copyWith(
                           color: armed ? colors.primary : colors.textTertiary,
-                          fontWeight:
-                              armed ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: armed ? FontWeight.w600 : FontWeight.w400,
                         ),
                       ),
                     ),
@@ -411,11 +684,17 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
 /// [createBallisticSimulation] ; ni l'un ni l'autre ne peut échouer.
 @visibleForTesting
 class DeckBumpScrollPhysics extends BouncingScrollPhysics {
-  const DeckBumpScrollPhysics({super.parent});
+  const DeckBumpScrollPhysics({super.parent, this.walled = true});
+
+  /// Dresse le mur de fin. `false` quand une **section suivante** existe : le
+  /// sur-défilement redevient un rebond libre, qui porte alors l'affordance de
+  /// passage à la section suivante (Story 34.2). Il n'y a plus rien à signifier
+  /// par une butée — il y a quelque chose derrière.
+  final bool walled;
 
   @override
   DeckBumpScrollPhysics applyTo(ScrollPhysics? ancestor) =>
-      DeckBumpScrollPhysics(parent: buildParent(ancestor));
+      DeckBumpScrollPhysics(parent: buildParent(ancestor), walled: walled);
 
   /// Course réellement parcourue par la pile pour [travel] pixels de doigt
   /// au-delà du dernier article : hyperbole `M·t/(t+M)`.
@@ -437,7 +716,7 @@ class DeckBumpScrollPhysics extends BouncingScrollPhysics {
     // `PageView` augmentent). C'est le seul sens à amortir : vers l'arrière, le
     // deck se navigue normalement.
     final overscroll = position.pixels - position.maxScrollExtent;
-    if (offset < 0 && overscroll >= 0) {
+    if (walled && offset < 0 && overscroll >= 0) {
       // Dès le premier pixel au-delà du bord, sinon `BouncingScrollPhysics`
       // transmet ce premier pas 1:1 (il n'amortit qu'un sur-défilement déjà
       // constitué) et la pile saute dans le mur au lieu d'y arriver.
@@ -454,7 +733,7 @@ class DeckBumpScrollPhysics extends BouncingScrollPhysics {
     double velocity,
   ) {
     final overscroll = position.pixels - position.maxScrollExtent;
-    if (overscroll > 0) {
+    if (walled && overscroll > 0) {
       // Retour au repos **garanti** : ressort du mur vers le dernier article.
       //
       // La vitesse sortante du doigt au lâcher est jetée (`min(0, velocity)`) —

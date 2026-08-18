@@ -409,6 +409,36 @@ class AnalyticsService {
     await _capturePostHog('article_swipe_nav', props);
   }
 
+  /// Rebond de rappel du geste de swipe joué dans le reader (Story 34.2). Son
+  /// taux de conversion se lit contre `article_swipe_nav`.
+  Future<void> trackArticleSwipeHint({required String sectionKey}) async {
+    final props = {
+      'session_id': _sessionId,
+      'section_key': sectionKey,
+    };
+    await _logEvent('article_swipe_hint', props);
+    await _capturePostHog('article_swipe_hint', props);
+  }
+
+  /// Passage à la section suivante depuis le dernier article d'un deck
+  /// (Story 34.2) — mesure la lecture de la tournée « d'une traite ».
+  Future<void> trackDeckSectionAdvance({
+    required String fromSectionKey,
+    required String toSectionKey,
+    required int fromDeckSize,
+    required int toDeckSize,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'from_section_key': fromSectionKey,
+      'to_section_key': toSectionKey,
+      'from_deck_size': fromDeckSize,
+      'to_deck_size': toDeckSize,
+    };
+    await _logEvent('deck_section_advance', props);
+    await _capturePostHog('deck_section_advance', props);
+  }
+
   /// @deprecated Use [trackFeedSession] instead.
   Future<void> trackFeedScroll(
     double scrollDepthPercent,
