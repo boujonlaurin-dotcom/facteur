@@ -1634,7 +1634,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     // hydratée, le squelette rend la **vraie** carte héros interactive à la
     // place du placeholder statique : le premier contenu réel n'attend plus la
     // Phase 1 (= `/api/digest/both`, le plus lourd des 3 appels de base).
-    final heroSection = data?.sections.whereType<EssentielSection>().firstOrNull;
+    // Scan borné aux builds qui en ont l'usage (squelette à hydrater, ou log
+    // `hero_paint_ms` pas encore émis) — après, chaque rebuild l'économise.
+    final heroSection = (isSkeleton || !_heroPaintLogged)
+        ? data?.sections.whereType<EssentielSection>().firstOrNull
+        : null;
     final heroHydrated = heroSection?.articles.isNotEmpty ?? false;
     // `hero_paint_ms` — premier frame qui peint la carte héros **hydratée**
     // (articles résolus), que ce soit via le squelette (B0) ou le rendu plein.
@@ -1651,19 +1655,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     // remplacement du ListView squelette par le CustomScrollView plein
     // repartirait en haut de page (positions de scroll non partagées entre
     // deux scrollables distincts).
-    if (_wasSkeleton && !isSkeleton) {
-      final flipOffset =
-          _scroll.hasClients && _scroll.offset > 0 ? _scroll.offset : null;
-      if (flipOffset != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_scroll.hasClients) return;
-          final target =
-              math.min(flipOffset, _scroll.position.maxScrollExtent);
-          if ((_scroll.offset - target).abs() > 1.0) {
-            _scroll.jumpTo(target);
-          }
-        });
-      }
+    if (_wasSkeleton && !isSkeleton && _scroll.hasClients && _scroll.offset > 0) {
+      final flipOffset = _scroll.offset;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scroll.hasClients) return;
+        final target = math.min(flipOffset, _scroll.position.maxScrollExtent);
+        if ((_scroll.offset - target).abs() > 1.0) {
+          _scroll.jumpTo(target);
+        }
+      });
     }
     _wasSkeleton = isSkeleton;
     return Scaffold(
@@ -1695,7 +1695,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
               )
             else
               state.when(
-                loading: () => const _FluxContinuSkeleton(sections: []),
+                // Même contrôleur que la branche squelette principale (arbres
+                // toujours exclusifs) : parité de comportement si ce chemin
+                // défensif est atteint.
+                loading: () => _FluxContinuSkeleton(
+                  sections: const [],
+                  controller: _scroll,
+                ),
                 error: (e, _) => _ErrorView(
                   error: e,
                   onRetry: () =>

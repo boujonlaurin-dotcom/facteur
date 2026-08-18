@@ -515,15 +515,19 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     unawaited(_reconcilePlacementThenSync());
   }
 
-  /// B2 — lecture **sans initialisation** : `ref.read` seulement si [provider]
-  /// est déjà vivant (`ref.exists`), `null` sinon. Les sites de composition
-  /// squelette/compose lisaient ces providers lazy via `ref.read`, ce qui les
-  /// initialisait « en douce » pendant le bootstrap et faisait partir leurs
-  /// fetchs en concurrence de `/api/essentiel` (D2). Une fois les providers
-  /// vivants (vague 2/3), sémantique strictement identique à `ref.read` ;
-  /// avant, dégrade exactement comme le cold start historique (valeur absente).
-  T? _peekValue<T>(ProviderBase<T> provider) =>
-      ref.exists(provider) ? ref.read(provider) : null;
+  /// B2 — valeur résolue de [provider], **sans l'initialiser pendant le
+  /// bootstrap** : les sites de composition squelette/compose lisaient ces
+  /// providers lazy via `ref.read`, ce qui les initialisait « en douce » et
+  /// faisait partir leurs fetchs en concurrence de `/api/essentiel` (D2).
+  /// La suppression est bornée à la fenêtre de bootstrap : hors bootstrap,
+  /// `ref.read` normal (sémantique historique — un futur appelant pré-vague 3
+  /// ne dégraderait pas en silence). Pendant le bootstrap, un provider pas
+  /// encore vivant rend `null` — dégrade exactement comme le cold start
+  /// historique (valeur absente).
+  T? _peekValue<T>(ProviderBase<AsyncValue<T>> provider) {
+    if (!_bootstrapping) return ref.read(provider).valueOrNull;
+    return ref.exists(provider) ? ref.read(provider).valueOrNull : null;
+  }
 
   /// B1 vague 2 — force l'init des providers dont dépend le **seed des
   /// coquilles** de la Tournée (favoris thème/sujet, favoris source, catalogue
@@ -543,23 +547,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// seedait 0 coquille pour tout le cycle. Erreurs/timeout avalés : on seede
   /// alors en dégradé, comme avant.
   Future<void> _awaitShellPrereqs() async {
-    if (ref.read(userInterestsProvider).hasValue &&
-        ref.read(userSourcesStateProvider).hasValue &&
-        ref.read(veilleActiveConfigProvider).hasValue) {
-      return;
-    }
+    // Erreurs avalées **par future** : un prérequis en échec rapide (ex. veille
+    // 404) ne doit pas court-circuiter l'attente des deux autres.
     try {
       await Future.wait<void>([
-        ref.read(userInterestsProvider.future).then((_) {}).catchError((_) {}),
-        ref
-            .read(userSourcesStateProvider.future)
-            .then((_) {})
-            .catchError((_) {}),
-        ref
-            .read(veilleActiveConfigProvider.future)
-            .then((_) {})
-            .catchError((_) {}),
-      ]).timeout(_kSourceCatalogWait);
+        ref.read(userInterestsProvider.future),
+        ref.read(userSourcesStateProvider.future),
+        ref.read(veilleActiveConfigProvider.future),
+      ].map((f) => f.then<void>((_) {}, onError: (_) {})))
+          .timeout(_kSourceCatalogWait);
     } catch (e) {
       debugPrint('FluxContinu: shell prereqs unresolved: $e');
     }
@@ -664,11 +660,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // B1 vague 2 — gatée sur min(essentiel résolu, [_kHeroHeadStart]) : le
     // héros garde une tête d'avance, mais un essentiel pendu ne coûte jamais
     // plus de 600 ms au reste de la Phase 1 (le gate est borné, pas otage du
-    // timeout 8 s de l'essentiel).
-    await Future.any<Object?>([
-      essentielFuture,
-      Future<void>.delayed(_kHeroHeadStart),
-    ]);
+    // timeout 8 s de l'essentiel). La tête d'avance ne protège qu'un héros
+    // **pas encore peint** : hors squelette monté (revalidation SWR in-day,
+    // pull-to-refresh — l'early-emit ci-dessus y est un no-op), elle ne serait
+    // que du délai mort chargé au spinner → la vague 2 part immédiatement.
+    if (state.valueOrNull?.isSkeleton ?? true) {
+      await Future.any<Object?>([
+        essentielFuture,
+        Future<void>.delayed(_kHeroHeadStart),
+      ]);
+    }
     final digestFuture = _safe<DualDigestResponse>(
       () => _digestRepo.fetchBothDigests(),
       'fetchBothDigests',
@@ -940,7 +941,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// vides). Marque `isSkeleton: true`.
   FluxContinuState _composeSkeleton(bool isSerene) {
     final tournee = ref.read(tourneeOrderPrefsProvider);
-    final grilleAvailable = _peekValue(grilleProvider)?.valueOrNull?.today != null;
+    final grilleAvailable = _peekValue(grilleProvider)?.today != null;
     final sectionByKey = _tourneeSectionByKey();
     final orderedKeys = _orderedTourneeKeys(
       isSerene: isSerene,
@@ -982,7 +983,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// même label/accent que le rendu réel, `items` vide, `hasMore: false`. Le
   /// fan-out remplace ensuite chaque coquille en place (cf. [_upsertByKey]).
   List<FeedThemeSection> _shellThemeSections(List<FavoriteRef> refs) {
-    final interestsState = _peekValue(userInterestsProvider)?.valueOrNull;
+    final interestsState = _peekValue(userInterestsProvider);
     final sections = <FeedThemeSection>[];
     for (final favRef in refs) {
       final FeedThemeSection? shell = switch (favRef) {
@@ -1016,7 +1017,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   FeedThemeSection? _skeletonVeilleSection() {
-    final activeCfg = _peekValue(veilleActiveConfigProvider)?.valueOrNull;
+    final activeCfg = _peekValue(veilleActiveConfigProvider);
     if (activeCfg == null) return null;
     return FeedThemeSection(
       kind: SectionKind.veille,
@@ -1063,7 +1064,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   List<FeedThemeSection> _shellSourceSections(List<SourceFavoriteRef> favs) {
     if (favs.isEmpty) return const [];
     final catalog =
-        _peekValue(userSourcesProvider)?.valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider) ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
     final sections = <FeedThemeSection>[];
     for (final fav in favs) {
@@ -1095,7 +1096,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<TopTheme> usableSuggestions,
   ) {
     final catalog =
-        _peekValue(userSourcesProvider)?.valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider) ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
     final sections = <FeedThemeSection>[];
     for (final s in usableSuggestions) {
@@ -1137,7 +1138,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   FluxContinuState _compose(bool isSerene) {
     final tournee = ref.read(tourneeOrderPrefsProvider);
-    final grilleAvailable = _peekValue(grilleProvider)?.valueOrNull?.today != null;
+    final grilleAvailable = _peekValue(grilleProvider)?.today != null;
     final sectionByKey = _tourneeSectionByKey();
 
     // Cohérence Tournée — classification maigre/riche **et** scores de bloc, sur
@@ -1186,7 +1187,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Cloches « source rare » ayant du neuf non lu. Elles seules justifient le
     // rappel : une cloche silencieuse n'a rien à annoncer.
     final alerted =
-        _peekValue(alertsProvider)?.valueOrNull?.withNewContent ??
+        _peekValue(alertsProvider)?.withNewContent ??
             const <AlertItem>[];
 
     final rawOrdered = <FluxSection>[
@@ -1400,7 +1401,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// Les sujets custom (`themeSlug == null`) et thèmes absents du provider
   /// gardent 0.
   List<FluxSection> _stampFollowedCounts(List<FluxSection> sections) {
-    final themes = _peekValue(themesFollowedProvider)?.valueOrNull;
+    final themes = _peekValue(themesFollowedProvider);
     if (themes == null || themes.isEmpty) return sections;
     final bySlug = {for (final t in themes) t.slug: t.followedSourcesCount};
     return [
@@ -2208,7 +2209,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<TopTheme> topFallback,
   ) {
     final favorites =
-        _peekValue(userInterestsProvider)?.valueOrNull?.favorites ?? const [];
+        _peekValue(userInterestsProvider)?.favorites ?? const [];
 
     // Story 23.4 — la veille a un **slot dédié hors cap** : on la sépare des
     // favoris thème/sujet (cap = [_kMaxFavoriteSections]) puis on l'ajoute en
@@ -2226,7 +2227,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
     // Toujours rendre la veille quand une config est active, même si le favori
     // n'est pas (encore) dans la liste (favori orphelin / self-heal en cours).
-    final activeCfg = _peekValue(veilleActiveConfigProvider)?.valueOrNull;
+    final activeCfg = _peekValue(veilleActiveConfigProvider);
     if (veilleRef == null && activeCfg != null) {
       veilleRef = VeilleFavoriteRef(id: activeCfg.id);
     }
@@ -2282,7 +2283,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     UserInterestsState? interestsState,
   }) {
     final interests =
-        interestsState ?? _peekValue(userInterestsProvider)?.valueOrNull;
+        interestsState ?? _peekValue(userInterestsProvider);
     return switch (favRef) {
       ThemeFavoriteRef(:final slug) => _buildThemeSection(
           feed: feed,
@@ -2376,7 +2377,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// dérivé du `theme_label` de la `VeilleConfig` active (résolu via
   /// `veilleActiveConfigProvider`). Story 23.2 PR-4.
   FeedThemeSection? _buildVeilleSection(FeedResponse? feed) {
-    final activeCfg = _peekValue(veilleActiveConfigProvider)?.valueOrNull;
+    final activeCfg = _peekValue(veilleActiveConfigProvider);
     // Story 23.4 — section veille **toujours visible** quand une config est
     // active, même avec 0/1 article (état vide rendu par SectionBlock). On ne
     // la coupe plus sur un seuil min d'items ; `null` seulement sans config.
@@ -2414,7 +2415,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<SourceFavoriteRef>? favorites,
   ]) {
     final favs = favorites ??
-        _peekValue(userSourcesStateProvider)?.valueOrNull?.favorites ??
+        _peekValue(userSourcesStateProvider)?.favorites ??
         const <SourceFavoriteRef>[];
     // Story 10.2 — appartenance exclusive : une source n'est rendue dans la
     // Tournée que si elle est en mode « Essentiel » (sa clé `source:<id>` est
@@ -2559,9 +2560,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required List<TopTheme> suggestions,
     required bool isSerene,
   }) async {
-    final interestsState = _peekValue(userInterestsProvider)?.valueOrNull;
+    final interestsState = _peekValue(userInterestsProvider);
     final catalog =
-        _peekValue(userSourcesProvider)?.valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider) ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
 
     // Sources favorites résolues au catalogue (un favori absent du catalogue
@@ -2625,14 +2626,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // autres étaient fetchées puis jamais affichées (hors cap). Leurs coquilles
     // sont retirées : invisibles de toute façon (`_dropEmptySuggested`), mais
     // elles occuperaient un slot du quota suggestions avec une section vide.
-    final renderedKeySet = renderPos.keys.toSet();
     var suggestionReserveLeft = 1;
-    final fetchedSuggestions = <TopTheme>[
-      for (final s in usableSuggestions)
-        if (renderedKeySet.contains(_suggestionKey(s)) ||
-            (suggestionReserveLeft-- > 0))
-          s,
-    ];
+    final fetchedSuggestions = <TopTheme>[];
+    for (final s in usableSuggestions) {
+      if (renderPos.containsKey(_suggestionKey(s))) {
+        fetchedSuggestions.add(s);
+      } else if (suggestionReserveLeft-- > 0) {
+        fetchedSuggestions.add(s);
+      }
+    }
     final droppedCount = usableSuggestions.length - fetchedSuggestions.length;
     if (droppedCount > 0) {
       final fetchedKeys = <String>{
@@ -2644,73 +2646,75 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       ];
     }
 
-    final entries = <({String key, Future<void> Function() task})>[
-      // Thèmes / sujets / veille — tous fetchés quel que soit leur rang
-      // (thin-classification, block scores, modale favoris en dépendent).
-      for (final favRef in favorites)
-        (
-          key: _favRefSectionKey(favRef),
-          task: () => sectionTask(
-                () => _fetchOneTheme(favRef, isSerene),
-                (feed) => _buildFavoriteThemeSection(
-                  favRef,
-                  feed,
-                  isExplicitFavorite: isExplicitFavorite,
-                  interestsState: interestsState,
-                ),
-                // Upsert par clé : remplace la coquille seedée à sa position
-                // d'origine (ordre préservé) au lieu d'append (sinon doublon
-                // coquille + contenu).
-                (section) => _themes = _upsertByKey(_themes, section),
-                resolvedKey: _favRefSectionKey(favRef),
+    final entries = <({String key, Future<void> Function() task})>[];
+    // Thèmes / sujets / veille — tous fetchés quel que soit leur rang
+    // (thin-classification, block scores, modale favoris en dépendent).
+    for (final favRef in favorites) {
+      final key = _favRefSectionKey(favRef);
+      entries.add((
+        key: key,
+        task: () => sectionTask(
+              () => _fetchOneTheme(favRef, isSerene),
+              (feed) => _buildFavoriteThemeSection(
+                favRef,
+                feed,
+                isExplicitFavorite: isExplicitFavorite,
+                interestsState: interestsState,
               ),
-        ),
-      // Sources favorites.
-      for (final src in resolvedSources)
-        (
-          key: tourneeSourceKey(src.id),
-          task: () => sectionTask(
-                () => _fetchOneSource(src.id, isSerene),
-                (feed) => _buildSourceSection(feed: feed, source: src),
-                (section) => _sources = _upsertByKey(_sources, section),
-                resolvedKey: tourneeSourceKey(src.id),
-              ),
-        ),
-      // Suggérées « Choisie pour vous » (hors classification maigre/riche, mais
-      // marquées résolues sans effet — clé suggérée non favorite).
-      for (final s in fetchedSuggestions)
-        (
-          key: _suggestionKey(s),
-          task: () => sectionTask(
-                () => (s.kind == 'source' && s.sourceId != null)
-                    ? _fetchOneSource(s.sourceId!, isSerene)
-                    : _fetchOneTheme(
-                        ThemeFavoriteRef(slug: s.interestSlug),
-                        isSerene,
-                      ),
-                (feed) => _buildSuggestedSection(s, feed, sourceById),
-                // Upsert par clé : remplace la coquille suggérée seedée à sa
-                // position (Issue #1) au lieu d'append (sinon doublon coquille +
-                // contenu, et la coquille « poperait »).
-                (section) => _suggested = _upsertByKey(_suggested, section),
-                resolvedKey: _suggestionKey(s),
-                onEmpty: () =>
-                    _suggested = _removeByKey(_suggested, _suggestionKey(s)),
-              ),
-        ),
-    ];
-    // Tri par position de rendu. Les clés hors de l'ordre affiché (favoris
-    // masqués / au-delà du cap, réserve suggestion) passent en queue, ordre
-    // relatif d'origine préservé (elles restent fetchées).
-    final visible = [
-      for (final e in entries)
-        if (renderPos.containsKey(e.key)) e,
-    ]..sort((a, b) => renderPos[a.key]!.compareTo(renderPos[b.key]!));
-    final offscreen = [
-      for (final e in entries)
-        if (!renderPos.containsKey(e.key)) e,
-    ];
-    final tasks = [for (final e in [...visible, ...offscreen]) e.task];
+              // Upsert par clé : remplace la coquille seedée à sa position
+              // d'origine (ordre préservé) au lieu d'append (sinon doublon
+              // coquille + contenu).
+              (section) => _themes = _upsertByKey(_themes, section),
+              resolvedKey: key,
+            ),
+      ));
+    }
+    // Sources favorites.
+    for (final src in resolvedSources) {
+      final key = tourneeSourceKey(src.id);
+      entries.add((
+        key: key,
+        task: () => sectionTask(
+              () => _fetchOneSource(src.id, isSerene),
+              (feed) => _buildSourceSection(feed: feed, source: src),
+              (section) => _sources = _upsertByKey(_sources, section),
+              resolvedKey: key,
+            ),
+      ));
+    }
+    // Suggérées « Choisie pour vous » (hors classification maigre/riche, mais
+    // marquées résolues sans effet — clé suggérée non favorite).
+    for (final s in fetchedSuggestions) {
+      final key = _suggestionKey(s);
+      entries.add((
+        key: key,
+        task: () => sectionTask(
+              () => (s.kind == 'source' && s.sourceId != null)
+                  ? _fetchOneSource(s.sourceId!, isSerene)
+                  : _fetchOneTheme(
+                      ThemeFavoriteRef(slug: s.interestSlug),
+                      isSerene,
+                    ),
+              (feed) => _buildSuggestedSection(s, feed, sourceById),
+              // Upsert par clé : remplace la coquille suggérée seedée à sa
+              // position (Issue #1) au lieu d'append (sinon doublon coquille +
+              // contenu, et la coquille « poperait »).
+              (section) => _suggested = _upsertByKey(_suggested, section),
+              resolvedKey: key,
+              onEmpty: () => _suggested = _removeByKey(_suggested, key),
+            ),
+      ));
+    }
+    // Tri unique par rang de rendu. Les clés hors de l'ordre affiché (favoris
+    // masqués / au-delà du cap, réserve suggestion) prennent un rang de queue
+    // dérivé de leur index d'origine (ordre relatif préservé, elles restent
+    // fetchées) — sans dépendre de la stabilité de `List.sort` (non garantie).
+    final rank = <String, int>{
+      for (var i = 0; i < entries.length; i++)
+        entries[i].key: renderPos[entries[i].key] ?? renderedKeys.length + i,
+    };
+    entries.sort((a, b) => rank[a.key]!.compareTo(rank[b.key]!));
+    final tasks = [for (final e in entries) e.task];
 
     await _runWithConcurrency(tasks, _kPhase2FanoutConcurrency);
     _perfBoot('fanout_done_ms', ' tasks=${tasks.length} dropped=$droppedCount');
@@ -3041,7 +3045,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// section thème rendue. N'est appelé que quand l'ordre n'est pas personnalisé.
   List<String> _biasThemeKeysByMostFollowed(List<String> themeKeys) {
     if (themeKeys.length < 2) return themeKeys;
-    final interests = _peekValue(userInterestsProvider)?.valueOrNull;
+    final interests = _peekValue(userInterestsProvider);
     if (interests == null) return themeKeys;
 
     final counts = <String, int>{};
@@ -3133,7 +3137,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (state.valueOrNull != null) {
       state = AsyncData(_compose(isSerene));
     }
-    final interestsState = _peekValue(userInterestsProvider)?.valueOrNull;
+    final interestsState = _peekValue(userInterestsProvider);
     await _runWithConcurrency(
       [
         for (final favRef in picked)
@@ -3201,7 +3205,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       state = AsyncData(_compose(isSerene));
     }
     final catalog =
-        _peekValue(userSourcesProvider)?.valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider) ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
     final resolved = <Source>[
       for (final fav in picked)
