@@ -115,9 +115,86 @@ Grammaire existante (`[PERF] fluxContinu.<metric>=<ms>`), origine = entrée de
 Protocole de mesure : kill app + purge du snapshot Hive (simule le matin),
 3 runs avant/après sur staging.
 
-## Après (ce lot) : le paquet prioritaire passe devant — à compléter
+## Après (ce lot) : le paquet prioritaire passe devant
 
-_Sera complété en fin de lot : diagramme « après » + chiffres mesurés._
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 👤 Utilisateur
+    participant E as 🖥 Écran (squelette scrollable)
+    participant P as 📦 Provider (chef de tournée)
+    participant G as 🏤 Guichet unique (backend)
+
+    U->>E: ouvre l'app (cold boot du matin)
+    E->>P: build()
+    Note over P: peint le squelette<br/>(plus AUCUNE demande annexe :<br/>_peekValue lit sans initialiser)
+    P->>P: renouvelle le badge (JWT, ≤3 s)
+    rect rgb(235, 245, 235)
+        Note over P,G: VAGUE 1 — le paquet prioritaire, seul
+        P->>G: /api/essentiel (guichet vide, rien devant)
+    end
+    G-->>P: /api/essentiel répond
+    Note over E: ✅ la VRAIE carte héros (triable)<br/>remplace le placeholder dans le<br/>squelette : l'utilisateur trie déjà<br/>(15-20 s de budget pour la suite)
+    rect rgb(235, 240, 250)
+        Note over P,G: VAGUE 2 — à min(essentiel résolu, 600 ms)
+        par
+            P->>G: /api/digest/both
+            P->>G: /api/feed/top-themes
+            P->>G: kick favoris/sources/catalogue/veille
+        end
+    end
+    G-->>P: digest + top-thèmes répondent
+    Note over E: Phase 1 : haut de page réel.<br/>Un « rusher » qui a scrollé le<br/>squelette garde son offset au flip
+    rect rgb(250, 240, 230)
+        Note over P,G: VAGUE 3 — après la Phase 1
+        P->>G: listeners réseau différés (grille, alertes,<br/>thèmes suivis) + réconciliation placement (2 GETs)
+        par fan-out (3 en vol), dans l'ORDRE D'AFFICHAGE
+            P->>G: /api/feed sections visibles d'abord
+        end
+    end
+    Note over E: les suggestions jamais affichées ne<br/>sont plus fetchées (cap +1 de réserve)
+```
+
+Ce qui change, en une ligne chacune :
+
+- **B0** — le héros hydraté est peint dans le squelette dès la réponse de
+  `/api/essentiel` (vraie carte interactive), au lieu d'attendre le digest.
+- **B1** — 3 vagues : essentiel seul → digest/top-thèmes à
+  `min(essentiel, 600 ms)` → annexes après la Phase 1.
+- **B2** — plus d'initialisations furtives : `_peekValue` (lecture sans init) +
+  attente bornée (2 s) des prérequis avant le seed des coquilles (corrige la
+  course de `_pickFavorites`).
+- **B3** — fan-out dans l'ordre d'affichage (ordre custom/score/quota compris) ;
+  suggestions hors cap non fetchées, +1 de réserve pour `dismissSuggestion`.
+- **C1** — squelette scrollable (clamping), offset conservé au flip Phase 1.
+
+Coût assumé : `phase1_ms` peut prendre jusqu'à +600 ms (la tête d'avance du
+héros) — pendant lesquels l'utilisateur a déjà sa carte à trier.
+
+### Chiffres mesurés (build web local → API staging, compte QA, 18/08/2026)
+
+Protocole : purge du snapshot Hive (`flux_continu_cache` IndexedDB) + reload —
+simule le cold boot du matin. 3 runs `mode=cold` :
+
+| Run | `gate_ms` | `essentiel_resolved_ms` | `hero_paint_ms` | `phase1_ms` | héros avant Phase 1 |
+|---|---|---|---|---|---|
+| 1 | 1 425 | 5 621 | 5 499 | 6 567 | **~1,0 s** |
+| 2 | 874 | 6 766 | 6 671 | 8 851 | **~2,2 s** |
+| 3 | 768 | 4 815 | 4 721 | 6 131 | **~1,4 s** |
+
+Avant ce lot, `hero_paint_ms ≈ phase1_ms` (le squelette rendait une silhouette
+statique jusqu'à l'arrivée du digest) : la carte à trier apparaît désormais
+**1 à 2 s plus tôt** dès que `/api/essentiel` répond — et c'est la borne basse :
+sur ces runs staging, l'essentiel lui-même est lent (~4-6 s, unique worker) ;
+tout gain côté backend se transfère intégralement au héros, plus au digest.
+`fanout_done_ms tasks=11 dropped=0` (compte QA sans suggestion hors cap ; le
+test unitaire couvre `dropped>0`).
+
+QA visuelle (Playwright, viewport 390×844) : la vraie carte héros (article +
+météo) est peinte dans le squelette avant la Phase 1 ; un scroll pendant le
+squelette (coquilles « Ta tournée se prépare… ») conserve sa position au flip
+Phase 1 — pas de retour en haut, sections remplies en place. Console sans
+erreur inattendue (bruit connu au boot : stripe/gstatic).
 
 ## Étapes du lot
 
