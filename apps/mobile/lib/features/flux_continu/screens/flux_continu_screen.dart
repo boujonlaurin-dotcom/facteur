@@ -17,7 +17,6 @@ import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shimmer/shimmer.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/routes.dart';
@@ -50,6 +49,7 @@ import '../../sources/models/source_theme_filters.dart';
 import '../../tour/providers/guided_tour_controller.dart';
 import '../../tour/tour_anchors.dart';
 import '../../../shared/strings/loader_error_strings.dart';
+import '../../../shared/widgets/loaders/facteur_bike_loader.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/auto_grow_nudge_provider.dart';
 import '../providers/edition_essentiel_provider.dart';
@@ -2522,35 +2522,28 @@ Widget essentielHeroSkeletonForTest() => const _HeroSkeleton();
 
 /// Placeholder du hero « Ton Essentiel » pendant le squelette.
 ///
-/// L'en-tête (pastille date/météo, filet accent, titre, chapô) est propre à
-/// l'écran ; la pile, elle, délègue à [TriageStackSkeleton] — **la même
-/// silhouette** que l'attente rendue dans [EssentielHiFiCard] quand le tri n'est
-/// pas encore déterminé. Une seule définition, donc les deux attentes ne peuvent
-/// pas diverger de la vraie pile. Il réserve la hauteur d'**ouverture** de la
-/// vraie carte (0 gardé) — celle-ci épouse son contenu et grandit ensuite vers
-/// le bas, donc réserver le pic de tri sur-réserverait et ferait sauter le feed
-/// à l'hydratation. Respire en shimmer (mêmes teintes que
-/// [SectionSkeletonCard]) pour se lire comme « l'Essentiel se prépare » et non
-/// comme une carte rognée.
+/// Deux moitiés, deux rôles :
+///
+/// - **l'en-tête** (propre à l'écran) porte [FacteurBikeLoader] + un hint
+///   rotatif. Il occupait avant les mêmes barres shimmer que le reste ; sur la
+///   `surface` crème ça ne se distinguait pas d'une carte blanche, ce qui est
+///   exactement le reproche utilisateur sur le cold boot. Il garde la hauteur
+///   réservée de la pastille date/météo (140) → aucun saut à l'hydratation ;
+/// - **la pile** délègue à [TriageStackSkeleton] — **la même silhouette** que
+///   l'attente rendue dans [EssentielHiFiCard] quand le tri n'est pas encore
+///   déterminé. Une seule définition, donc les deux attentes ne peuvent pas
+///   diverger de la vraie pile. Elle porte désormais son propre `Shimmer`
+///   (`standalone: true`), l'en-tête n'en fournissant plus.
+///
+/// L'ensemble réserve la hauteur d'**ouverture** de la vraie carte (0 gardé) —
+/// celle-ci épouse son contenu et grandit ensuite vers le bas, donc réserver le
+/// pic de tri sur-réserverait et ferait sauter le feed à l'hydratation.
 class _HeroSkeleton extends StatelessWidget {
   const _HeroSkeleton();
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    // Mêmes teintes que `SectionSkeletonCard` : le sweep est porté par le fond.
-    final base = colors.textTertiary.withValues(alpha: 0.10);
-    final highlight = colors.textTertiary.withValues(alpha: 0.04);
-
-    Widget bar({double? width, required double height, double radius = 6}) =>
-        Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            color: base,
-            borderRadius: BorderRadius.circular(radius),
-          ),
-        );
 
     return Container(
       // Mêmes constantes que `EssentielHiFiCard` (theme.dart) → alignement
@@ -2559,41 +2552,106 @@ class _HeroSkeleton extends StatelessWidget {
       decoration: facteurSurfaceCardDecoration(colors),
       child: Padding(
         padding: kEssentielCardPadding,
-        child: Shimmer.fromColors(
-          baseColor: base,
-          highlightColor: highlight,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // En-tête : pastille date/météo (140) + filet accent + titre/chapô.
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // En-tête : **pas** de shimmer. Là où la pile en dessous doit
+            // annoncer une géométrie (des cartes vont s'y poser), l'en-tête
+            // n'annonce rien d'utile — trois barres grises de plus faisaient
+            // justement lire l'attente comme une carte blanche. On y met donc
+            // le facteur en route : la même hauteur réservée (140, la pastille
+            // date/météo de `EssentielHiFiCard`), donc aucun saut à
+            // l'hydratation, mais l'attente prend un sens.
+            SizedBox(
+              height: 140,
+              child: Row(
                 children: [
-                  bar(width: 52, height: 140, radius: FacteurRadius.medium),
-                  const SizedBox(width: FacteurSpacing.space2),
+                  const FacteurBikeLoader(size: 108),
+                  const SizedBox(width: FacteurSpacing.space3),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        bar(width: 28, height: 3, radius: 2),
-                        const SizedBox(height: 10),
-                        bar(width: 150, height: 18),
-                        const SizedBox(height: 10),
-                        bar(width: double.infinity, height: 11),
+                        Text(
+                          'Ta tournée arrive',
+                          style:
+                              FacteurTypography.displaySmall(colors.textPrimary),
+                        ),
+                        const SizedBox(height: FacteurSpacing.space2),
+                        const _LoadingHintText(),
                       ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              // Silhouette de la pile, partagée avec l'attente **dans** la carte
-              // (`EssentielHiFiCard`) : une seule définition, donc les deux
-              // attentes ne peuvent pas diverger de la vraie pile. Le `Shimmer`
-              // est déjà fourni ici → `standalone: false`.
-              const TriageStackSkeleton(),
-            ],
-          ),
+            ),
+            const SizedBox(height: 6),
+            // Silhouette de la pile, partagée avec l'attente **dans** la carte
+            // (`EssentielHiFiCard`) : une seule définition, donc les deux
+            // attentes ne peuvent pas diverger de la vraie pile. Elle porte son
+            // propre `Shimmer` maintenant que l'en-tête n'en fournit plus
+            // (`standalone: true`).
+            const TriageStackSkeleton(standalone: true),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+/// Le texte d'attente du héros, qui tourne doucement dans les hints existants
+/// (`LoaderStrings.longLoadingHints`, le même ton postal que [LoadingView]).
+///
+/// Il change toutes les 2,6 s en fondu croisé : assez lent pour rester calme,
+/// assez vivant pour signaler que l'app travaille — un texte figé sur une
+/// attente longue se lit comme un écran bloqué. L'ordre de départ est aléatoire
+/// pour ne pas servir la même phrase à chaque ouverture.
+class _LoadingHintText extends StatefulWidget {
+  const _LoadingHintText();
+
+  @override
+  State<_LoadingHintText> createState() => _LoadingHintTextState();
+}
+
+class _LoadingHintTextState extends State<_LoadingHintText> {
+  static const _rotation = Duration(milliseconds: 2600);
+
+  Timer? _timer;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = math.Random().nextInt(LoaderStrings.longLoadingHints.length);
+    // Pas de rotation quand l'utilisateur a désactivé les animations système.
+    _timer = Timer.periodic(_rotation, (_) {
+      if (!mounted) return;
+      setState(() {
+        _index = (_index + 1) % LoaderStrings.longLoadingHints.length;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final hint = LoaderStrings.longLoadingHints[_index];
+
+    return AnimatedSwitcher(
+      duration: FacteurDurations.slow,
+      child: Text(
+        hint,
+        // La clé porte le texte : sans elle, `AnimatedSwitcher` voit le même
+        // type de widget et ne joue aucune transition.
+        key: ValueKey<String>(hint),
+        style: FacteurTypography.bodyMedium(colors.textTertiary),
       ),
     );
   }

@@ -34,6 +34,7 @@ import sentry_sdk
 import structlog
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
@@ -471,6 +472,31 @@ app = FastAPI(
     redirect_slashes=False,
 )
 
+
+# Compression gzip — les payloads de lecture sont dominés par du texte d'article
+# (`html_content`), qui compresse ~5x. Mesuré sur un digest editorial_v1 réaliste
+# (6 sujets x 3 articles, corps ~12 KB chacun) : `/api/digest/both` passe de
+# 934 KB à 179 KB. Le même gain porte sur `/api/feed` (~14 appels au cold boot de
+# la Tournée) et `/api/contents/{id}`, qui sérialisent le même `html_content`.
+# Cf. docs/maintenance/maintenance-cold-boot-essentiel-perf.md.
+#
+# `minimum_size=1000` : en-dessous, l'en-tête gzip coûte plus que ce qu'il
+# économise (202 preparing, ACK d'écriture, health checks restent en clair).
+# Starlette ne compresse que si le client envoie `Accept-Encoding: gzip` — Dio
+# l'envoie par défaut sur mobile et décompresse de façon transparente, donc
+# aucun changement client n'est requis.
+#
+# `compresslevel=6` et non le défaut 9 de Starlette. Mesuré sur un payload
+# digest représentatif (434 KB) : niveau 6 → 73,4 KB en 16,5 ms, niveau 9 →
+# 73,0 KB en 24,0 ms. Soit 0,5 % d'octets gagnés pour 1,45x de CPU — un mauvais
+# échange sur l'unique worker uvicorn que se partagent tous les appels du cold
+# boot. Le proxy d'images s'exclut explicitement (`Content-Encoding: identity`,
+# cf. `app/routers/images.py`) : regzipper du JPEG ne gagne rien.
+#
+# Ajouté AVANT RequestContextMiddleware/CORS : l'ordre `add_middleware` est
+# inverse (dernier ajouté = outermost), donc GZip reste *sous* CORS et ne touche
+# jamais aux réponses de préflight.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
 
 # RequestContextMiddleware : pose le path/method de la requête courante dans des
 # ContextVar consommés par les listeners SQLAlchemy (long_session_checkout).

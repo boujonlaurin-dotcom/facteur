@@ -8,7 +8,7 @@ import '../../feed/models/content_model.dart';
 /// section thème **riche** porte le CTA « Ajouter des sources » ; au-dessus,
 /// « Tout lire › ». Co-localisé avec le modèle (importé par le widget de rendu
 /// [SectionBlock] et par le provider) pour éviter une dépendance widget→provider.
-/// Pendant du seuil maigre/riche `kThinSectionMaxItems`/`kRichSectionMinItems`.
+/// Pendant du plancher d'affichage `kSectionMinItems`.
 const int kThemeFewFollowedSources = 6; // < 6 = « peu de sources »
 
 /// Identifier for the **type** of a Flux Continu V1.8 section.
@@ -765,12 +765,23 @@ class FluxContinuState {
   /// `false` ; le screen rend un scaffold placeholder tant qu'il est `true`.
   final bool isSkeleton;
 
-  /// Cohérence Tournée — `sectionKey` des sections favorites (thème/source)
-  /// **maigres** (≤1 survivant post-dédup) du cycle courant, qu'elles soient
-  /// affichées ou poussées hors cap. Source unique consommée par la modal
+  /// Cohérence Tournée — `sectionKey` des sections favorites **sous le plancher
+  /// d'affichage** (`kSectionMinItems`) après la dédup inter-sections, qu'elles
+  /// soient affichées ou poussées hors cap. Source unique consommée par la modal
   /// « Mes favoris » pour signaler les favoris peu fournis. Vide tant que rien
   /// n'est classé (squelette / aucun favori résolu).
   final Set<String> thinFavoriteKeys;
+
+  /// `sectionKey` des blocs **retirés du flux du jour faute d'articles** : sous
+  /// le plancher `kSectionMinItems` même après réinjection des articles pris par
+  /// la dédup. Sous-ensemble de [thinFavoriteKeys] restreint aux blocs qui n'ont
+  /// pas pu être sauvés.
+  ///
+  /// Invariant produit : un bloc absent doit s'expliquer. La modal « Mes
+  /// favoris » s'en sert pour dire « Pas assez d'articles » plutôt que de laisser
+  /// l'utilisateur devant une section manquante sans raison — le symptôme même
+  /// du bug « blocs favoris absents de l'Essentiel ».
+  final Set<String> starvedFavoriteKeys;
 
   /// Score de bloc (somme des 3 meilleurs `score_total`, cf.
   /// `utils/section_score_order.dart`) par `sectionKey`, pour les seules
@@ -793,6 +804,7 @@ class FluxContinuState {
     this.error,
     this.isSkeleton = false,
     this.thinFavoriteKeys = const {},
+    this.starvedFavoriteKeys = const {},
     this.blockScores = const {},
   });
 
@@ -808,6 +820,7 @@ class FluxContinuState {
     bool clearError = false,
     bool? isSkeleton,
     Set<String>? thinFavoriteKeys,
+    Set<String>? starvedFavoriteKeys,
     Map<String, double>? blockScores,
   }) {
     return FluxContinuState(
@@ -821,6 +834,7 @@ class FluxContinuState {
       error: clearError ? null : (error ?? this.error),
       isSkeleton: isSkeleton ?? this.isSkeleton,
       thinFavoriteKeys: thinFavoriteKeys ?? this.thinFavoriteKeys,
+      starvedFavoriteKeys: starvedFavoriteKeys ?? this.starvedFavoriteKeys,
       blockScores: blockScores ?? this.blockScores,
     );
   }
