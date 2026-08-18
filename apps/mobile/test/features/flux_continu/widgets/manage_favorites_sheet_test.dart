@@ -5,6 +5,10 @@
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
+import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
+import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart'
+    show tourneeThemeKey;
 import 'package:facteur/features/flux_continu/providers/tournee_smart_arrangement_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/manage_favorites_sheet.dart';
 import 'package:facteur/features/grille/models/grille_models.dart';
@@ -85,6 +89,17 @@ class _StubCatalogNotifier extends UserSourcesNotifier {
 
   @override
   Future<List<Source>> build() async => _initial;
+}
+
+/// Sert un état de Tournée figé : la sheet y lit les blocs peu fournis
+/// (`thinFavoriteKeys`) et ceux **masqués faute d'articles**
+/// (`starvedFavoriteKeys`) pour les signaler à l'utilisateur.
+class _StubFluxNotifier extends FluxContinuNotifier {
+  _StubFluxNotifier(this._state);
+  final FluxContinuState _state;
+
+  @override
+  Future<FluxContinuState> build() async => _state;
 }
 
 class _StubVeilleNotifier extends VeilleActiveConfigNotifier {
@@ -183,6 +198,7 @@ Future<({_SpyInterestsNotifier interests, _SpySourcesNotifier sources})>
   ManageFavoritesEntry entry = ManageFavoritesEntry.essentiel,
   bool throwOnSourceSet = false,
   bool throwOnInterestSet = false,
+  FluxContinuState? flux,
 }) async {
   final spyInterests = _SpyInterestsNotifier(interests)
     ..throwOnSet = throwOnInterestSet;
@@ -205,6 +221,8 @@ Future<({_SpyInterestsNotifier interests, _SpySourcesNotifier sources})>
         tourneeSmartArrangementProvider.overrideWith(
           (ref) => TourneeSmartArrangementNotifier(ref),
         ),
+        if (flux != null)
+          fluxContinuProvider.overrideWith(() => _StubFluxNotifier(flux)),
       ],
       child: _wrap(
         Builder(
@@ -226,6 +244,73 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
+
+  // ── Compromis d'affichage V1 : la modal doit expliquer un bloc masqué ──────
+  group('blocs masqués faute d\'articles (point de vigilance PO)', () {
+    testWidgets(
+        'un favori masqué porte le badge « Pas assez d\'articles » + le '
+        'bandeau d\'explication', (tester) async {
+      await _openSheet(
+        tester,
+        interests: _interests(
+          favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        ),
+        sources: _sources(),
+        flux: FluxContinuState(
+          isLoading: false,
+          starvedFavoriteKeys: {tourneeThemeKey('tech')},
+        ),
+      );
+
+      // Le favori RESTE listé : masqué pour la journée n'est pas retiré.
+      expect(find.text('Technologie'), findsOneWidget);
+      expect(find.text('Pas assez d\'articles'), findsOneWidget);
+      expect(
+        find.textContaining('pas assez d\'articles disponibles'),
+        findsOneWidget,
+        reason: 'l\'absence doit être expliquée en clair, pas seulement '
+            'signalée par une pastille',
+      );
+    });
+
+    testWidgets('un favori masqué ne porte pas AUSSI « Peu d\'articles »',
+        (tester) async {
+      // Les deux états se recouvrent (un bloc masqué est forcément peu fourni) :
+      // on ne montre que le plus précis des deux.
+      await _openSheet(
+        tester,
+        interests: _interests(
+          favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        ),
+        sources: _sources(),
+        flux: FluxContinuState(
+          isLoading: false,
+          thinFavoriteKeys: {tourneeThemeKey('tech')},
+          starvedFavoriteKeys: {tourneeThemeKey('tech')},
+        ),
+      );
+
+      expect(find.text('Pas assez d\'articles'), findsOneWidget);
+      expect(find.text('Peu d\'articles'), findsNothing);
+    });
+
+    testWidgets('aucun bloc masqué ⇒ ni badge ni bandeau', (tester) async {
+      await _openSheet(
+        tester,
+        interests: _interests(
+          favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        ),
+        sources: _sources(),
+        flux: const FluxContinuState(isLoading: false),
+      );
+
+      expect(find.text('Pas assez d\'articles'), findsNothing);
+      expect(
+        find.textContaining('pas assez d\'articles disponibles'),
+        findsNothing,
+      );
+    });
+  });
 
   testWidgets('rend le titre + les deux sections + AJOUTER + GÉRER',
       (tester) async {

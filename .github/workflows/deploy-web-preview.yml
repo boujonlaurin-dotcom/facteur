@@ -28,7 +28,7 @@ on:
       slug:
         description: 'Sous-chemin de la preview (ex. swipe-nav)'
         required: true
-        default: 'swipe-nav'
+        default: 'blocs-favoris'
       api_base_url:
         description: 'URL de l API visée par le build'
         required: true
