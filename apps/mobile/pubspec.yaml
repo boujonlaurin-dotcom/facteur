@@ -27,6 +27,18 @@ dependencies:
   
   # Supabase Auth
   supabase_flutter: ^2.5.0
+
+  # Sign in with Apple natif (iOS/macOS). Le flux navigateur
+  # `signInWithOAuth(OAuthProvider.apple)` affichait les erreurs GoTrue en JSON
+  # brut dans Safari, hors de portée de l'app.
+  # Cf. docs/bugs/bug-apple-sso-provider-not-enabled.md.
+  # Épinglé <8.0.0 : sign_in_with_apple 8.x exige Flutter >= 3.41, alors que la
+  # CI de tests (.github/workflows/mobile-tests.yml) tourne en 3.38.6.
+  sign_in_with_apple: ^7.0.1
+
+  # SHA-256 du nonce Apple (déjà présent en transitif, déclaré explicitement
+  # car importé directement par core/auth/apple_sign_in.dart).
+  crypto: ^3.0.3
   
   # RevenueCat
   purchases_flutter: ^9.10.5

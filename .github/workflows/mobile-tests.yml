@@ -90,3 +90,12 @@ jobs:
             test/features/flux_continu/providers/flux_continu_tournee_order_test.dart \
             test/features/flux_continu/providers/flux_continu_block_score_order_test.dart \
             test/features/flux_continu/utils/section_score_order_test.dart
+      # Élargissement du paquet (cf. commentaire ci-dessus) : le dossier auth
+      # est vert en entier et garde l'entrée dans l'app — inscription,
+      # connexion, SSO Apple. Le SSO Apple est resté cassé en prod jusqu'à ce
+      # qu'un utilisateur envoie une capture d'écran
+      # (docs/bugs/bug-apple-sso-provider-not-enabled.md) ; c'est précisément le
+      # genre de chemin qui mérite un gate.
+      - name: Tests d'authentification
+        if: ${{ !cancelled() }}
+        run: flutter test test/features/auth/
