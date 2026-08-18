@@ -262,6 +262,62 @@ void main() {
     expect(stamps(), findsNothing);
   });
 
+  testWidgets(
+      'un retour élastique ne décale pas la carte suivante (bug « drift »)',
+      (tester) async {
+    final decisions = await pumpHarness(tester);
+
+    final restDx = tester.getTopLeft(find.text('card-a')).dx;
+
+    // 1. Drag SOUS le seuil (80 < 0,25 × 800) puis relâché : la carte revient
+    //    élastiquement. C'est ce geste — et lui seul — qui charge
+    //    `_resetStartExtent`, la source du drift.
+    await tester.drag(find.byType(TriageSwipeCard), const Offset(80, 0));
+    await tester.pumpAndSettle();
+    expect(decisions, isEmpty, reason: 'sous le seuil ⇒ aucune décision');
+    expect(
+      tester.getTopLeft(find.text('card-a')).dx,
+      restDx,
+      reason: 'le retour élastique doit ramener la carte exactement au repos',
+    );
+
+    // 2. Décision franche : la carte sort, l'index avance, le State est réutilisé
+    //    (même GlobalKey) et `didUpdateWidget` rejoue `_resetController.reset()`.
+    await tester.drag(find.byType(TriageSwipeCard), swipeRight);
+    await tester.pumpAndSettle();
+    expect(decisions, ['keep-a']);
+
+    // 3. La carte fraîche doit être au repos strict. Avant le fix, le `reset()`
+    //    de `didUpdateWidget` notifiait `_onResetTick`, qui restaurait
+    //    `_resetStartExtent` (80 px) dans `_dragExtent` — la carte suivante
+    //    s'affichait translatée, sans le moindre geste de l'utilisateur.
+    expect(find.text('card-b'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('card-b')).dx,
+      restDx,
+      reason: 'aucun décalage ne doit survivre au changement de carte',
+    );
+  });
+
+  testWidgets(
+      'le drift ne revient pas non plus après un retour élastique vers la '
+      'gauche', (tester) async {
+    final decisions = await pumpHarness(tester);
+    final restDx = tester.getTopLeft(find.text('card-a')).dx;
+
+    // Le signe de `_resetStartExtent` suit celui du drag : un drift gauche est
+    // le miroir exact du droit (les deux ont été observés en prod).
+    await tester.drag(find.byType(TriageSwipeCard), const Offset(-80, 0));
+    await tester.pumpAndSettle();
+    expect(decisions, isEmpty);
+
+    await tester.drag(find.byType(TriageSwipeCard), swipeLeft);
+    await tester.pumpAndSettle();
+
+    expect(decisions, ['pass-a']);
+    expect(tester.getTopLeft(find.text('card-b')).dx, restDx);
+  });
+
   testWidgets('un drag réel pose bien le tampon correspondant', (tester) async {
     await pumpHarness(tester);
 

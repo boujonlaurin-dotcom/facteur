@@ -6,6 +6,7 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/screens/flux_continu_screen.dart';
 import 'package:facteur/features/flux_continu/utils/section_fit.dart';
 import 'package:facteur/features/flux_continu/widgets/triage_stack_skeleton.dart';
+import 'package:facteur/shared/widgets/loaders/facteur_bike_loader.dart';
 
 /// Garde-fou du squelette « Ton Essentiel ». Le bug : l'ancien placeholder était
 /// un bloc plat de 260 px, bien plus court que la carte de tri réelle → carte
@@ -16,14 +17,21 @@ import 'package:facteur/features/flux_continu/widgets/triage_stack_skeleton.dart
 /// (`@visibleForTesting`). Monter `FluxContinuScreen` entier n'est pas jouable
 /// (Supabase/Hive/GoRouter), comme pour `firstPreparingSectionIndex`.
 void main() {
+  // Conservé entre le pump et les assertions : `_HeroSkeleton` est privé, donc
+  // `find.byType` lui est inaccessible — `find.byWidget` sur l'instance rendue
+  // est le seul moyen de mesurer la carte **entière** (et non un sous-arbre).
+  late Widget skeleton;
+
   Future<void> pumpSkeleton(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    skeleton = essentielHeroSkeletonForTest();
     await tester.pumpWidget(
       MaterialApp(
         theme: FacteurTheme.lightTheme,
         home: Scaffold(
-          body: SingleChildScrollView(
-            child: essentielHeroSkeletonForTest(),
-          ),
+          body: SingleChildScrollView(child: skeleton),
         ),
       ),
     );
@@ -35,6 +43,17 @@ void main() {
     expect(find.byType(Shimmer), findsOneWidget);
   });
 
+  testWidgets('montre le facteur en route plutôt qu\'un en-tête gris',
+      (tester) async {
+    await pumpSkeleton(tester);
+
+    // Le reproche utilisateur sur le cold boot était « un écran blanc » : à
+    // l'ancien contraste, l'en-tête shimmer ne se distinguait pas de la carte.
+    // L'attente doit maintenant porter une illustration et un texte.
+    expect(find.byType(FacteurBikeLoader), findsOneWidget);
+    expect(find.text('Ta tournée arrive'), findsOneWidget);
+  });
+
   testWidgets('réserve la géométrie de la carte de tri, bien au-delà de 260 px',
       (tester) async {
     await pumpSkeleton(tester);
@@ -43,9 +62,11 @@ void main() {
     // dépasse déjà l'ancien bloc plat de 260 px.
     expect(kTriageCardHeight, greaterThan(260));
 
-    // La carte rendue (en-tête/pastille + pile de 2 cartes + barre d'actions)
-    // dépasse encore une carte silhouette : plus de tranche rognée.
-    final rendered = tester.getSize(find.byType(Shimmer)).height;
+    // La carte rendue (en-tête + pile de 2 cartes + barre d'actions) dépasse
+    // encore une carte silhouette : plus de tranche rognée. Mesurée sur la
+    // carte entière — la mesurer sur le `Shimmer` ne couvrirait plus que la
+    // pile depuis que l'en-tête porte le facteur au lieu d'un sweep.
+    final rendered = tester.getSize(find.byWidget(skeleton)).height;
     expect(rendered, greaterThan(kTriageCardHeight));
   });
 
