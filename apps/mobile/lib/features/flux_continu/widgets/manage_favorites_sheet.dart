@@ -449,11 +449,13 @@ class _ManageFavoritesContentState
     final tournee = ref.watch(tourneeOrderPrefsProvider);
     final tabOrder = ref.watch(tabOrderPrefsProvider);
     final isSerene = ref.watch(sereinToggleProvider).enabled;
-    // Cohérence Tournée — clés favorites maigres (peu d'articles aujourd'hui).
-    // Set vide si la Tournée n'est pas (encore) chargée → aucun indicateur
-    // (dégradation propre).
-    final thinKeys = ref.watch(fluxContinuProvider).valueOrNull?.thinFavoriteKeys ??
-        const <String>{};
+    // Cohérence Tournée — clés favorites maigres (peu d'articles aujourd'hui) et
+    // clés carrément **retirées** du flux du jour faute d'articles. Sets vides
+    // si la Tournée n'est pas (encore) chargée → aucun indicateur (dégradation
+    // propre : on ne prétend pas qu'un bloc manque tant qu'on ne sait pas).
+    final flux = ref.watch(fluxContinuProvider).valueOrNull;
+    final thinKeys = flux?.thinFavoriteKeys ?? const <String>{};
+    final starvedKeys = flux?.starvedFavoriteKeys ?? const <String>{};
 
     // ── Membership ────────────────────────────────────────────────────────
     final favoriteThemeSlugs = <String>[
@@ -697,6 +699,17 @@ class _ManageFavoritesContentState
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
+                // Point de vigilance PO : un bloc masqué faute d'articles ne doit
+                // jamais laisser l'utilisateur deviner. On le dit ici en clair,
+                // en plus du badge porté par chaque ligne concernée.
+                if (starvedKeys.isNotEmpty &&
+                    essentielOrdered.any((i) => starvedKeys.contains(i.key)))
+                  _StarvedHint(
+                    count: essentielOrdered
+                        .where((i) => starvedKeys.contains(i.key))
+                        .length,
+                    colors: colors,
+                  ),
                 if (essentielOrdered.isEmpty)
                   _EmptyHint(
                     label: 'Vide. Ajoute des thèmes ou des sources ci-dessous.',
@@ -709,6 +722,7 @@ class _ManageFavoritesContentState
                     cap: kTourneeVisibleCap,
                     capLabel: 'Hors Tournée du jour ($kTourneeVisibleCap)',
                     thinKeys: thinKeys,
+                    starvedKeys: starvedKeys,
                     // Destination du déplacement = Flâner ⇒ puces brun Flâner.
                     moveAccent: _kFlanerAccent,
                     onReorder: (oldIndex, newIndex) {
@@ -925,6 +939,10 @@ class _FavList extends StatelessWidget {
   /// Clés favorites maigres (Tournée) → micro-indicateur « Peu d'articles ».
   final Set<String> thinKeys;
 
+  /// Clés retirées du flux du jour faute d'articles → « Pas assez d'articles ».
+  /// Prime sur [thinKeys] : un bloc masqué mérite mieux qu'un « peu fourni ».
+  final Set<String> starvedKeys;
+
   const _FavList({
     required this.items,
     required this.colors,
@@ -938,6 +956,7 @@ class _FavList extends StatelessWidget {
     required this.moveAccent,
     required this.onMove,
     this.thinKeys = const {},
+    this.starvedKeys = const {},
     this.onSubjectVeille,
   });
 
@@ -968,6 +987,7 @@ class _FavList extends StatelessWidget {
               dimmed: dimmed,
               colors: colors,
               thin: thinKeys.contains(item.key),
+              starved: starvedKeys.contains(item.key),
               moveIcon: moveIcon,
               moveTooltip: moveTooltip,
               moveLabel: moveLabel,
@@ -1032,9 +1052,15 @@ class _FavRow extends StatelessWidget {
   final bool dimmed;
   final FacteurColors colors;
 
-  /// Cohérence Tournée — ce favori a peu d'articles aujourd'hui (≤1 survivant
-  /// post-dédup) → micro-indicateur ambre près du libellé.
+  /// Cohérence Tournée — ce favori a peu d'articles aujourd'hui (sous le
+  /// plancher d'affichage) → micro-indicateur ambre près du libellé.
   final bool thin;
+
+  /// Ce favori est **absent de la Tournée du jour** faute d'articles : il n'a
+  /// pas atteint le plancher d'affichage, même après réinjection. On le dit
+  /// explicitement — c'est la seule chose qui distingue « rien à montrer
+  /// aujourd'hui » d'un bug, du point de vue de l'utilisateur.
+  final bool starved;
   final IconData moveIcon;
   final String moveTooltip;
   final String moveLabel;
@@ -1055,6 +1081,7 @@ class _FavRow extends StatelessWidget {
     required this.onRemove,
     required this.onMove,
     this.thin = false,
+    this.starved = false,
     this.onSubjectVeille,
   });
 
@@ -1111,7 +1138,12 @@ class _FavRow extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (thin) ...[
+                        // Un seul badge : « masqué faute d'articles » dit déjà
+                        // « peu d'articles », en plus précis.
+                        if (starved) ...[
+                          const SizedBox(width: 6),
+                          const _StarvedBadge(),
+                        ] else if (thin) ...[
                           const SizedBox(width: 6),
                           const _ThinBadge(),
                         ],
@@ -1216,6 +1248,60 @@ class _ThinBadge extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Indicateur « Pas assez d'articles » d'un favori **absent de la Tournée du
+/// jour** : il n'a pas atteint le plancher d'affichage, même après réinjection
+/// des articles que la dédup lui avait pris.
+///
+/// Volontairement plus affirmé que [_ThinBadge] (fond plein, pas une pilule
+/// fantôme) : c'est la réponse à « pourquoi ma section Technologie a disparu ? ».
+/// Le favori, lui, reste dans la liste et gardera sa place demain — masqué pour
+/// la journée n'est pas retiré.
+class _StarvedBadge extends StatelessWidget {
+  const _StarvedBadge();
+
+  static const Color _amber = Color(0xFFB45309);
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Pas assez d\'articles disponibles aujourd\'hui — '
+          'ce bloc revient dès qu\'il y en a.',
+      child: Semantics(
+        label: 'Absent de la tournée du jour, pas assez d\'articles',
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(7, 3, 8, 3),
+          decoration: BoxDecoration(
+            color: _amber.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(999),
+            border:
+                Border.all(color: _amber.withValues(alpha: 0.55), width: 0.8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                PhosphorIcons.eyeSlash(PhosphorIconsStyle.fill),
+                size: 11,
+                color: _amber,
+              ),
+              const SizedBox(width: 4),
+              const Text(
+                'Pas assez d\'articles',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.1,
+                  color: _amber,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1710,6 +1796,61 @@ class _SmartArrangementSwitch extends ConsumerWidget {
                     .toggle(),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Bandeau d'explication affiché quand [count] blocs de l'Essentiel sont
+/// masqués faute d'articles. Répond en une phrase à « pourquoi ma section a
+/// disparu ? » — sans quoi un masquage est indistinguable d'un bug.
+class _StarvedHint extends StatelessWidget {
+  final int count;
+  final FacteurColors colors;
+
+  const _StarvedHint({required this.count, required this.colors});
+
+  static const Color _amber = Color(0xFFB45309);
+
+  @override
+  Widget build(BuildContext context) {
+    final plural = count > 1;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: _amber.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _amber.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              PhosphorIcons.eyeSlash(PhosphorIconsStyle.fill),
+              size: 14,
+              color: _amber,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                plural
+                    ? '$count blocs ne sont pas dans ta tournée aujourd\'hui : '
+                        'pas assez d\'articles disponibles. Ils reviennent dès '
+                        'qu\'il y en a.'
+                    : 'Un bloc n\'est pas dans ta tournée aujourd\'hui : pas '
+                        'assez d\'articles disponibles. Il revient dès qu\'il y '
+                        'en a.',
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

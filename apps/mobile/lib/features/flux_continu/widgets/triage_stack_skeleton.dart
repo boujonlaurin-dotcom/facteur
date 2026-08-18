@@ -37,8 +37,8 @@ class TriageStackSkeleton extends StatelessWidget {
     final colors = context.facteurColors;
     // Recette canonique de l'app (`SectionSkeletonCard`, `_HeroSkeleton`) : le
     // sweep est porté par le fond, jamais par un aplat plein.
-    final base = colors.textTertiary.withValues(alpha: 0.10);
-    final highlight = colors.textTertiary.withValues(alpha: 0.04);
+    final base = facteurSkeletonBase(colors);
+    final highlight = facteurSkeletonHighlight(colors);
 
     Widget bar({double? width, required double height, double radius = 6}) =>
         Container(

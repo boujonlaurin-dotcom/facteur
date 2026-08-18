@@ -1505,6 +1505,120 @@ void main() {
     });
 
     testWidgets(
+        'tri terminé : un gardé que le backend ne sert plus reste dans la '
+        'liste au redémarrage (bug « articles gardés disparus »)',
+        (tester) async {
+      const slate = ['c-1', 'c-2', 'c-3'];
+      final decisions = {
+        for (var i = 1; i <= 3; i++)
+          'c-$i': TriageEntry(
+            contentId: 'c-$i',
+            decision: TriageDecision.keep,
+            rank: i,
+            via: TriageVia.swipe,
+          ),
+      };
+
+      // Session 1 : le pool porte les trois gardés → ils sont archivés.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [for (var i = 1; i <= 3; i++) _article(rank: i)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: slate, decisions: decisions)],
+      ));
+      await tester.pump();
+      await tester.pump();
+
+      // Kill de l'app : la portée Riverpod est détruite, seule
+      // SharedPreferences survit.
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      // Session 2 : l'utilisateur avait **lu** c-1 et c-3 ; passée la grâce de
+      // 30 min, « L'Essentiel vivant » les a évincés de `GET /api/essentiel`.
+      // Le pool ne porte plus que c-2 — exactement la répro du PO.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: slate, decisions: decisions)],
+      ));
+      await tester.pump();
+      await tester.pump();
+
+      for (var i = 1; i <= 3; i++) {
+        expect(
+          find.text('Titre $i'),
+          findsOneWidget,
+          reason: 'le gardé #$i doit survivre au kill de l\'app',
+        );
+      }
+      // …et à sa place : l'ordre est celui du slate gelé, pas celui du pool.
+      expect(
+        tester.getTopLeft(find.text('Titre 1')).dy,
+        lessThan(tester.getTopLeft(find.text('Titre 2')).dy),
+      );
+      expect(
+        tester.getTopLeft(find.text('Titre 2')).dy,
+        lessThan(tester.getTopLeft(find.text('Titre 3')).dy),
+      );
+    });
+
+    testWidgets(
+        'tri terminé : un gardé re-servi par un refresh ne réapparaît pas '
+        '(il n\'avait jamais disparu)', (tester) async {
+      const slate = ['c-1', 'c-2', 'c-3'];
+      final decisions = {
+        for (var i = 1; i <= 3; i++)
+          'c-$i': TriageEntry(
+            contentId: 'c-$i',
+            decision: TriageDecision.keep,
+            rank: i,
+            via: TriageVia.swipe,
+          ),
+      };
+      final overrides = [triageWith(slate: slate, decisions: decisions)];
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [for (var i = 1; i <= 3; i++) _article(rank: i)],
+          onTapArticle: (_) {},
+        ),
+        overrides: overrides,
+      ));
+      await tester.pump();
+      await tester.pump();
+
+      // Le blend live a évincé c-3 (lu) : il tient désormais par l'archive.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: overrides,
+      ));
+      await tester.pump();
+      expect(find.text('Titre 3'), findsOneWidget);
+
+      // Pull-to-refresh : le backend re-sert c-3. Le PO le voyait « apparaître
+      // par magie au milieu de la liste » ; il doit maintenant être un
+      // non-événement — même liste, même ordre, aucun doublon.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [for (var i = 1; i <= 3; i++) _article(rank: i)],
+          onTapArticle: (_) {},
+        ),
+        overrides: overrides,
+      ));
+      await tester.pump();
+
+      for (var i = 1; i <= 3; i++) {
+        expect(find.text('Titre $i'), findsOneWidget);
+      }
+    });
+
+    testWidgets(
         'tri terminé : tous les gardés restent accessibles au-delà du '
         'cinquième', (tester) async {
       final decisions = {

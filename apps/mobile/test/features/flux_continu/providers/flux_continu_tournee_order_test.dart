@@ -164,7 +164,27 @@ VeilleConfigDto _veilleCfg({String id = 'cfg1'}) => VeilleConfigDto(
       keywords: const [],
     );
 
-FeedResponse _feedWithIds(List<String> ids, {String sourceId = 's'}) {
+/// Complète une liste **non vide** jusqu'au plancher d'affichage
+/// [kSectionMinItems], avec des ids dérivés et donc uniques.
+///
+/// Ce fichier teste l'**ordre** des blocs, pas le compromis d'affichage V1
+/// (masquage/déclassement, couvert par `flux_continu_sources_test.dart`). Sans
+/// ce padding, chaque fixture à 1-2 articles serait masquée et masquerait du
+/// même coup ce que le test veut vérifier. Une liste vide le reste : les tests
+/// de pénurie/empty-state gardent tout leur sens.
+List<String> _atLeastFloor(List<String> ids) => ids.isEmpty
+    ? ids
+    : [
+        ...ids,
+        for (var i = ids.length; i < kSectionMinItems; i++) '${ids.first}_pad$i',
+      ];
+
+FeedResponse _feedWithIds(
+  List<String> rawIds, {
+  String sourceId = 's',
+  bool pad = true,
+}) {
+  final ids = pad ? _atLeastFloor(rawIds) : rawIds;
   return FeedResponse(
     items: ids
         .map(
@@ -273,6 +293,9 @@ void main() {
   void stubFeed({
     Map<String, List<String>> themeIds = const {},
     Map<String, List<String>> sourceIds = const {},
+    // `false` ⇒ fixtures servies telles quelles : réservé aux tests qui portent
+    // sur le plancher d'affichage lui-même (cf. [_atLeastFloor]).
+    bool pad = true,
   }) {
     when(
       () => feedRepo.getFeed(
@@ -288,10 +311,14 @@ void main() {
       final src = invocation.namedArguments[#sourceId] as String?;
       final theme = invocation.namedArguments[#theme] as String?;
       if (src != null) {
-        return _feedWithIds(sourceIds[src] ?? const [], sourceId: src);
+        return _feedWithIds(
+          sourceIds[src] ?? const [],
+          sourceId: src,
+          pad: pad,
+        );
       }
       if (theme != null) {
-        return _feedWithIds(themeIds[theme] ?? const []);
+        return _feedWithIds(themeIds[theme] ?? const [], pad: pad);
       }
       return _feedWithIds(const []);
     });
@@ -1099,58 +1126,44 @@ void main() {
       return container;
     }
 
-    test('personnalisé + 13 favoris ⇒ 3 suggestions en queue, favoris intacts',
-        () async {
+    test(
+        'cap plein de favoris : aucun favori évincé, les suggestions cèdent '
+        'tous les slots', () async {
+      // Bug « blocs favoris absents de l'Essentiel » : avant, le quota 22.6
+      // réservait 3 slots aux suggestions en coupant 3 favoris (`cap - quota`).
+      // Un bloc placé par l'utilisateur ne disparaît plus jamais au profit
+      // d'une « Choisie pour vous ».
       final container = await personalized(
         suggestedSlugs: const ['sugA', 'sugB', 'sugC', 'sugD'],
         hiddenKeys: const [],
       );
       final sections = favoriteSections(container);
       expect(sections, hasLength(kTourneeVisibleCap));
-
-      final suggestedVisible = sections.where((s) => s.isSuggested).toList();
-      expect(suggestedVisible, hasLength(3), reason: 'quota garanti sous le cap');
-      // Best-first (daily_rank backend) : les 3 premières, pas sugD.
+      expect(sections.where((s) => s.isSuggested), isEmpty);
       expect(
-        suggestedVisible.map((s) => s.themeSlug).toList(),
-        ['sugA', 'sugB', 'sugC'],
+        sections.map((s) => s.themeSlug).toList(),
+        favSlugs,
+        reason: 'les 13 blocs choisis tiennent le cap, dans l\'ordre manuel',
       );
-      // Suggestions en queue ; les 10 premiers slots = favoris, ordre manuel
-      // strictement préservé (jamais permuté).
-      final favVisible = sections.where((s) => !s.isSuggested).toList();
-      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(10));
-      expect(sections.skip(10).every((s) => s.isSuggested), isTrue);
     });
 
-    test('suggestion cachée non comptée dans le quota', () async {
-      // 3 suggestions, 1 dismissée → 2 disponibles → quota 2.
+    test('un favori masqué rend son slot à une suggestion', () async {
+      // 12 blocs choisis (1 favori dismissé) ⇒ 1 slot libre ⇒ la meilleure
+      // suggestion le prend. Les suggestions vivent sur les restes, jamais aux
+      // dépens d'un favori.
       final container = await personalized(
         suggestedSlugs: const ['sugA', 'sugB', 'sugC'],
-        hiddenKeys: const ['theme:sugB'],
+        hiddenKeys: const ['theme:food'],
       );
       final sections = favoriteSections(container);
+      expect(sections, hasLength(kTourneeVisibleCap));
       final suggestedVisible = sections.where((s) => s.isSuggested).toList();
-      expect(suggestedVisible, hasLength(2));
+      expect(suggestedVisible.map((s) => s.themeSlug).toList(), ['sugA']);
+      final favVisible = sections.where((s) => !s.isSuggested).toList();
       expect(
-        suggestedVisible.map((s) => s.themeSlug).toList(),
-        ['sugA', 'sugC'],
-        reason: 'la suggestion cachée sort du quota, pas de re-comptage',
+        favVisible.map((s) => s.themeSlug).toList(),
+        favSlugs.where((s) => s != 'food'),
       );
-      final favVisible = sections.where((s) => !s.isSuggested).toList();
-      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(11));
-    });
-
-    test('1 seule suggestion dispo ⇒ quota 1', () async {
-      final container = await personalized(
-        suggestedSlugs: const ['sugA'],
-        hiddenKeys: const [],
-      );
-      final sections = favoriteSections(container);
-      final suggestedVisible = sections.where((s) => s.isSuggested).toList();
-      expect(suggestedVisible, hasLength(1));
-      expect(suggestedVisible.first.themeSlug, 'sugA');
-      final favVisible = sections.where((s) => !s.isSuggested).toList();
-      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(12));
     });
 
     test('non-personnalisé sous le cap ⇒ ordre naturel inchangé', () async {
@@ -1191,14 +1204,19 @@ void main() {
   });
 
   test(
-      'thème favori explicite à 1 item ⇒ section construite (jamais masquée, '
-      'miroir source/veille)', () async {
-    // Avant le fix, `_buildThemeSection` coupait toute section < 2 items —
-    // une section thème favorite « sparse » disparaissait sans feedback.
+      'thème favori explicite à 1 item ⇒ masqué pour la journée, et dit comme '
+      'tel (compromis d\'affichage V1)', () async {
+    // Historiquement ce thème restait rendu à 1 article (« jamais coupé »), au
+    // prix d'un bloc quasi vide. La règle PO V1 tranche l'inverse : sous le
+    // plancher d'affichage il sort du flux — à la condition stricte que
+    // l'utilisateur puisse l'apprendre (`starvedFavoriteKeys` → badge « Pas
+    // assez d'articles » dans « Mes favoris »). Ce qui reste interdit, c'est la
+    // disparition *silencieuse*.
     stubFeed(
       themeIds: {
         'society': ['only-one'],
       },
+      pad: false,
     );
     final container = await buildContainer(
       interests: _interestsState(
@@ -1209,16 +1227,16 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await settle(container);
+    final state = await settle(container);
     final society = favoriteSections(
       container,
-    ).where((s) => s.themeSlug == 'society').toList();
+    ).where((s) => s.themeSlug == 'society');
+    expect(society, isEmpty, reason: 'sous le plancher ⇒ hors du flux');
     expect(
-      society,
-      hasLength(1),
-      reason: 'favori explicite jamais coupé même sous 2 items',
+      state.starvedFavoriteKeys,
+      contains('theme:society'),
+      reason: 'masqué, mais jamais en silence',
     );
-    expect(society.single.items, hasLength(1));
   });
 
   test(

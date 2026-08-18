@@ -773,7 +773,7 @@ class SectionSkeletonCard extends StatelessWidget {
     // Mêmes teintes que `_MetaShimmer` (rituel matinal) — le sweep est porté par
     // le **fond** seul : le libellé est posé par-dessus, hors du ShaderMask, qui
     // sinon écraserait sa couleur.
-    final base = colors.textTertiary.withValues(alpha: 0.10);
+    final base = facteurSkeletonBase(colors);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: SizedBox(
@@ -783,7 +783,7 @@ class SectionSkeletonCard extends StatelessWidget {
           children: [
             Shimmer.fromColors(
               baseColor: base,
-              highlightColor: colors.textTertiary.withValues(alpha: 0.04),
+              highlightColor: facteurSkeletonHighlight(colors),
               child: Container(
                 decoration: BoxDecoration(
                   color: base,
