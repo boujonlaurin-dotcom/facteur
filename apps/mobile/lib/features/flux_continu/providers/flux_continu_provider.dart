@@ -2599,54 +2599,121 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       emit();
     }
 
-    final tasks = <Future<void> Function()>[
-      // Thèmes / sujets / veille (ordre favoris = tête de Tournée).
+    // B3 — l'ordre de FETCH suit l'ordre de RENDU, plus l'ordre des favoris.
+    // Les coquilles seedées rendent `sectionByKey` complet, donc
+    // `_orderedTourneeKeys` (mêmes entrées que l'affichage : ordre manuel
+    // sticky, biais « thème le plus suivi », ordre par score gelé du jour,
+    // quota suggestions, cap) donne la position réelle de chaque section — les
+    // sections au-dessus de la ligne de flottaison se résolvent en premier.
+    final tournee = ref.read(tourneeOrderPrefsProvider);
+    final renderedKeys = _orderedTourneeKeys(
+      isSerene: isSerene,
+      customized: tournee.customized,
+      sectionByKey: _tourneeSectionByKey(),
+      grilleAvailable: false,
+      hiddenKeys: tournee.hiddenKeys,
+      order: tournee.order,
+      scoreOrder: _scoreOrderKeys,
+    );
+    final renderPos = <String, int>{
+      for (var i = 0; i < renderedKeys.length; i++) renderedKeys[i]: i,
+    };
+
+    // B3 — suggestions réellement fetchées : celles du cap affiché, **+1 de
+    // réserve** (ordre backend daily_rank) pour préserver la promesse de
+    // `dismissSuggestion` — la suivante doit pouvoir remonter déjà remplie. Les
+    // autres étaient fetchées puis jamais affichées (hors cap). Leurs coquilles
+    // sont retirées : invisibles de toute façon (`_dropEmptySuggested`), mais
+    // elles occuperaient un slot du quota suggestions avec une section vide.
+    final renderedKeySet = renderPos.keys.toSet();
+    var suggestionReserveLeft = 1;
+    final fetchedSuggestions = <TopTheme>[
+      for (final s in usableSuggestions)
+        if (renderedKeySet.contains(_suggestionKey(s)) ||
+            (suggestionReserveLeft-- > 0))
+          s,
+    ];
+    final droppedCount = usableSuggestions.length - fetchedSuggestions.length;
+    if (droppedCount > 0) {
+      final fetchedKeys = <String>{
+        for (final s in fetchedSuggestions) _suggestionKey(s),
+      };
+      _suggested = [
+        for (final s in _suggested)
+          if (fetchedKeys.contains(sectionKey(s))) s,
+      ];
+    }
+
+    final entries = <({String key, Future<void> Function() task})>[
+      // Thèmes / sujets / veille — tous fetchés quel que soit leur rang
+      // (thin-classification, block scores, modale favoris en dépendent).
       for (final favRef in favorites)
-        () => sectionTask(
-              () => _fetchOneTheme(favRef, isSerene),
-              (feed) => _buildFavoriteThemeSection(
-                favRef,
-                feed,
-                isExplicitFavorite: isExplicitFavorite,
-                interestsState: interestsState,
+        (
+          key: _favRefSectionKey(favRef),
+          task: () => sectionTask(
+                () => _fetchOneTheme(favRef, isSerene),
+                (feed) => _buildFavoriteThemeSection(
+                  favRef,
+                  feed,
+                  isExplicitFavorite: isExplicitFavorite,
+                  interestsState: interestsState,
+                ),
+                // Upsert par clé : remplace la coquille seedée à sa position
+                // d'origine (ordre préservé) au lieu d'append (sinon doublon
+                // coquille + contenu).
+                (section) => _themes = _upsertByKey(_themes, section),
+                resolvedKey: _favRefSectionKey(favRef),
               ),
-              // Upsert par clé : remplace la coquille seedée à sa position
-              // d'origine (ordre préservé) au lieu d'append (sinon doublon
-              // coquille + contenu).
-              (section) => _themes = _upsertByKey(_themes, section),
-              resolvedKey: _favRefSectionKey(favRef),
-            ),
+        ),
       // Sources favorites.
       for (final src in resolvedSources)
-        () => sectionTask(
-              () => _fetchOneSource(src.id, isSerene),
-              (feed) => _buildSourceSection(feed: feed, source: src),
-              (section) => _sources = _upsertByKey(_sources, section),
-              resolvedKey: tourneeSourceKey(src.id),
-            ),
+        (
+          key: tourneeSourceKey(src.id),
+          task: () => sectionTask(
+                () => _fetchOneSource(src.id, isSerene),
+                (feed) => _buildSourceSection(feed: feed, source: src),
+                (section) => _sources = _upsertByKey(_sources, section),
+                resolvedKey: tourneeSourceKey(src.id),
+              ),
+        ),
       // Suggérées « Choisie pour vous » (hors classification maigre/riche, mais
       // marquées résolues sans effet — clé suggérée non favorite).
-      for (final s in usableSuggestions)
-        () => sectionTask(
-              () => (s.kind == 'source' && s.sourceId != null)
-                  ? _fetchOneSource(s.sourceId!, isSerene)
-                  : _fetchOneTheme(
-                      ThemeFavoriteRef(slug: s.interestSlug),
-                      isSerene,
-                    ),
-              (feed) => _buildSuggestedSection(s, feed, sourceById),
-              // Upsert par clé : remplace la coquille suggérée seedée à sa
-              // position (Issue #1) au lieu d'append (sinon doublon coquille +
-              // contenu, et la coquille « poperait »).
-              (section) => _suggested = _upsertByKey(_suggested, section),
-              resolvedKey: _suggestionKey(s),
-              onEmpty: () =>
-                  _suggested = _removeByKey(_suggested, _suggestionKey(s)),
-            ),
+      for (final s in fetchedSuggestions)
+        (
+          key: _suggestionKey(s),
+          task: () => sectionTask(
+                () => (s.kind == 'source' && s.sourceId != null)
+                    ? _fetchOneSource(s.sourceId!, isSerene)
+                    : _fetchOneTheme(
+                        ThemeFavoriteRef(slug: s.interestSlug),
+                        isSerene,
+                      ),
+                (feed) => _buildSuggestedSection(s, feed, sourceById),
+                // Upsert par clé : remplace la coquille suggérée seedée à sa
+                // position (Issue #1) au lieu d'append (sinon doublon coquille +
+                // contenu, et la coquille « poperait »).
+                (section) => _suggested = _upsertByKey(_suggested, section),
+                resolvedKey: _suggestionKey(s),
+                onEmpty: () =>
+                    _suggested = _removeByKey(_suggested, _suggestionKey(s)),
+              ),
+        ),
     ];
+    // Tri par position de rendu. Les clés hors de l'ordre affiché (favoris
+    // masqués / au-delà du cap, réserve suggestion) passent en queue, ordre
+    // relatif d'origine préservé (elles restent fetchées).
+    final visible = [
+      for (final e in entries)
+        if (renderPos.containsKey(e.key)) e,
+    ]..sort((a, b) => renderPos[a.key]!.compareTo(renderPos[b.key]!));
+    final offscreen = [
+      for (final e in entries)
+        if (!renderPos.containsKey(e.key)) e,
+    ];
+    final tasks = [for (final e in [...visible, ...offscreen]) e.task];
 
     await _runWithConcurrency(tasks, _kPhase2FanoutConcurrency);
-    _perfBoot('fanout_done_ms', ' tasks=${tasks.length} dropped=0');
+    _perfBoot('fanout_done_ms', ' tasks=${tasks.length} dropped=$droppedCount');
     // PR-4 — tout est stabilisé : le compose ci-dessous est le seul du jour à
     // (re)calculer l'ordre par score, et il l'applique dans la foulée.
     _freezeScoreOrderOnNextCompose = true;

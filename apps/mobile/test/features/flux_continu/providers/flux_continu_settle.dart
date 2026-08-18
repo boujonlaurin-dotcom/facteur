@@ -17,6 +17,12 @@ Future<FluxContinuState> settle(ProviderContainer container) async {
     final cur = container.read(fluxContinuProvider).valueOrNull;
     if (cur != null && !cur.isSkeleton && identical(cur, prev)) break;
     prev = cur;
+    // Lot cold start (B1) — le bootstrap contient désormais de vrais timers
+    // (tête d'avance héros 600 ms, attente bornée ~2 s des prérequis de
+    // coquilles) : drainer la file d'événements ne suffit plus, il faut aussi
+    // laisser s'écouler du temps réel (60 × 50 ms = budget 3 s). Les tests déjà
+    // stabilisés sortent en 2-3 itérations.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
   }
   return container.read(fluxContinuProvider).requireValue;
 }
