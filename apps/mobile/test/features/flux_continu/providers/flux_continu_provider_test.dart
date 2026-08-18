@@ -1513,12 +1513,24 @@ void main() {
 
         // Le squelette ne porte AUCUN contenu (ni périmé ni frais).
         expect(renderedContentIds(firstData.sections), isEmpty);
-        // …mais il a la STRUCTURE dérivée des prefs : une coquille thème 'tech'.
-        final techShell = firstData.sections
+        // B2 (lot cold start) — le squelette initial n'initialise plus les
+        // providers de favoris « en douce » (`_peekValue`) : la STRUCTURE
+        // (coquille thème 'tech') n'apparaît plus dès la 1ʳᵉ peinture mais au
+        // seed de la Phase 1 — coquille vide d'abord, remplie par le fan-out.
+        final firstWithTech = captured
+            .whereType<AsyncData<FluxContinuState>>()
+            .map((s) => s.value)
+            .firstWhere(
+              (s) => s.sections
+                  .whereType<FeedThemeSection>()
+                  .any((sec) => sec.themeSlug == 'tech'),
+            );
+        final techShell = firstWithTech.sections
             .whereType<FeedThemeSection>()
             .where((s) => s.themeSlug == 'tech');
         expect(techShell, hasLength(1));
-        expect(techShell.single.items, isEmpty);
+        expect(techShell.single.items, isEmpty,
+            reason: 'coquille seedée avant le fan-out, jamais de contenu direct');
 
         // État final = vrai contenu, plus squelette.
         expect(finalState.isSkeleton, isFalse);

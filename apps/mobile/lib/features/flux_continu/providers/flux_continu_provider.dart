@@ -114,6 +114,12 @@ const int _kPhase2FanoutConcurrency = 3;
 /// Court : au-delà on rend la Tournée sans elles plutôt que de la retarder.
 const Duration _kSourceCatalogWait = Duration(seconds: 2);
 
+/// B1 — tête d'avance accordée à `/api/essentiel` (vague 1, seul sur le réseau)
+/// avant le départ de la vague 2 (digest/both + top-thèmes + kick des providers
+/// de coquilles). La vague 2 part à `min(essentiel résolu, ce délai)` : borné,
+/// un essentiel pendu ne retarde jamais la Phase 1 de plus de 600 ms.
+const Duration _kHeroHeadStart = Duration(milliseconds: 600);
+
 /// Usable scroll height (px) of the Flux Continu viewport, threaded from
 /// [FluxContinuScreen] (the only place that can measure it post-layout):
 /// ```
@@ -253,6 +259,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _bootstrapping = true;
     _bootSw = Stopwatch()..start();
     _disposed = false;
+    // B2 — les listeners différés d'un build précédent ont été fermés par le
+    // rebuild : on ré-arme l'enregistrement (cf. [_kickDeferredBootProviders]).
+    _deferredListenersRegistered = false;
     ref.onDispose(() => _disposed = true);
     _digestRepo = ref.read(digestRepositoryProvider);
     _feedRepo = ref.read(feedRepositoryProvider);
@@ -294,37 +303,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
-    // React to favorite reorders / additions / removals without rebuilding
-    // the digest (the digest doesn't depend on favorites).
-    ref.listen<AsyncValue<UserInterestsState>>(userInterestsProvider, (
-      prev,
-      next,
-    ) {
-      if (_bootstrapping) return;
-      final nextFavorites = next.valueOrNull?.favorites;
-      if (nextFavorites == null) return;
-      final picked = _pickExplicitFavorites(nextFavorites);
-      if (_favoriteListsEqual(_lastFavorites, picked)) return;
-      if (!state.hasValue) return;
-      unawaited(_refetchThemesOnly(picked));
-    });
-
-    // PR « Sources dans la Tournée » — réagit à l'ajout/retrait/réordre d'une
-    // source favorite en ne refetchant QUE les sections source (le digest et
-    // les thèmes ne dépendent pas des sources favorites).
-    ref.listen<AsyncValue<UserSourcesState>>(userSourcesStateProvider, (
-      prev,
-      next,
-    ) {
-      if (_bootstrapping) return;
-      final nextFavorites = next.valueOrNull?.favorites;
-      if (nextFavorites == null) return;
-      final picked = _pickFavoriteSources(nextFavorites);
-      if (_sourceFavoritesEqual(_lastSourceFavorites, picked)) return;
-      if (!state.hasValue) return;
-      unawaited(_refetchSourcesOnly(picked));
-    });
-
     // Story 10.2 — `tournee_order_v1` fait autorité pour le **mode** des sources :
     // une source y figure ⇒ mode « Essentiel ». Deux cas à distinguer ici :
     //  - l'ensemble des clés `source:` de l'ordre change (une source entre ou
@@ -355,43 +333,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       if (_bootstrapping) return;
       if (!state.hasValue) return;
       if (setEquals(_themeKeysOf(prev), _themeKeysOf(next))) return;
-      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
-    });
-
-    // La Grille est un slot autonome dans la liste cappée : sa présence dépend
-    // uniquement de `today != null`, pas des sections déjà fetchées.
-    ref.listen<AsyncValue<GrilleState>>(grilleProvider, (prev, next) {
-      if (_bootstrapping) return;
-      if (!state.hasValue) return;
-      final wasPresent = prev?.valueOrNull?.today != null;
-      final isPresent = next.valueOrNull?.today != null;
-      if (wasPresent == isPresent) return;
-      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
-    });
-
-    // Story 22.5 — `themesFollowedProvider` est lazy : ce listen le déclenche
-    // dès l'init du notifier et recompose à sa résolution (et à tout changement
-    // du count après follow/unfollow) pour re-stamper `followedSourceCount`
-    // ([_stampFollowedCounts]) → le CTA « Tout lire »/« Ajouter » se corrige
-    // sans attendre un refetch complet.
-    ref.listen<AsyncValue<List<FollowedTheme>>>(themesFollowedProvider, (
-      prev,
-      next,
-    ) {
-      if (_bootstrapping) return;
-      if (!state.hasValue) return;
-      if (next.valueOrNull == null) return;
-      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
-    });
-
-    // `alertsProvider` est lazy comme `themesFollowedProvider` : ce listen le
-    // déclenche à l'init du notifier et recompose à sa résolution (et à chaque
-    // pose/retrait de cloche) — sinon le rappel « Tes alertes » n'apparaîtrait
-    // qu'au prochain refetch complet de la Tournée.
-    ref.listen<AsyncValue<AlertsState>>(alertsProvider, (prev, next) {
-      if (_bootstrapping) return;
-      if (!state.hasValue) return;
-      if (next.valueOrNull == null) return;
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
@@ -436,17 +377,25 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     await _awaitInitialRefresh();
     _perfBoot('gate_ms');
 
-    // Réconciliation du placement Essentiel/Flâner (source de vérité DB) —
-    // non-bloquante : elle ne doit pas retarder la DATA (l'awaiter ajouterait
-    // 2 RTT à tous les cold boots). Son résultat est chaîné explicitement, sans
-    // dépendre des listeners prefs (cf. [_reconcilePlacementThenSync]).
-    unawaited(_reconcilePlacementThenSync());
+    // B1/B2 — chemin warm (vrai contenu déjà peint depuis le snapshot) : rien
+    // ne concurrence le héros, on arme tout de suite la vague 3 (listeners
+    // réseau différés + réconciliation de placement), post-gate donc JWT frais.
+    // Sur le chemin froid, elle n'est armée qu'après l'émission de la Phase 1
+    // (cf. [_buildStateFromPayload]).
+    if (snapshotUsable) {
+      _kickDeferredBootProviders();
+    }
 
     try {
       return await _fetchAll();
     } finally {
       _bootstrapping = false;
       _bootSw = null;
+      // Filet de sécurité (chemin d'erreur / Phase 1 jamais émise) : les
+      // listeners réseau doivent TOUJOURS finir enregistrés — sans eux, plus
+      // aucune réaction aux favoris/grille/alertes jusqu'au prochain build.
+      // No-op dans le cas nominal (déjà armés à la Phase 1 ou au chemin warm).
+      _kickDeferredBootProviders();
     }
   }
 
@@ -463,6 +412,156 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // Refresh raté/expiré ou auth indisponible (tests) — le filet 401 prend
       // le relais ; AuthStateNotifier gère lui-même le chemin signout sur un
       // refresh token mort.
+    }
+  }
+
+  /// B2 — vague 3 armée (listeners réseau + réconciliation). Ré-armé à chaque
+  /// [build] : un rebuild ferme les subscriptions du build précédent.
+  bool _deferredListenersRegistered = false;
+
+  /// B2 vague 3 — enregistre les `ref.listen` **réseau** différés (favoris
+  /// thème/sujet, favoris source, grille, thèmes suivis, alertes) et lance la
+  /// réconciliation de placement Essentiel/Flâner.
+  ///
+  /// Pourquoi différé : `ref.listen` **initialise** le provider écouté — posés
+  /// en tête de [build] comme avant, ces 5 listens faisaient partir leurs
+  /// fetchs en concurrence directe de `/api/essentiel` sur le pool Dio et
+  /// l'unique worker uvicorn (D2). Un `ref.listen` tardif (post-await dans
+  /// build) est légal en Riverpod 2.6 ; pendant la fenêtre restante de
+  /// bootstrap, leurs corps restent muets (`_bootstrapping`), comme avant.
+  ///
+  /// Appelé (le flag rend l'appel idempotent) :
+  ///  - chemin froid : juste après l'émission de la Phase 1 ;
+  ///  - chemin warm : juste après le gate JWT (le snapshot est déjà peint) ;
+  ///  - filet : dans le `finally` de [build] (chemin d'erreur).
+  void _kickDeferredBootProviders() {
+    if (_disposed || _deferredListenersRegistered) return;
+    _deferredListenersRegistered = true;
+
+    // React to favorite reorders / additions / removals without rebuilding
+    // the digest (the digest doesn't depend on favorites).
+    ref.listen<AsyncValue<UserInterestsState>>(userInterestsProvider, (
+      prev,
+      next,
+    ) {
+      if (_bootstrapping) return;
+      final nextFavorites = next.valueOrNull?.favorites;
+      if (nextFavorites == null) return;
+      final picked = _pickExplicitFavorites(nextFavorites);
+      if (_favoriteListsEqual(_lastFavorites, picked)) return;
+      if (!state.hasValue) return;
+      unawaited(_refetchThemesOnly(picked));
+    });
+
+    // PR « Sources dans la Tournée » — réagit à l'ajout/retrait/réordre d'une
+    // source favorite en ne refetchant QUE les sections source (le digest et
+    // les thèmes ne dépendent pas des sources favorites).
+    ref.listen<AsyncValue<UserSourcesState>>(userSourcesStateProvider, (
+      prev,
+      next,
+    ) {
+      if (_bootstrapping) return;
+      final nextFavorites = next.valueOrNull?.favorites;
+      if (nextFavorites == null) return;
+      final picked = _pickFavoriteSources(nextFavorites);
+      if (_sourceFavoritesEqual(_lastSourceFavorites, picked)) return;
+      if (!state.hasValue) return;
+      unawaited(_refetchSourcesOnly(picked));
+    });
+
+    // La Grille est un slot autonome dans la liste cappée : sa présence dépend
+    // uniquement de `today != null`, pas des sections déjà fetchées.
+    ref.listen<AsyncValue<GrilleState>>(grilleProvider, (prev, next) {
+      if (_bootstrapping) return;
+      if (!state.hasValue) return;
+      final wasPresent = prev?.valueOrNull?.today != null;
+      final isPresent = next.valueOrNull?.today != null;
+      if (wasPresent == isPresent) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // Story 22.5 — `themesFollowedProvider` est lazy : ce listen le déclenche
+    // (désormais en vague 3, plus en tête de build) et recompose à sa
+    // résolution (et à tout changement du count après follow/unfollow) pour
+    // re-stamper `followedSourceCount` ([_stampFollowedCounts]) → le CTA
+    // « Tout lire »/« Ajouter » se corrige sans attendre un refetch complet.
+    ref.listen<AsyncValue<List<FollowedTheme>>>(themesFollowedProvider, (
+      prev,
+      next,
+    ) {
+      if (_bootstrapping) return;
+      if (!state.hasValue) return;
+      if (next.valueOrNull == null) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // `alertsProvider` est lazy comme `themesFollowedProvider` : ce listen le
+    // déclenche (vague 3) et recompose à sa résolution (et à chaque
+    // pose/retrait de cloche) — sinon le rappel « Tes alertes » n'apparaîtrait
+    // qu'au prochain refetch complet de la Tournée.
+    ref.listen<AsyncValue<AlertsState>>(alertsProvider, (prev, next) {
+      if (_bootstrapping) return;
+      if (!state.hasValue) return;
+      if (next.valueOrNull == null) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // Réconciliation du placement Essentiel/Flâner (source de vérité DB) —
+    // non-bloquante : elle ne doit pas retarder la DATA (l'awaiter ajouterait
+    // 2 RTT à tous les cold boots). Déplacée de l'avant-`_fetchAll` vers la
+    // vague 3 : ses 2 GETs ne concurrencent plus le héros ni la Phase 1. Son
+    // résultat est chaîné explicitement, sans dépendre des listeners prefs
+    // (cf. [_reconcilePlacementThenSync]).
+    unawaited(_reconcilePlacementThenSync());
+  }
+
+  /// B2 — lecture **sans initialisation** : `ref.read` seulement si [provider]
+  /// est déjà vivant (`ref.exists`), `null` sinon. Les sites de composition
+  /// squelette/compose lisaient ces providers lazy via `ref.read`, ce qui les
+  /// initialisait « en douce » pendant le bootstrap et faisait partir leurs
+  /// fetchs en concurrence de `/api/essentiel` (D2). Une fois les providers
+  /// vivants (vague 2/3), sémantique strictement identique à `ref.read` ;
+  /// avant, dégrade exactement comme le cold start historique (valeur absente).
+  T? _peekValue<T>(ProviderBase<T> provider) =>
+      ref.exists(provider) ? ref.read(provider) : null;
+
+  /// B1 vague 2 — force l'init des providers dont dépend le **seed des
+  /// coquilles** de la Tournée (favoris thème/sujet, favoris source, catalogue
+  /// source, config veille). Lancés après l'avance du héros : leurs fetchs
+  /// voyagent pendant que digest/top-thèmes sont en vol.
+  void _kickShellPrereqs() {
+    ref.read(userInterestsProvider);
+    ref.read(userSourcesStateProvider);
+    ref.read(userSourcesProvider);
+    ref.read(veilleActiveConfigProvider);
+  }
+
+  /// Attente **bornée** (miroir de [_kSourceCatalogWait]) de la résolution des
+  /// providers seedant les coquilles, avant [_pickFavorites] /
+  /// [_pickFavoriteSources]. Corrige au passage la course silencieuse
+  /// historique : `_pickFavorites` lisait un provider pas encore résolu et
+  /// seedait 0 coquille pour tout le cycle. Erreurs/timeout avalés : on seede
+  /// alors en dégradé, comme avant.
+  Future<void> _awaitShellPrereqs() async {
+    if (ref.read(userInterestsProvider).hasValue &&
+        ref.read(userSourcesStateProvider).hasValue &&
+        ref.read(veilleActiveConfigProvider).hasValue) {
+      return;
+    }
+    try {
+      await Future.wait<void>([
+        ref.read(userInterestsProvider.future).then((_) {}).catchError((_) {}),
+        ref
+            .read(userSourcesStateProvider.future)
+            .then((_) {})
+            .catchError((_) {}),
+        ref
+            .read(veilleActiveConfigProvider.future)
+            .then((_) {})
+            .catchError((_) {}),
+      ]).timeout(_kSourceCatalogWait);
+    } catch (e) {
+      debugPrint('FluxContinu: shell prereqs unresolved: $e');
     }
   }
 
@@ -514,15 +613,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   Future<FluxContinuState> _fetchAll() async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
 
-    final digestFuture = _safe<DualDigestResponse>(
-      () => _digestRepo.fetchBothDigests(),
-      'fetchBothDigests',
-    );
-    final topThemesFuture = _safe<List<TopTheme>>(
-      () => _fluxRepo.getTopThemes(),
-      'getTopThemes',
-      fallback: const <TopTheme>[],
-    );
+    // B1 vague 1 — le « paquet prioritaire » `/api/essentiel` part SEUL : rien
+    // d'autre ne le concurrence sur le pool Dio ni sur l'unique worker uvicorn.
     final essentielFuture = _safe<EssentielFetchResult>(
       // Passe le mode explicitement : `isSerene` est posé en synchrone avant
       // l'`invalidateSelf` du listener serein, donc à jour ici — pas de
@@ -568,6 +660,28 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         _perfBoot('hero_emit_ms');
       }),
     );
+
+    // B1 vague 2 — gatée sur min(essentiel résolu, [_kHeroHeadStart]) : le
+    // héros garde une tête d'avance, mais un essentiel pendu ne coûte jamais
+    // plus de 600 ms au reste de la Phase 1 (le gate est borné, pas otage du
+    // timeout 8 s de l'essentiel).
+    await Future.any<Object?>([
+      essentielFuture,
+      Future<void>.delayed(_kHeroHeadStart),
+    ]);
+    final digestFuture = _safe<DualDigestResponse>(
+      () => _digestRepo.fetchBothDigests(),
+      'fetchBothDigests',
+    );
+    final topThemesFuture = _safe<List<TopTheme>>(
+      () => _fluxRepo.getTopThemes(),
+      'getTopThemes',
+      fallback: const <TopTheme>[],
+    );
+    // Prérequis du seed des coquilles : leurs fetchs voyagent pendant que
+    // digest/top-thèmes sont en vol (attente bornée dans
+    // [_buildStateFromPayload] via [_awaitShellPrereqs]).
+    _kickShellPrereqs();
 
     final results = await Future.wait([
       digestFuture,
@@ -675,6 +789,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // si seul l'un des deux a réussi.
     _quote = dual?.serein?.quote ?? dual?.normal?.quote;
 
+    // B1 — chemin réseau uniquement (jamais le chemin cache in-day, qui doit
+    // peindre le snapshot sans délai) : attente bornée des providers seedant
+    // les coquilles, kickés en vague 2. Dans le cas nominal ils se sont résolus
+    // pendant le vol de digest/both → attente ≈ 0 ms.
+    if (fetchThemes) {
+      await _awaitShellPrereqs();
+    }
+
     final picked = _pickFavorites(topThemes);
     final favorites = picked.refs;
     _lastFavorites = favorites;
@@ -735,6 +857,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       state = AsyncData(_compose(isSerene));
       _perfBoot('phase1_ms');
     }
+
+    // B2 vague 3 — le haut de page réel est émis : on peut maintenant armer
+    // les listeners réseau différés + la réconciliation de placement sans
+    // concurrencer le héros ni la Phase 1. Idempotent (no-op sur les refetch
+    // SWR/pull-to-refresh où la vague 3 est déjà armée).
+    _kickDeferredBootProviders();
 
     // Bug « Sources favorites absentes » (race 2) : le catalogue
     // `userSourcesProvider` est **lazy** — s'il n'est pas encore résolu, chaque
@@ -812,7 +940,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// vides). Marque `isSkeleton: true`.
   FluxContinuState _composeSkeleton(bool isSerene) {
     final tournee = ref.read(tourneeOrderPrefsProvider);
-    final grilleAvailable = ref.read(grilleProvider).valueOrNull?.today != null;
+    final grilleAvailable = _peekValue(grilleProvider)?.valueOrNull?.today != null;
     final sectionByKey = _tourneeSectionByKey();
     final orderedKeys = _orderedTourneeKeys(
       isSerene: isSerene,
@@ -854,7 +982,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// même label/accent que le rendu réel, `items` vide, `hasMore: false`. Le
   /// fan-out remplace ensuite chaque coquille en place (cf. [_upsertByKey]).
   List<FeedThemeSection> _shellThemeSections(List<FavoriteRef> refs) {
-    final interestsState = ref.read(userInterestsProvider).valueOrNull;
+    final interestsState = _peekValue(userInterestsProvider)?.valueOrNull;
     final sections = <FeedThemeSection>[];
     for (final favRef in refs) {
       final FeedThemeSection? shell = switch (favRef) {
@@ -888,7 +1016,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   FeedThemeSection? _skeletonVeilleSection() {
-    final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
+    final activeCfg = _peekValue(veilleActiveConfigProvider)?.valueOrNull;
     if (activeCfg == null) return null;
     return FeedThemeSection(
       kind: SectionKind.veille,
@@ -935,7 +1063,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   List<FeedThemeSection> _shellSourceSections(List<SourceFavoriteRef> favs) {
     if (favs.isEmpty) return const [];
     final catalog =
-        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider)?.valueOrNull ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
     final sections = <FeedThemeSection>[];
     for (final fav in favs) {
@@ -967,7 +1095,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<TopTheme> usableSuggestions,
   ) {
     final catalog =
-        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider)?.valueOrNull ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
     final sections = <FeedThemeSection>[];
     for (final s in usableSuggestions) {
@@ -1009,7 +1137,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   FluxContinuState _compose(bool isSerene) {
     final tournee = ref.read(tourneeOrderPrefsProvider);
-    final grilleAvailable = ref.read(grilleProvider).valueOrNull?.today != null;
+    final grilleAvailable = _peekValue(grilleProvider)?.valueOrNull?.today != null;
     final sectionByKey = _tourneeSectionByKey();
 
     // Cohérence Tournée — classification maigre/riche **et** scores de bloc, sur
@@ -1058,7 +1186,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Cloches « source rare » ayant du neuf non lu. Elles seules justifient le
     // rappel : une cloche silencieuse n'a rien à annoncer.
     final alerted =
-        ref.read(alertsProvider).valueOrNull?.withNewContent ??
+        _peekValue(alertsProvider)?.valueOrNull?.withNewContent ??
             const <AlertItem>[];
 
     final rawOrdered = <FluxSection>[
@@ -1272,7 +1400,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// Les sujets custom (`themeSlug == null`) et thèmes absents du provider
   /// gardent 0.
   List<FluxSection> _stampFollowedCounts(List<FluxSection> sections) {
-    final themes = ref.read(themesFollowedProvider).valueOrNull;
+    final themes = _peekValue(themesFollowedProvider)?.valueOrNull;
     if (themes == null || themes.isEmpty) return sections;
     final bySlug = {for (final t in themes) t.slug: t.followedSourcesCount};
     return [
@@ -2080,7 +2208,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<TopTheme> topFallback,
   ) {
     final favorites =
-        ref.read(userInterestsProvider).valueOrNull?.favorites ?? const [];
+        _peekValue(userInterestsProvider)?.valueOrNull?.favorites ?? const [];
 
     // Story 23.4 — la veille a un **slot dédié hors cap** : on la sépare des
     // favoris thème/sujet (cap = [_kMaxFavoriteSections]) puis on l'ajoute en
@@ -2098,7 +2226,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
     // Toujours rendre la veille quand une config est active, même si le favori
     // n'est pas (encore) dans la liste (favori orphelin / self-heal en cours).
-    final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
+    final activeCfg = _peekValue(veilleActiveConfigProvider)?.valueOrNull;
     if (veilleRef == null && activeCfg != null) {
       veilleRef = VeilleFavoriteRef(id: activeCfg.id);
     }
@@ -2154,7 +2282,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     UserInterestsState? interestsState,
   }) {
     final interests =
-        interestsState ?? ref.read(userInterestsProvider).valueOrNull;
+        interestsState ?? _peekValue(userInterestsProvider)?.valueOrNull;
     return switch (favRef) {
       ThemeFavoriteRef(:final slug) => _buildThemeSection(
           feed: feed,
@@ -2248,7 +2376,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// dérivé du `theme_label` de la `VeilleConfig` active (résolu via
   /// `veilleActiveConfigProvider`). Story 23.2 PR-4.
   FeedThemeSection? _buildVeilleSection(FeedResponse? feed) {
-    final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
+    final activeCfg = _peekValue(veilleActiveConfigProvider)?.valueOrNull;
     // Story 23.4 — section veille **toujours visible** quand une config est
     // active, même avec 0/1 article (état vide rendu par SectionBlock). On ne
     // la coupe plus sur un seuil min d'items ; `null` seulement sans config.
@@ -2286,7 +2414,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<SourceFavoriteRef>? favorites,
   ]) {
     final favs = favorites ??
-        ref.read(userSourcesStateProvider).valueOrNull?.favorites ??
+        _peekValue(userSourcesStateProvider)?.valueOrNull?.favorites ??
         const <SourceFavoriteRef>[];
     // Story 10.2 — appartenance exclusive : une source n'est rendue dans la
     // Tournée que si elle est en mode « Essentiel » (sa clé `source:<id>` est
@@ -2431,9 +2559,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required List<TopTheme> suggestions,
     required bool isSerene,
   }) async {
-    final interestsState = ref.read(userInterestsProvider).valueOrNull;
+    final interestsState = _peekValue(userInterestsProvider)?.valueOrNull;
     final catalog =
-        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider)?.valueOrNull ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
 
     // Sources favorites résolues au catalogue (un favori absent du catalogue
@@ -2846,7 +2974,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// section thème rendue. N'est appelé que quand l'ordre n'est pas personnalisé.
   List<String> _biasThemeKeysByMostFollowed(List<String> themeKeys) {
     if (themeKeys.length < 2) return themeKeys;
-    final interests = ref.read(userInterestsProvider).valueOrNull;
+    final interests = _peekValue(userInterestsProvider)?.valueOrNull;
     if (interests == null) return themeKeys;
 
     final counts = <String, int>{};
@@ -2938,7 +3066,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (state.valueOrNull != null) {
       state = AsyncData(_compose(isSerene));
     }
-    final interestsState = ref.read(userInterestsProvider).valueOrNull;
+    final interestsState = _peekValue(userInterestsProvider)?.valueOrNull;
     await _runWithConcurrency(
       [
         for (final favRef in picked)
@@ -3006,7 +3134,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       state = AsyncData(_compose(isSerene));
     }
     final catalog =
-        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider)?.valueOrNull ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
     final resolved = <Source>[
       for (final fav in picked)
