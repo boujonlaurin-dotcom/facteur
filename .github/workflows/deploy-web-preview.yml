@@ -19,7 +19,10 @@ name: Deploy Web Preview
 on:
   push:
     branches:
-      - 'claude/missing-favorite-sections-bug-syquh8'
+      - 'claude/facteur-article-swipe-nav-cd6pv0'
+      # Preview perf cold boot Essentiel (PR #1097) → /preview/essentiel-perf/.
+      # À retirer au merge, comme la ligne au-dessus.
+      - 'claude/facteur-article-loading-perf-ioi7t4'
   workflow_dispatch:
     inputs:
       slug:
@@ -46,8 +49,19 @@ jobs:
 
       - name: Résoudre le slug de preview
         id: cfg
+        # Un `workflow_dispatch` fournit le slug ; un `push` n'en fournit pas et
+        # doit donc le dériver de la branche. L'ancien défaut littéral
+        # (`swipe-nav`) était juste tant qu'une seule branche déclenchait le
+        # workflow : à deux, tout push publiait par-dessus la preview de l'autre.
         run: |
-          SLUG="${{ github.event.inputs.slug || 'blocs-favoris' }}"
+          SLUG="${{ github.event.inputs.slug }}"
+          if [ -z "$SLUG" ]; then
+            case "${{ github.ref_name }}" in
+              claude/facteur-article-swipe-nav-cd6pv0) SLUG='swipe-nav' ;;
+              claude/facteur-article-loading-perf-ioi7t4) SLUG='essentiel-perf' ;;
+              *) SLUG="$(echo "${{ github.ref_name }}" | tr '/' '-')" ;;
+            esac
+          fi
           echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
           echo "base_href=/facteur/preview/$SLUG/" >> "$GITHUB_OUTPUT"
 

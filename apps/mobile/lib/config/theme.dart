@@ -456,6 +456,22 @@ BoxDecoration facteurSurfaceCardDecoration(
           : null,
     );
 
+/// Teintes du squelette de chargement (barres shimmer), partagées par toutes les
+/// silhouettes d'attente : `_HeroSkeleton`, `TriageStackSkeleton` et
+/// `SectionSkeletonCard`.
+///
+/// Source unique et **délibérément lisibles** : à 0.10/0.04 sur la `surface`
+/// crème (#FDFBF7), les barres étaient à la limite du perceptible — l'attente au
+/// cold boot se lisait comme une carte blanche vide, pas comme « ça charge »
+/// (retour utilisateurs, cf. maintenance-cold-boot-essentiel-perf.md). Le sweep
+/// reste porté par le fond (jamais un aplat plein) et `highlight` reste **plus
+/// transparent** que `base` : le balayage simule une lumière qui passe.
+Color facteurSkeletonBase(FacteurColors colors) =>
+    colors.textTertiary.withValues(alpha: 0.20);
+
+Color facteurSkeletonHighlight(FacteurColors colors) =>
+    colors.textTertiary.withValues(alpha: 0.07);
+
 class FacteurDurations {
   FacteurDurations._();
   static const Duration fast = Duration(milliseconds: 150);

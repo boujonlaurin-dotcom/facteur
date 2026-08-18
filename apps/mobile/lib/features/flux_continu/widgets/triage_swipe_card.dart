@@ -161,6 +161,16 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
       _dragUnderway = false;
       _hasTriggered = false;
       _dragExtent = 0;
+      // **Doit précéder `_resetController.reset()`** (bug « drift » du 15/08) :
+      // `AnimationController.reset()` passe par le setter `value`, qui
+      // `notifyListeners()`. Le `reset()` deux lignes plus bas rappelait donc
+      // [_onResetTick], lequel recalcule `_dragExtent = _resetStartExtent *
+      // (1 - 0)` — soit exactement le décalage du dernier retour élastique,
+      // **restauré** sur la carte fraîche, juste après l'avoir mis à zéro. La
+      // carte suivante s'affichait translatée, au repos et sans geste : le
+      // décalage rapporté après « Je garde »/« Pas pour moi ». `_dragExtent` ne
+      // suffit pas, c'est sa *source* qu'il faut éteindre.
+      _resetStartExtent = 0;
       // Le filet aussi repart à zéro : un pointeur encore posé (ou un microtask
       // en vol) appartient à la carte précédente et fuirait sinon sur celle-ci.
       _activePointers.clear();
@@ -361,6 +371,10 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
       _exitController.reset();
       setState(() {
         _dragExtent = 0;
+        // Même raison qu'en [didUpdateWidget] : une sortie aboutie annule tout
+        // retour élastique en attente. Laisser `_resetStartExtent` chargé ici
+        // réarmerait le drift au prochain `_resetController.reset()`.
+        _resetStartExtent = 0;
         _hasTriggered = false;
       });
       // Pas de `_emitProgress()` ici : il pousserait la promotion à 0 — donc la
