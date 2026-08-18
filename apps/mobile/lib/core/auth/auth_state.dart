@@ -12,6 +12,7 @@ import '../services/posthog_service.dart';
 import '../services/server_push_service.dart';
 import '../services/widget_background_refresh.dart';
 import '../services/widget_service.dart';
+import 'apple_sign_in.dart';
 import 'session_refresher.dart';
 
 /// État d'authentification
@@ -133,17 +134,29 @@ class AuthState {
 /// Notifier pour l'état d'authentification
 class AuthStateNotifier extends StateNotifier<AuthState>
     with WidgetsBindingObserver {
-  AuthStateNotifier() : super(const AuthState(isLoading: true)) {
+  AuthStateNotifier({AppleAuthorizationRequester? appleRequester})
+      : _appleRequester =
+            appleRequester ?? const NativeAppleAuthorizationRequester(),
+        super(const AuthState(isLoading: true)) {
     _supabase = Supabase.instance.client;
     _init();
   }
 
   @visibleForTesting
-  AuthStateNotifier.test(super.initialState, {SupabaseClient? supabase}) {
+  AuthStateNotifier.test(
+    super.initialState, {
+    SupabaseClient? supabase,
+    AppleAuthorizationRequester? appleRequester,
+  }) : _appleRequester =
+            appleRequester ?? const NativeAppleAuthorizationRequester() {
     if (supabase != null) _supabase = supabase;
   }
 
   late final SupabaseClient _supabase;
+
+  /// Feuille native Sign in with Apple. Injectable : les tests ne peuvent pas
+  /// invoquer le canal de plateforme.
+  final AppleAuthorizationRequester _appleRequester;
 
   /// Box Hive des préférences d'auth (persistance cross-restart).
   static const String _authPrefsBox = 'auth_prefs';
@@ -1049,6 +1062,27 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     }
   }
 
+  /// `true` quand la plateforme expose la feuille système Sign in with Apple.
+  ///
+  /// Exposé (et non `Platform.isIOS` en dur) pour que l'écran de login et les
+  /// tests partagent la **même** condition que le flux d'auth : sur Android et
+  /// sur le web il n'y a pas de feuille native, donc pas de bouton non plus.
+  static bool get supportsNativeAppleSignIn =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+
+  /// Connexion / inscription via Apple.
+  ///
+  /// Sur iOS et macOS : feuille **native** puis échange de l'`identityToken`
+  /// contre une session Supabase (`signInWithIdToken`). Tout se passe dans
+  /// l'app — une erreur GoTrue (provider désactivé, nonce invalide…) remonte
+  /// comme [AuthException] et devient un message français, au lieu du JSON brut
+  /// affiché dans Safari par l'ancien flux navigateur.
+  ///
+  /// Ailleurs (web) : repli sur le flux OAuth par redirection.
+  ///
+  /// Cf. docs/bugs/bug-apple-sso-provider-not-enabled.md.
   Future<void> signInWithApple() async {
     state = state.copyWith(
       isLoading: true,
@@ -1057,23 +1091,102 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     );
 
     try {
-      final redirectUrl = kIsWeb
-          ? Uri.base.resolve('auth/callback').toString()
-          : 'io.supabase.facteur://login-callback';
-      await _supabase.auth.signInWithOAuth(
-        OAuthProvider.apple,
-        redirectTo: redirectUrl,
-      );
-    } on AuthException catch (e) {
+      if (supportsNativeAppleSignIn) {
+        await _signInWithAppleNative();
+      } else {
+        await _supabase.auth.signInWithOAuth(
+          OAuthProvider.apple,
+          redirectTo: _oauthRedirectUrl(),
+        );
+        // Le web quitte la page ; ne pas laisser `isLoading` collé à `true` si
+        // la redirection est annulée ou bloquée par le navigateur.
+        state = state.copyWith(isLoading: false);
+      }
+    } on AppleSignInCancelledException {
+      // L'utilisateur a fermé la feuille : pas de message d'erreur, mais il
+      // FAUT relâcher `isLoading`, sinon les boutons sociaux restent désactivés
+      // jusqu'au prochain lancement de l'app.
+      debugPrint('AuthStateNotifier: Apple sign-in cancelled by user');
+      state = state.copyWith(isLoading: false);
+    } on AppleSignInException catch (e, stackTrace) {
+      _reportSocialSignInFailure('apple', e, stackTrace, stage: 'native_sheet');
       state = state.copyWith(
         isLoading: false,
         error: AuthErrorMessages.translate(e.message),
       );
-    } catch (e) {
+    } on AuthException catch (e, stackTrace) {
+      _reportSocialSignInFailure('apple', e, stackTrace, stage: 'supabase');
+      state = state.copyWith(
+        isLoading: false,
+        error: AuthErrorMessages.translate(e.message),
+      );
+    } catch (e, stackTrace) {
+      _reportSocialSignInFailure('apple', e, stackTrace, stage: 'unknown');
       state = state.copyWith(
         isLoading: false,
         error: 'Une erreur est survenue',
       );
+    }
+  }
+
+  Future<void> _signInWithAppleNative() async {
+    final credential = await _appleRequester.request();
+
+    await _supabase.auth.signInWithIdToken(
+      provider: OAuthProvider.apple,
+      idToken: credential.idToken,
+      nonce: credential.rawNonce,
+    );
+
+    // Apple ne livre le nom qu'à la toute première autorisation : si on ne le
+    // persiste pas maintenant, il est perdu définitivement.
+    await _persistAppleFullName(credential);
+
+    // Même convention que [signInWithEmail] : on relâche `isLoading` ici et on
+    // laisse `onAuthStateChange` poser l'utilisateur puis résoudre l'onboarding
+    // (`_loadSessionProfile`). Poser `state.user` soi-même casserait la
+    // détection `isNewSignIn` du listener, et l'app resterait sur le splash.
+    state = state.copyWith(isLoading: false);
+
+    unawaited(
+      PostHogService().capture(
+        event: 'social_sign_in_succeeded',
+        properties: {'provider': 'apple', 'flow': 'native'},
+      ),
+    );
+  }
+
+  /// Écrit `first_name` / `last_name` dans les métadonnées Supabase, en gardant
+  /// la convention posée par [signUpWithEmail].
+  ///
+  /// Best-effort : un échec ici ne doit jamais invalider une connexion réussie.
+  Future<void> _persistAppleFullName(AppleCredential credential) async {
+    if (credential.givenName == null && credential.familyName == null) return;
+
+    try {
+      // Lecture défensive : les métadonnées sont du JSON libre, un cast dur
+      // ferait échouer une connexion pourtant réussie.
+      final metadata = _supabase.auth.currentUser?.userMetadata ?? {};
+      bool filled(String key) {
+        final value = metadata[key];
+        return value is String && value.trim().isNotEmpty;
+      }
+
+      if (filled('first_name') || filled('last_name')) return;
+
+      await _supabase.auth.updateUser(
+        UserAttributes(
+          data: {
+            if (credential.givenName != null)
+              'first_name': credential.givenName,
+            if (credential.familyName != null)
+              'last_name': credential.familyName,
+            if (credential.fullName != null) 'full_name': credential.fullName,
+          },
+        ),
+      );
+    } catch (e) {
+      debugPrint('AuthStateNotifier: Apple name persistence failed: $e');
     }
   }
 
@@ -1085,28 +1198,74 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     );
 
     try {
-      final redirectUrl = kIsWeb
-          ? Uri(
-              scheme: Uri.base.scheme,
-              host: Uri.base.host,
-              path: Uri.base.path,
-            ).toString()
-          : 'io.supabase.facteur://login-callback';
       await _supabase.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: redirectUrl,
+        redirectTo: _oauthRedirectUrl(),
       );
-    } on AuthException catch (e) {
+    } on AuthException catch (e, stackTrace) {
+      _reportSocialSignInFailure('google', e, stackTrace, stage: 'supabase');
       state = state.copyWith(
         isLoading: false,
         error: AuthErrorMessages.translate(e.message),
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _reportSocialSignInFailure('google', e, stackTrace, stage: 'unknown');
       state = state.copyWith(
         isLoading: false,
         error: 'Une erreur est survenue',
       );
     }
+  }
+
+  /// Cible de redirection du flux OAuth par navigateur.
+  ///
+  /// Sur natif, le scheme custom déclaré dans `Info.plist` /
+  /// `AndroidManifest.xml` ; sur le web, la page courante (le SDK y consomme le
+  /// fragment `#access_token=...` au retour).
+  String _oauthRedirectUrl() => kIsWeb
+      ? Uri(
+          scheme: Uri.base.scheme,
+          host: Uri.base.host,
+          port: Uri.base.hasPort ? Uri.base.port : null,
+          path: Uri.base.path,
+        ).toString()
+      : 'io.supabase.facteur://login-callback';
+
+  /// Trace un échec de login social dans Sentry **et** PostHog.
+  ///
+  /// L'ancien flux Apple échouait dans le navigateur : ni Sentry ni PostHog ne
+  /// voyaient jamais l'erreur, et le bug a vécu jusqu'à ce qu'un utilisateur
+  /// envoie une capture d'écran. Le flux natif rapatrie l'échec dans l'app —
+  /// autant l'instrumenter.
+  void _reportSocialSignInFailure(
+    String provider,
+    Object error,
+    StackTrace stackTrace, {
+    required String stage,
+  }) {
+    debugPrint(
+      'AuthStateNotifier: $provider sign-in failed at $stage: $error',
+    );
+    unawaited(
+      PostHogService().capture(
+        event: 'social_sign_in_failed',
+        properties: {
+          'provider': provider,
+          'stage': stage,
+          'error': error.toString(),
+        },
+      ),
+    );
+    unawaited(
+      Sentry.captureException(
+        error,
+        stackTrace: stackTrace,
+        withScope: (scope) {
+          scope.setTag('auth_provider', provider);
+          scope.setTag('auth_stage', stage);
+        },
+      ),
+    );
   }
 
   Future<void> setOnboardingCompleted() async {

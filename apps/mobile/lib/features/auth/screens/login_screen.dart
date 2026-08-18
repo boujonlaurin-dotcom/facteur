@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -522,9 +520,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   // Bouton Sign in with Apple — requis par Apple Guideline 4.8
                   // dès lors qu'un autre provider OAuth (Google) est offert.
-                  // Affiché sur iOS et web ; macOS/Android n'ont pas l'expérience
-                  // native attendue.
-                  if (kIsWeb || (!kIsWeb && Platform.isIOS)) ...[
+                  // Affiché sur les plateformes Apple (feuille native) et sur
+                  // le web (repli OAuth) ; jamais sur Android.
+                  if (kIsWeb || AuthStateNotifier.supportsNativeAppleSignIn) ...[
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
