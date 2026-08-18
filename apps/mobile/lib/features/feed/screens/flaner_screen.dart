@@ -125,11 +125,6 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   /// [deckArticles] — liste dont l'article fait partie : il s'ouvre alors dans
   /// un deck navigable au swipe (Story 34.1).
   ///
-  /// `showPositionIndicator: false` ici, et seulement ici : Flâner est un feed
-  /// **ouvert**, sa fin n'est pas connue. Une barre segmentée y annoncerait un
-  /// nombre d'articles restants qui n'existe pas. Le geste marche, il ne promet
-  /// simplement rien.
-  ///
   /// [revealOnReturn] — au retour, le feed se repositionne sur l'article où la
   /// lecture s'est arrêtée. Réservé aux cartes de la **liste principale** : ce
   /// sont les seules dont on connaît la place (les items de carrousel n'ont pas
@@ -151,7 +146,6 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
             article.id,
             sectionKey: deckKey,
             sectionLabel: deckLabel,
-            showPositionIndicator: false,
             onArticleSettled: revealOnReturn ? (a) => landing = a : null,
           );
     await context.push(

@@ -34,6 +34,18 @@ void main() {
         minSpacing: Duration.zero,
       );
 
+  PreviewNudgeScheduler buildArticleSwipe() => PreviewNudgeScheduler(
+        countKeyPrefix: kArticleSwipeCountPrefixPrefsKey,
+        lastTriggerKey: kArticleSwipeLastTriggerPrefsKey,
+        discoveredKey: kArticleSwipeDiscoveredPrefsKey,
+        clock: () => now,
+        prefs: SharedPreferences.getInstance,
+        dailyBudget: 2,
+        minSpacing: const Duration(hours: 2),
+        postDiscoverySpacing: kArticleSwipePostDiscoverySpacing,
+        postDiscoveryBudget: kArticleSwipePostDiscoveryBudget,
+      );
+
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     now = DateTime(2026, 7, 18, 9);
@@ -61,7 +73,8 @@ void main() {
     test('plafonne à $kAutoGrowDailyBudget pulses par jour', () async {
       final s = buildAutoGrow();
       for (var i = 0; i < kAutoGrowDailyBudget; i++) {
-        expect(await s.canTriggerNow(), isTrue, reason: 'pulse #$i doit passer');
+        expect(await s.canTriggerNow(), isTrue,
+            reason: 'pulse #$i doit passer');
         await s.recordTriggered();
         // Avance au-delà de l'espacement pour isoler la limite de budget.
         now = now.add(kAutoGrowMinSpacing + const Duration(minutes: 1));
@@ -161,6 +174,80 @@ void main() {
       // ce sont deux apprentissages sur deux surfaces.
       await buildAutoGrow().recordTriggered();
       expect(await buildTriage().canTriggerNow(), isTrue);
+    });
+  });
+
+  group('rappel du swipe d\'article (étage post-découverte)', () {
+    test('le tout premier article ouvert peut rebondir', () async {
+      expect(await buildArticleSwipe().canTriggerNow(), isTrue);
+    });
+
+    test('2 rappels par jour, espacés de 2 h, tant que le geste est inconnu',
+        () async {
+      final s = buildArticleSwipe();
+      await s.recordTriggered();
+      expect(await s.canTriggerNow(), isFalse);
+
+      now = now.add(const Duration(hours: 2));
+      expect(await s.canTriggerNow(), isTrue);
+      await s.recordTriggered();
+
+      // Budget du jour épuisé, même passé l'espacement.
+      now = now.add(const Duration(hours: 3));
+      expect(await s.canTriggerNow(), isFalse);
+      // …et il repart le lendemain : on continue à montrer le geste.
+      now = now.add(const Duration(days: 1));
+      expect(await s.canTriggerNow(), isTrue);
+    });
+
+    test('après le premier swipe, un rappel par semaine', () async {
+      final s = buildArticleSwipe();
+      await s.markDiscovered();
+
+      // Le lendemain : trop tôt, le régime est hebdomadaire désormais.
+      now = now.add(const Duration(days: 1));
+      expect(await s.canTriggerNow(), isFalse);
+
+      now = now.add(const Duration(days: 6));
+      expect(await s.canTriggerNow(), isTrue);
+    });
+
+    test(
+        'les rappels post-découverte sont bornés à '
+        '$kArticleSwipePostDiscoveryBudget', () async {
+      final s = buildArticleSwipe();
+      await s.markDiscovered();
+
+      for (var i = 0; i < kArticleSwipePostDiscoveryBudget; i++) {
+        now = now.add(kArticleSwipePostDiscoverySpacing);
+        expect(await s.canTriggerNow(), isTrue, reason: 'rappel #$i');
+        await s.recordTriggered();
+      }
+
+      // Budget de vie épuisé : plus jamais, quel que soit le temps écoulé.
+      now = now.add(const Duration(days: 365));
+      expect(await s.canTriggerNow(), isFalse);
+    });
+
+    test('le compteur de rappels survit au changement de jour', () async {
+      // Le compteur post-découverte ne vit pas sous le préfixe daté, sinon la
+      // purge quotidienne relancerait le budget chaque semaine.
+      final s = buildArticleSwipe();
+      await s.markDiscovered();
+      now = now.add(kArticleSwipePostDiscoverySpacing);
+      await s.recordTriggered();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('${kArticleSwipeDiscoveredPrefsKey}_reminders'), 1);
+    });
+
+    test('les nudges d\'aperçu n\'ont pas d\'étage post-découverte', () async {
+      // Non-régression : sans `postDiscoverySpacing`, la découverte éteint le
+      // nudge pour de bon, comportement des deux nudges d'aperçu.
+      final s = buildAutoGrow();
+      await s.markDiscovered();
+      now = now.add(const Duration(days: 365));
+      expect(await s.canTriggerNow(), isFalse);
     });
   });
 }
