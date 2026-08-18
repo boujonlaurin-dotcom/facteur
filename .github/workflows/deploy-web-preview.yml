@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       slug:
-        description: 'Sous-chemin de la preview (ex. deck-sections)'
+        description: 'Sous-chemin de la preview (ex. essentiel-swipe)'
         required: true
         default: 'blocs-favoris'
       api_base_url:
