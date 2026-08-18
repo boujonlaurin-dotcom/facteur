@@ -26,6 +26,7 @@ import '../providers/essentiel_triage_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
 import '../services/tournee_progress_service.dart';
+import '../utils/essentiel_deck.dart';
 import '../utils/section_fit.dart';
 import '../utils/theme_color_mapping.dart';
 import 'article_impression_tracker.dart';

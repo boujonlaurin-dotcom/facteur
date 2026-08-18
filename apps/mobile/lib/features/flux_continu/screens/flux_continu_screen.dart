@@ -54,6 +54,7 @@ import '../models/flux_continu_models.dart';
 import '../providers/auto_grow_nudge_provider.dart';
 import '../providers/edition_essentiel_provider.dart';
 import '../providers/edition_read_status_provider.dart';
+import '../providers/essentiel_extra_articles_provider.dart';
 import '../providers/essentiel_triage_provider.dart';
 import '../providers/flux_continu_provider.dart';
 import '../providers/pending_feed_section_provider.dart';
@@ -1265,10 +1266,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   /// complète**, y compris ceux que la Tournée n'affiche pas (`coreVisibleCount`)
   /// et qu'il fallait aller chercher derrière « Tout lire ».
   ///
-  /// Le deck est en plus **chaîné aux sections suivantes** (Story 34.2) dans
-  /// l'ordre exact affiché à l'écran : arrivé au bout de sa section, le lecteur
-  /// se voit proposer la suivante, et ainsi de suite jusqu'au bout de la
-  /// tournée.
+  /// L'Essentiel du jour fait exception (ajustement v4) : la carte est un tri,
+  /// pas un sommaire. Son deck suit donc l'état du tri — aucune navigation tant
+  /// que la sélection n'est pas faite, puis les seuls gardés
+  /// ([essentielArticleDeck]).
   Future<void> _openArticle(
     BuildContext context,
     Object article, {
