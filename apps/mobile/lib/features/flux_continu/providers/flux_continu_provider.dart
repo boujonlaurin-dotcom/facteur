@@ -234,9 +234,24 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// theme sections (cheap) instead of the full tournée.
   List<FavoriteRef> _lastFavorites = const [];
 
+  /// Chronomètre du bootstrap pour la grammaire `[PERF]` : armé à l'entrée de
+  /// [build], relâché dans son `finally` — toutes les métriques du boot
+  /// (`gate_ms` → `fanout_done_ms`) partagent donc la même origine. `null` hors
+  /// bootstrap ⇒ les chemins refresh / refetch partiels ne loggent rien.
+  Stopwatch? _bootSw;
+
+  /// Ligne `[PERF] fluxContinu.<metric>=<ms depuis l'entrée de build>[suffix]`.
+  /// No-op hors bootstrap (cf. [_bootSw]).
+  void _perfBoot(String metric, [String suffix = '']) {
+    final sw = _bootSw;
+    if (sw == null) return;
+    debugPrint('[PERF] fluxContinu.$metric=${sw.elapsedMilliseconds}$suffix');
+  }
+
   @override
   Future<FluxContinuState> build() async {
     _bootstrapping = true;
+    _bootSw = Stopwatch()..start();
     _disposed = false;
     ref.onDispose(() => _disposed = true);
     _digestRepo = ref.read(digestRepositoryProvider);
@@ -419,6 +434,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // avec un JWT frais. Le squelette/cache est déjà peint, donc cette attente
     // gate la DATA, pas les pixels.
     await _awaitInitialRefresh();
+    _perfBoot('gate_ms');
 
     // Réconciliation du placement Essentiel/Flâner (source de vérité DB) —
     // non-bloquante : elle ne doit pas retarder la DATA (l'awaiter ajouterait
@@ -430,6 +446,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       return await _fetchAll();
     } finally {
       _bootstrapping = false;
+      _bootSw = null;
     }
   }
 
@@ -524,6 +541,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         carousel: null,
       ),
     );
+    _perfBoot('essentiel_dispatch_ms');
 
     // Le héros ne dépend QUE de `/api/essentiel`, mais attendait jusqu'ici le
     // `Future.wait` complet — donc la plus lente des trois, en pratique
@@ -538,6 +556,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // et un état non-squelette ici l'aurait désarmé, figeant la page haute.
     unawaited(
       essentielFuture.then((early) {
+        _perfBoot('essentiel_resolved_ms');
         if (_disposed || early == null || early.articles.isEmpty) return;
         if (!(state.valueOrNull?.isSkeleton ?? false)) return;
         _essentielCarousel = early.carousel;
@@ -546,6 +565,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           newSinceMorning: early.newSinceMorning,
         );
         state = AsyncData(_composeSkeleton(isSerene));
+        _perfBoot('hero_emit_ms');
       }),
     );
 
@@ -713,6 +733,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // round-trip de base.
     if (emitProgressive) {
       state = AsyncData(_compose(isSerene));
+      _perfBoot('phase1_ms');
     }
 
     // Bug « Sources favorites absentes » (race 2) : le catalogue
@@ -2497,6 +2518,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ];
 
     await _runWithConcurrency(tasks, _kPhase2FanoutConcurrency);
+    _perfBoot('fanout_done_ms', ' tasks=${tasks.length} dropped=0');
     // PR-4 — tout est stabilisé : le compose ci-dessous est le seul du jour à
     // (re)calculer l'ordre par score, et il l'applique dans la foulée.
     _freezeScoreOrderOnNextCompose = true;

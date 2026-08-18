@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart'
     show
         ValueListenable,
+        debugPrint,
         defaultTargetPlatform,
         setEquals,
         TargetPlatform,
@@ -476,6 +477,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   Timer? _autoGrowTimer;
   int _autoGrowNonce = 0;
   final math.Random _autoGrowRng = math.Random();
+
+  /// Chronomètre armé au montage de l'écran : origine de `hero_paint_ms`, LA
+  /// métrique avant/après du lot cold start (« quand la carte héros hydratée
+  /// est-elle réellement peinte ? »). Log one-shot, planifié en post-frame pour
+  /// mesurer le paint effectif et pas la construction du widget.
+  final Stopwatch _heroPaintSw = Stopwatch()..start();
+  bool _heroPaintLogged = false;
 
   /// Premier paint : on force le squelette (cartes vides à en-têtes réels) pour
   /// la toute première frame, **même si les données sont déjà prêtes**. À
@@ -1616,6 +1624,22 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final pendingSectionKey = ref.watch(pendingFeedSectionKeyProvider);
     if (pendingSectionKey != null && !isSkeleton && !isPastEdition) {
       _scheduleConsumePendingSection();
+    }
+    // `hero_paint_ms` — premier frame qui peint la carte héros **hydratée**
+    // (articles résolus). Aujourd'hui seul `_buildContent` la rend, donc le log
+    // n'arme qu'hors squelette.
+    final heroHydrated = data?.sections
+            .whereType<EssentielSection>()
+            .firstOrNull
+            ?.articles
+            .isNotEmpty ??
+        false;
+    if (!_heroPaintLogged && heroHydrated && !isSkeleton && !isPastEdition) {
+      _heroPaintLogged = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        debugPrint(
+            '[PERF] fluxContinu.hero_paint_ms=${_heroPaintSw.elapsedMilliseconds}');
+      });
     }
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
