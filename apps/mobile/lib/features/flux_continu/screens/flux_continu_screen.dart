@@ -2608,6 +2608,22 @@ class _FluxContinuSkeleton extends StatelessWidget {
 @visibleForTesting
 Widget essentielHeroSkeletonForTest() => const _HeroSkeleton();
 
+/// Exposé aux tests widget (même contrainte que [essentielHeroSkeletonForTest] :
+/// l'écran complet n'est pas montable en test) : contrat B0/C1 du squelette —
+/// il rend le [hero] fourni à la place du placeholder statique, et reste
+/// scrollable (clamping) avec le [controller] partagé.
+@visibleForTesting
+Widget fluxContinuSkeletonForTest({
+  List<FluxSection> sections = const [],
+  Widget? hero,
+  ScrollController? controller,
+}) =>
+    _FluxContinuSkeleton(
+      sections: sections,
+      hero: hero,
+      controller: controller,
+    );
+
 /// Placeholder du hero « Ton Essentiel » pendant le squelette.
 ///
 /// Deux moitiés, deux rôles :
