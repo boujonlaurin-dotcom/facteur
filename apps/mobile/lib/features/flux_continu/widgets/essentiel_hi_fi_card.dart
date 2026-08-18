@@ -21,6 +21,7 @@ import '../models/flux_continu_models.dart';
 import '../models/weather_snapshot.dart';
 import '../providers/edition_read_status_provider.dart';
 import '../providers/essentiel_extra_articles_provider.dart';
+import '../providers/essentiel_kept_articles_provider.dart';
 import '../providers/essentiel_triage_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
@@ -112,6 +113,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   bool _startScheduled = false;
   bool _prefetchScheduled = false;
   bool _pruneScheduled = false;
+  bool _archiveScheduled = false;
 
   /// La pile de tri a-t-elle été rendue pendant ce montage ? C'est le
   /// déclencheur de la révélation de fin de tri ([_TriageDoneReveal]) : elle ne
@@ -131,7 +133,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   FeedCarouselData? _memoCarousel;
   List<EssentielArticle> _memoFetched = const [];
   List<EssentielArticle> _memoPool = const [];
-  Set<String> _memoPoolIds = const {};
+  Map<String, EssentielArticle> _memoPoolById = const {};
 
   /// [fetched] = articles rapatriés par « Plus d'articles ? » quand la réserve
   /// locale était épuisée ([essentielExtraArticlesProvider]). Ils entrent dans
@@ -173,7 +175,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     // n'est plus coupé à la cible (33.4), c'est le nombre de gardés qui borne
     // le tri.
     _memoPool = List.unmodifiable([...articles, ...extra, ...fetchedFresh]);
-    _memoPoolIds = {for (final a in _memoPool) a.contentId};
+    _memoPoolById = {for (final a in _memoPool) a.contentId: a};
   }
 
   /// Répare un slate figé qui référence un article que le pool ne porte plus.
@@ -195,7 +197,9 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pruneScheduled = false;
       if (!mounted) return;
-      ref.read(essentielTriageProvider.notifier).pruneUnavailable(_memoPoolIds);
+      ref
+          .read(essentielTriageProvider.notifier)
+          .pruneUnavailable(_memoPoolById.keys.toSet());
       // Un slate **entièrement** introuvable se vide : le gel doit alors
       // pouvoir rejouer sur les articles du jour. Sans ce déverrouillage, le
       // verrou une-fois-par-montage de [_scheduleStart] laissait la carte sur
@@ -226,6 +230,46 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
       _startScheduled = false;
       if (!mounted) return;
       ref.read(essentielTriageProvider.notifier).syncSlate(snapshot);
+    });
+  }
+
+  /// Archive le **payload** des gardés du jour — le support du contrat « un
+  /// gardé est gardé pour toute la journée »
+  /// (`bug-essentiel-gardes-disparaissent.md`).
+  ///
+  /// Le tri ne persiste que des `contentId` ; la liste des gardés les résout
+  /// contre le pool, qui lui **n'est pas stable** : « L'Essentiel vivant »
+  /// (story 9.8) évince de `GET /api/essentiel` les articles lus passée une
+  /// grâce de 30 min, et les items du carrousel ne sont jamais persistés. Sans
+  /// cette archive, un gardé que l'utilisateur a lu disparaissait de sa liste
+  /// au redémarrage, puis y revenait dès que le blend live le re-servait.
+  ///
+  /// Confie donc à chaque build les gardés que le pool sait **encore**
+  /// résoudre : le geste de garde ne peut venir que du haut de pile, donc la
+  /// première capture est garantie, et les suivantes ne font que rafraîchir le
+  /// payload (lecture, sauvegarde, couverture). `sync` reçoit aussi l'ensemble
+  /// des gardés pour élaguer ce qui ne l'est plus (« Refaire ? »), et ne touche
+  /// ni l'état ni SharedPreferences quand rien n'a changé.
+  void _scheduleArchiveKept() {
+    if (_archiveScheduled) return;
+    _archiveScheduled = true;
+    final byId = _memoPoolById;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _archiveScheduled = false;
+      if (!mounted) return;
+      final triage = ref.read(essentielTriageProvider);
+      // Garde-fou porté ici plutôt qu'au seul appelant : un tri pas encore
+      // hydraté a `keptContentIds` vide, et `sync` élaguerait alors l'archive
+      // qu'on est justement en train de relire.
+      if (!triage.hydrated) return;
+      final keptIds = triage.keptContentIds;
+      ref.read(essentielKeptArticlesProvider.notifier).sync(
+            resolved: [
+              for (final id in keptIds)
+                if (byId[id] != null) byId[id]!,
+            ],
+            keptIds: keptIds.toSet(),
+          );
     });
   }
 
@@ -343,7 +387,23 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
       // où `syncSlate` n'a pas encore couru.
       pendingPoolIds = poolIds.where((id) => !inSlate.contains(id)).length;
       if (!triage.hasStarted || pendingPoolIds > 0) _scheduleSyncSlate();
+      _scheduleArchiveKept();
     }
+
+    // Pool **rendu** : le pool adressable, complété des gardés que seule
+    // l'archive du jour porte encore (article lu puis évincé par le blend
+    // live, item de carrousel absent au cold-boot). Le pool gagne quand il
+    // porte l'article — son payload est le plus frais. L'ordre d'affichage
+    // des gardés vient du slate gelé (`keptContentIds`), jamais de cette
+    // liste : les archivés peuvent donc entrer en queue sans rien déplacer.
+    final keptArchive = ref.watch(essentielKeptArticlesProvider);
+    final archivedOnly = <EssentielArticle>[
+      for (final id in triage.keptContentIds)
+        if (!_memoPoolById.containsKey(id) && keptArchive.byId[id] != null)
+          keptArchive.byId[id]!,
+    ];
+    final renderPool =
+        archivedOnly.isEmpty ? pool : [...pool, ...archivedOnly];
     final showTriage = canTriage && triage.isActive;
     if (showTriage) _sawTriageActive = true;
     // **Alimentation continue de la pile** (33.4) : dès qu'il reste moins de
@@ -367,7 +427,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     // d'élargir sa pile.
     if (showTriage &&
         extraState.hydrated &&
-        !_memoPoolIds.contains(triage.currentContentId)) {
+        !_memoPoolById.containsKey(triage.currentContentId)) {
       _schedulePruneUnavailable();
     }
     final triageDone = canTriage && triage.done;
@@ -406,9 +466,11 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     // le slate du jour tel quel.
     final List<EssentielArticle> passiveArticles;
     if (triageDone) {
-      // `pool` (et non `articles`) : un article gardé injecté via « Voir
-      // d'autres articles » doit apparaître dans la liste finale.
-      final byId = {for (final a in pool) a.contentId: a};
+      // `renderPool` (et non `articles`) : un article gardé injecté via « Voir
+      // d'autres articles » doit apparaître dans la liste finale — et un gardé
+      // que le backend ne sert plus (lu, donc évincé) doit y rester, servi par
+      // l'archive du jour.
+      final byId = {for (final a in renderPool) a.contentId: a};
       passiveArticles = [
         for (final id in triage.keptContentIds)
           if (byId[id] != null) byId[id]!,
@@ -538,8 +600,10 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
                 // lorsqu'elles sont réellement rendues, c'est-à-dire ici.
                 EssentielTriageStack(
                   // Le pool (slate + articles injectables) permet à la pile de
-                  // résoudre les ids réinjectés par « Voir d'autres articles ».
-                  articles: pool,
+                  // résoudre les ids réinjectés par « Voir d'autres articles » ;
+                  // les gardés archivés qu'il ne porte plus s'y ajoutent pour
+                  // que la kept-list sous la pile reste complète.
+                  articles: renderPool,
                   triage: triage,
                   onTapArticle: onTapArticle,
                 )
