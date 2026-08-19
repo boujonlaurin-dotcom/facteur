@@ -8,7 +8,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, get_feed_db
 from app.dependencies import get_current_user_id
 from app.models.content import UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
@@ -234,7 +234,7 @@ async def get_personalized_feed(
             "sources separately."
         ),
     ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_feed_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
     """
