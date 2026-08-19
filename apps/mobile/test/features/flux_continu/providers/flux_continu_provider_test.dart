@@ -601,7 +601,7 @@ void main() {
       );
     });
 
-    test('13 favorites cap (14th ignored)', () async {
+    test('favorites cap (le favori au-delà du cap est ignoré)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(
         () => feedRepo.getFeed(
@@ -613,13 +613,16 @@ void main() {
         ),
       ).thenAnswer((_) async => _feedResponseWith(3));
 
-      // 14 favoris thème (slugs arbitraires — `visualFor` a un fallback) : le cap
-      // [_kMaxFavoriteSections] = [kTourneeVisibleCap] = 13 garde les 13 premiers,
-      // le 14e est ignoré.
+      // `kTourneeVisibleCap + 1` favoris thème (slugs arbitraires — `visualFor` a
+      // un fallback) : le cap [_kMaxFavoriteSections] = [kTourneeVisibleCap]
+      // garde les premiers, le dernier est ignoré. Exprimé en fonction de la
+      // constante (et non en dur) pour ne pas re-casser au prochain bump —
+      // Story 22.8 l'a portée de 13 à 16.
       final container = makeContainer(
         interests: _interestsState(
           favorites: [
-            for (var i = 0; i < 14; i++) ThemeFavoriteRef(slug: 'theme$i'),
+            for (var i = 0; i < kTourneeVisibleCap + 1; i++)
+              ThemeFavoriteRef(slug: 'theme$i'),
           ],
         ),
       );
@@ -630,7 +633,7 @@ void main() {
           .whereType<FeedThemeSection>()
           .map((s) => s.themeSlug)
           .toList();
-      expect(slugs, [for (var i = 0; i < 13; i++) 'theme$i']);
+      expect(slugs, [for (var i = 0; i < kTourneeVisibleCap; i++) 'theme$i']);
     });
   });
 

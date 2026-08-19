@@ -12,7 +12,7 @@ import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart'
-    show kSectionMinItems;
+    show kSectionMinItems, kTourneeVisibleCap;
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
@@ -369,76 +369,34 @@ void main() {
 
   test(
       'plusieurs sources favorites respectent l\'ordre par position et le '
-      'cap (parité thèmes = 13)', () async {
+      'cap (parité thèmes = kTourneeVisibleCap)', () async {
+    // `kTourneeVisibleCap + 1` sources favorites : la dernière par position
+    // tombe sous le cap. Généré depuis la constante plutôt qu'écrit en dur,
+    // pour ne pas re-casser au prochain bump du cap.
+    final ids = [
+      for (var i = 0; i < kTourneeVisibleCap + 1; i++)
+        's${i.toString().padLeft(2, '0')}',
+    ];
     stubFeed(
       themeIds: const {},
       sourceIds: {
-        'a': ['a1', 'a2', 'a3'],
-        'b': ['b1', 'b2', 'b3'],
-        'c': ['c1', 'c2', 'c3'],
-        'd': ['d1', 'd2', 'd3'],
-        'e': ['e1', 'e2', 'e3'],
-        'f': ['f1', 'f2', 'f3'],
-        'g': ['g1', 'g2', 'g3'],
-        'h': ['h1', 'h2', 'h3'],
-        'i': ['i1', 'i2', 'i3'],
-        'j': ['j1', 'j2', 'j3'],
-        'k': ['k1', 'k2', 'k3'],
-        'l': ['l1', 'l2', 'l3'],
-        'm': ['m1', 'm2', 'm3'],
-        'n': ['n1', 'n2', 'n3'],
+        // ≥ kSectionMinItems (3) articles chacune pour rester au-dessus du
+        // plancher d'affichage (sinon masquées avant le cap).
+        for (final id in ids) id: ['${id}_1', '${id}_2', '${id}_3'],
       },
     );
+    // Inséré à l'envers : le provider doit trier par `position`, pas par ordre
+    // d'insertion (intention d'origine du test). L'inversion complète est une
+    // permutation plus stricte que les échanges 2 à 2 d'origine.
+    final favorites = [
+      for (var i = ids.length - 1; i >= 0; i--)
+        SourceFavoriteRef(sourceId: ids[i], position: i),
+    ];
     final container = await buildContainer(
       interests: _interestsState(),
-      sourcesState: _sourcesState(favorites: [
-        SourceFavoriteRef(sourceId: 'c', position: 2),
-        SourceFavoriteRef(sourceId: 'a', position: 0),
-        SourceFavoriteRef(sourceId: 'b', position: 1),
-        SourceFavoriteRef(sourceId: 'd', position: 3),
-        SourceFavoriteRef(sourceId: 'f', position: 5),
-        SourceFavoriteRef(sourceId: 'e', position: 4),
-        SourceFavoriteRef(sourceId: 'h', position: 7),
-        SourceFavoriteRef(sourceId: 'g', position: 6),
-        SourceFavoriteRef(sourceId: 'j', position: 9),
-        SourceFavoriteRef(sourceId: 'i', position: 8),
-        SourceFavoriteRef(sourceId: 'k', position: 10),
-        SourceFavoriteRef(sourceId: 'l', position: 11),
-        SourceFavoriteRef(sourceId: 'm', position: 12),
-        SourceFavoriteRef(sourceId: 'n', position: 13),
-      ]),
-      catalog: [
-        _source('a'),
-        _source('b'),
-        _source('c'),
-        _source('d'),
-        _source('e'),
-        _source('f'),
-        _source('g'),
-        _source('h'),
-        _source('i'),
-        _source('j'),
-        _source('k'),
-        _source('l'),
-        _source('m'),
-        _source('n'),
-      ],
-      tourneeOrder: const [
-        'source:a',
-        'source:b',
-        'source:c',
-        'source:d',
-        'source:e',
-        'source:f',
-        'source:g',
-        'source:h',
-        'source:i',
-        'source:j',
-        'source:k',
-        'source:l',
-        'source:m',
-        'source:n',
-      ],
+      sourcesState: _sourcesState(favorites: favorites),
+      catalog: [for (final id in ids) _source(id)],
+      tourneeOrder: [for (final id in ids) 'source:$id'],
     );
     addTearDown(container.dispose);
 
@@ -448,11 +406,8 @@ void main() {
         .map((s) => s.sourceId)
         .toList();
 
-    // Triées par position (a..n) puis capées à 13 → a..m.
-    expect(
-      sources,
-      ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm'],
-    );
+    // Triées par position puis capées → les `kTourneeVisibleCap` premières.
+    expect(sources, ids.take(kTourneeVisibleCap).toList());
   });
 
   // ── Compromis d'affichage V1 : masquage (pénurie) / déclassement (pauvreté) ─
@@ -672,6 +627,102 @@ void main() {
           .map((s) => s.themeSlug)
           .toList();
       expect(order, ['tech', 'science', 'culture', 'economy', 'politics']);
+    });
+    test(
+        'cap : favoris au-delà du cap dont un maigre → le maigre est coupé des '
+        'sections mais présent dans thinFavoriteKeys', () async {
+      stubFeed(
+        // Riches = ≥ kSectionMinItems (3) articles ; 'culture' reste sous le
+        // plancher (1) → maigre → dépriorisé en fin → seul coupé par le cap.
+        themeIds: {
+          'tech': ['tc1', 'tc2', 'tc3'],
+          'science': ['sc1', 'sc2', 'sc3'],
+          'economy': ['ec1', 'ec2', 'ec3'],
+          'politics': ['po1', 'po2', 'po3'],
+          'environment': ['en1', 'en2', 'en3'],
+          'culture': ['cu1'], // maigre → dépriorisé en fin → coupé par le cap
+        },
+        sourceIds: {
+          'a': ['a1', 'a2', 'a3'],
+          'b': ['b1', 'b2', 'b3'],
+          'c': ['c1', 'c2', 'c3'],
+          'd': ['d1', 'd2', 'd3'],
+          'e': ['e1', 'e2', 'e3'],
+          'f': ['f1', 'f2', 'f3'],
+          'g': ['g1', 'g2', 'g3'],
+          'h': ['h1', 'h2', 'h3'],
+          'i': ['i1', 'i2', 'i3'],
+          'j': ['j1', 'j2', 'j3'],
+          'k': ['k1', 'k2', 'k3'],
+        },
+      );
+      final container = await buildContainer(
+        interests: _interestsState(
+          favorites: const [
+            ThemeFavoriteRef(slug: 'tech'),
+            ThemeFavoriteRef(slug: 'science'),
+            ThemeFavoriteRef(slug: 'economy'),
+            ThemeFavoriteRef(slug: 'politics'),
+            ThemeFavoriteRef(slug: 'environment'),
+            ThemeFavoriteRef(slug: 'culture'),
+          ],
+        ),
+        sourcesState: _sourcesState(
+          favorites: const [
+            SourceFavoriteRef(sourceId: 'a', position: 0),
+            SourceFavoriteRef(sourceId: 'b', position: 1),
+            SourceFavoriteRef(sourceId: 'c', position: 2),
+            SourceFavoriteRef(sourceId: 'd', position: 3),
+            SourceFavoriteRef(sourceId: 'e', position: 4),
+            SourceFavoriteRef(sourceId: 'f', position: 5),
+            SourceFavoriteRef(sourceId: 'g', position: 6),
+            SourceFavoriteRef(sourceId: 'h', position: 7),
+            SourceFavoriteRef(sourceId: 'i', position: 8),
+            SourceFavoriteRef(sourceId: 'j', position: 9),
+            SourceFavoriteRef(sourceId: 'k', position: 10),
+          ],
+        ),
+        catalog: [
+          _source('a'),
+          _source('b'),
+          _source('c'),
+          _source('d'),
+          _source('e'),
+          _source('f'),
+          _source('g'),
+          _source('h'),
+          _source('i'),
+          _source('j'),
+          _source('k'),
+        ],
+        tourneeOrder: const [
+          'source:a',
+          'source:b',
+          'source:c',
+          'source:d',
+          'source:e',
+          'source:f',
+          'source:g',
+          'source:h',
+          'source:i',
+          'source:j',
+          'source:k',
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+      final slugs = feedSections(container)
+          .where((s) => s.kind == SectionKind.theme)
+          .map((s) => s.themeSlug)
+          .toList();
+      // `kTourneeVisibleCap + 1` favoris (11 sources + 6 thèmes) ⇒ le maigre
+      // 'culture' (dépriorisé en dernier) est le seul coupé, mais reste signalé
+      // pour la modal. Le lot de sources est dimensionné pour que le cap morde
+      // d'exactement une section.
+      expect(state.sections.length, kTourneeVisibleCap);
+      expect(slugs, isNot(contains('culture')));
+      expect(state.thinFavoriteKeys, contains('theme:culture'));
     });
   });
 }

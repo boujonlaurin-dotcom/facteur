@@ -20,6 +20,7 @@
 /// thèmes canoniques ne réapparaissent plus au prochain reload.
 library;
 
+import 'package:facteur/config/constants.dart' show kFavoriteCap;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -35,16 +36,45 @@ const _kTourneeCustomizedKey = 'tournee_customized_v1';
 ///
 /// Couvre favoris + suggestions « Choisie pour vous » + cartes éditoriales
 /// (Actus, Bonnes, Grille) — pas la carte hi-fi Essentiel du haut, rendue à
-/// part. Dimensionné pour la cible backend de ~8 sections thématiques :
-/// 8 thématiques + Actus + Bonnes + Grille = 11, + marge.
-const int kTourneeVisibleCap = 13;
+/// part.
+///
+/// **Ce n'est pas un knob libre : c'est une quantité dérivée.** Le cap réserve
+/// [kTourneeSuggestQuota] slots de *marge* aux suggestions « Choisie pour vous »
+/// au-dessus de `kTourneeEditorialCount + kFavoriteCap`, pour qu'un compte qui
+/// n'est pas au plafond de favoris voie quand même des suggestions. Depuis le
+/// bug « blocs favoris absents » (#1098) cette marge n'est plus une *réserve
+/// mordante* : les suggestions ne se servent plus qu'en fin, sur les slots
+/// laissés libres par les favoris et l'éditorial (cf. `_orderedTourneeKeys`), et
+/// un bloc placé par l'utilisateur n'est **jamais** évincé à leur profit. La
+/// marge borne juste le nombre de suggestions affichables ; elle ne coupe plus
+/// rien.
+///
+/// Pour qu'un compte au plafond de favoris garde ses cartes éditoriales, il faut
+/// `cap >= kTourneeEditorialCount + kFavoriteCap`. L'égalité ci-dessous ajoute la
+/// marge de suggestions au-dessus de ce minimum.
+///
+/// Écrire la formule plutôt que sa valeur n'est pas cosmétique : la Story 22.8
+/// avait d'abord posé 15 (en oubliant la marge de suggestions), ce qui coupait
+/// **Bonnes Nouvelles** — dernière du bloc éditorial, donc première sacrifiée —
+/// en silence. Verrouillé par le test « plafond de favoris + suggestions »
+/// (`flux_continu_tournee_order_test.dart`).
+///
+/// Story 22.8 — la cible passe à [kFavoriteCap] favoris visibles : `kFavoriteCap`
+/// monte à 10, et le cap suit par la formule.
+///
+/// Limite connue et **inchangée** : [kFavoriteCap] est un plafond *par nature*
+/// (thèmes et sources comptés séparément), donc un compte qui cumule les deux
+/// dépasse le cap et se fait quand même élaguer. L'égalité ci-dessous protège
+/// l'éditorial du cas mono-nature, pas du cumul.
+const int kTourneeVisibleCap =
+    kTourneeSuggestQuota + kTourneeEditorialCount + kFavoriteCap;
 
-// Story 22.6 — `kTourneeSuggestQuota` réservait des slots aux sections
-// « Choisie pour vous » sous le cap, **en évinçant des favoris** (`cap - quota`).
-// Retiré : un bloc placé par l'utilisateur dans son Essentiel n'est jamais
-// coupé au profit d'une suggestion (cf. `_orderedTourneeKeys`). Les suggestions
-// prennent désormais les slots restants — dans le cas nominal (≤ 7 favoris +
-// 3 cartes éditoriales sur 13) il en reste, donc l'intention de 22.6 tient.
+/// Marge de slots laissée aux suggestions « Choisie pour vous » au-dessus du
+/// minimum favoris + éditorial. **N'est plus une réserve mordante** (#1098) :
+/// les suggestions prennent seulement les slots libres, sans jamais évincer un
+/// favori — cette constante borne juste combien de suggestions peuvent tenir
+/// sous [kTourneeVisibleCap].
+const int kTourneeSuggestQuota = 3;
 
 /// Compromis d'affichage des blocs de la Tournée (V1 — base de test PO).
 ///
@@ -104,6 +134,20 @@ const String kTourneeGrilleKey = 'grille';
 
 /// Clé de la veille (singleton à V1) — alignée sur la branche `'veille'` de `sectionKey`.
 const String kTourneeVeilleKey = 'veille';
+
+/// Cartes éditoriales de la Tournée : elles occupent des slots sous
+/// [kTourneeVisibleCap] sans être des favoris ni des suggestions.
+const List<String> kTourneeEditorialKeys = [
+  kTourneeActusKey,
+  kTourneeGrilleKey,
+  kTourneeBonnesKey,
+];
+
+/// Cardinalité de [kTourneeEditorialKeys], en `const int` parce que
+/// [kTourneeVisibleCap] en dépend et que Dart ne const-fold pas `List.length`.
+/// L'accord entre les deux est vérifié par un test — ajouter une carte
+/// éditoriale sans toucher ce nombre couperait une section en silence.
+const int kTourneeEditorialCount = 3;
 
 /// `true` ssi [key] désigne une section **réordonnable** de la Tournée, au sens
 /// « l'utilisateur peut la déplacer ». Source unique de vérité partagée par la

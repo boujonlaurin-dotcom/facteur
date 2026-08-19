@@ -1,14 +1,15 @@
 // Story 10.2 — sheet unifiée « Mes favoris » : deux sections (Essentiel /
 // Flâner), appartenance exclusive des sources (la clé `source:` dans
 // `tournee_order_v1` ⇒ Essentiel, sinon Flâner), déplacement de mode, funnel
-// veille sur les sujets, et caps 13/10 (Essentiel/Flâner) par section.
+// veille sur les sujets, et caps `kTourneeVisibleCap`/10 (Essentiel/Flâner) par
+// section.
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart'
-    show tourneeThemeKey;
+    show kTourneeVisibleCap, tourneeThemeKey;
 import 'package:facteur/features/flux_continu/providers/tournee_smart_arrangement_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/manage_favorites_sheet.dart';
 import 'package:facteur/features/grille/models/grille_models.dart';
@@ -551,11 +552,12 @@ void main() {
   });
 
   testWidgets(
-      '« Hors Tournée du jour (13) » apparaît au-delà de 13 sections Essentiel',
+      '« Hors Tournée du jour » apparaît au-delà du cap de sections Essentiel',
       (tester) async {
-    // 9 thèmes + 3 sources + Actus + Bonnes = 14 blocs Essentiel → au-delà du
-    // cap 13. Les sources sont en mode Essentiel via leur clé `source:` dans
-    // `tournee_order_v1`.
+    // 12 thèmes + 3 sources + Actus + Bonnes = 17 blocs Essentiel → au-delà du
+    // cap `kTourneeVisibleCap` (16). Les sources sont en mode Essentiel via leur
+    // clé `source:` dans `tournee_order_v1`. Le lot de thèmes a été étendu avec
+    // la Story 22.8 (cap 13 → 16) pour que le débordement existe encore.
     SharedPreferences.setMockInitialValues(<String, Object>{
       'tournee_order_v1': ['source:s1', 'source:s2', 'source:s3'],
     });
@@ -571,6 +573,9 @@ void main() {
         ThemeFavoriteRef(slug: 'economy'),
         ThemeFavoriteRef(slug: 'culture'),
         ThemeFavoriteRef(slug: 'sport'),
+        ThemeFavoriteRef(slug: 'health'),
+        ThemeFavoriteRef(slug: 'justice'),
+        ThemeFavoriteRef(slug: 'media'),
       ]),
       sources: _sources(favorites: const [
         SourceFavoriteRef(sourceId: 's1', position: 0),
@@ -584,10 +589,16 @@ void main() {
       ],
     );
 
-    // Le cap (élargi → 13) est explicité entre parenthèses.
-    expect(find.text('Hors Tournée du jour (13)'), findsOneWidget);
+    // Le cap est explicité entre parenthèses.
+    expect(
+      find.text('Hors Tournée du jour ($kTourneeVisibleCap)'),
+      findsOneWidget,
+    );
     // Le compteur de l'en-tête reflète aussi le cap.
-    expect(find.text('· 13/13'), findsOneWidget);
+    expect(
+      find.text('· $kTourneeVisibleCap/$kTourneeVisibleCap'),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
