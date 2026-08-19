@@ -1,9 +1,10 @@
 """Tests pour le hot fix idle-in-tx zombies (incident 2026-04-28).
 
-Couvre les 2 couches centralisées :
+Couvre les couches centralisées :
 - Layer A : `safe_async_session` rollback() en finally même sur happy path.
 - Layer B : connect_args contient `idle_in_transaction_session_timeout=60000`
   (filet Postgres-side).
+- Feed : session request-scoped AUTOCOMMIT, sans transaction anticipée.
 """
 
 from unittest.mock import AsyncMock, patch
@@ -11,6 +12,42 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app import database
+
+
+def test_feed_engine_is_autocommit_and_shares_pool():
+    """Le chemin feed ne crée pas un second pool de connexions."""
+    assert database.feed_engine.pool is database.engine.pool
+    assert (
+        database.feed_engine.sync_engine.get_execution_options()["isolation_level"]
+        == "AUTOCOMMIT"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_feed_db_only_yields_and_closes_session():
+    """Créer la dépendance ne doit ni ouvrir de tx, ni faire de requête.
+
+    La fermeture est déléguée au context manager de la session factory ; il
+    n'y a volontairement ni SET LOCAL, ni commit/rollback explicite.
+    """
+    mock_session = AsyncMock()
+    fake_factory_cm = AsyncMock()
+    fake_factory_cm.__aenter__.return_value = mock_session
+    fake_factory_cm.__aexit__.return_value = None
+
+    with patch.object(
+        database, "feed_async_session_maker", return_value=fake_factory_cm
+    ):
+        dependency = database.get_feed_db()
+        assert await anext(dependency) is mock_session
+        with pytest.raises(StopAsyncIteration):
+            await anext(dependency)
+
+    fake_factory_cm.__aenter__.assert_awaited_once()
+    fake_factory_cm.__aexit__.assert_awaited_once()
+    mock_session.execute.assert_not_awaited()
+    mock_session.commit.assert_not_awaited()
+    mock_session.rollback.assert_not_awaited()
 
 
 def test_connect_args_includes_idle_in_tx_timeout():
