@@ -828,8 +828,27 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // par `SectionBlock`) plutôt qu'une section absente. Réservé aux favoris
     // **explicites** : un compte neuf (fallback canonique) garde l'ancien
     // comportement (thèmes pauvres droppés, pas d'empty-state non choisi).
-    _themes = picked.isFallback ? const [] : _shellThemeSections(favorites);
-    _sources = _shellSourceSections(favoriteSources);
+    //
+    // SWR in-day — quand du **vrai contenu est déjà monté** (revalidation d'un
+    // cache in-day, pull-to-refresh), le seed passe par [_reseedShells] : les
+    // sections dont la clé survit gardent leurs items jusqu'à leur remplacement
+    // par le fan-out (`_upsertByKey`), celles qui ont disparu des favoris
+    // sortent. Sans ça, la 1ʳᵉ section revalidée publierait un état où toutes
+    // les autres sont redevenues vides (`sectionTask` émet inconditionnellement)
+    // ⇒ flash contenu → vide → contenu sur toute la page. C'est ce que promet
+    // déjà le commentaire du rendu progressif plus bas (« pas de blink »).
+    final hasMountedContent = !(state.valueOrNull?.isSkeleton ?? true);
+    List<FeedThemeSection> seed(
+      List<FeedThemeSection> existing,
+      List<FeedThemeSection> freshShells,
+    ) =>
+        hasMountedContent ? _reseedShells(existing, freshShells) : freshShells;
+
+    _themes = seed(
+      _themes,
+      picked.isFallback ? const [] : _shellThemeSections(favorites),
+    );
+    _sources = seed(_sources, _shellSourceSections(favoriteSources));
     // Issue #1 — seed des coquilles « Choisie pour vous » AVANT le fan-out
     // (mêmes clés que le rendu réel) : elles sont ordonnées dès la Phase 1 et se
     // remplissent sur place au lieu d'apparaître en net-new (le « pop » ressenti).
@@ -837,7 +856,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final t in topThemes)
         if (t.isSuggested) t
     ];
-    _suggested = _shellSuggestedSections(_usableSuggestions(suggestions));
+    _suggested = seed(
+      _suggested,
+      _shellSuggestedSections(_usableSuggestions(suggestions)),
+    );
     // Reseed complet ⇒ les coquilles ne sont pas encore résolues : on repart
     // d'une classification vierge (aucune section maigre tant que le fan-out /
     // le chemin cache n'a pas confirmé un contenu réel).
