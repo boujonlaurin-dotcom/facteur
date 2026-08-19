@@ -3010,13 +3010,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   void _hydrateSectionsFromCache(bool isSerene) {
     final ctx = _sectionCacheContext(isSerene);
     if (ctx == null) return;
-    final cached = ctx.cache.readTourneeSections(
+    final cached = ctx.cache.readTourneeSectionsForToday(
       ctx.userId,
       variant: ctx.variant,
       dayKey: ctx.dayKey,
-    );
-    unawaited(
-      ctx.cache.purgeStaleTourneeSections(ctx.userId, dayKey: ctx.dayKey),
     );
     if (cached.isEmpty) return;
 
@@ -3036,20 +3033,18 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
 
     final hydratedKeys = <String>{};
-    List<FeedThemeSection> hydrate(List<FeedThemeSection> shells) => [
-          for (final shell in shells)
-            () {
-              final key = sectionKey(shell);
-              final entry = cached[key];
-              if (entry == null) return shell;
-              final section = decode(entry);
-              if (section == null) return shell;
-              hydratedKeys.add(key);
-              return section;
-            }(),
-        ];
-    _themes = hydrate(_themes);
-    _sources = hydrate(_sources);
+    FeedThemeSection hydrateOne(FeedThemeSection shell) {
+      final key = sectionKey(shell);
+      final entry = cached[key];
+      if (entry == null) return shell;
+      final section = decode(entry);
+      if (section == null) return shell;
+      hydratedKeys.add(key);
+      return section;
+    }
+
+    _themes = _themes.map(hydrateOne).toList();
+    _sources = _sources.map(hydrateOne).toList();
 
     final suggestedKeys = {for (final s in _suggested) sectionKey(s)};
     final extras = <({int rank, FeedThemeSection section})>[];

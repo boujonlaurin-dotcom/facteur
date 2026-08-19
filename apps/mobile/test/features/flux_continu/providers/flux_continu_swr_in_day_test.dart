@@ -417,7 +417,7 @@ void main() {
       await settle(container);
 
       final cache = FeedCacheService(await openBox(FeedCacheService.boxName));
-      final persisted = cache.readTourneeSections(
+      final persisted = cache.readTourneeSectionsForToday(
         _kUserId,
         variant: FeedCacheVariant.normal,
         dayKey: TourneeProgressService.dayKey(DateTime.now()),
@@ -508,7 +508,7 @@ void main() {
       );
 
       expect(
-        cache.readTourneeSections(
+        cache.readTourneeSectionsForToday(
           _kUserId,
           variant: FeedCacheVariant.normal,
           dayKey: TourneeProgressService.dayKey(DateTime.now()),
@@ -516,9 +516,12 @@ void main() {
         isEmpty,
       );
 
-      await cache.purgeStaleTourneeSections(_kUserId, dayKey: TourneeProgressService.dayKey(DateTime.now()));
+      // La lecture purge au passage (fire-and-forget) : plus rien ne traîne.
+      await pumpEventQueue(times: 5);
       expect(
-        box.keys.where((k) => k.toString().startsWith(FeedCacheService.tourneePrefix)),
+        box.keys.where(
+          (k) => k.toString().startsWith(FeedCacheService.tourneePrefix),
+        ),
         isEmpty,
       );
     },
@@ -591,7 +594,7 @@ void main() {
     );
     expect(patched, 1, reason: 'seule l\'entrée qui porte l\'id est réécrite');
 
-    final entries = cache.readTourneeSections(
+    final entries = cache.readTourneeSectionsForToday(
       _kUserId,
       variant: FeedCacheVariant.normal,
       dayKey: TourneeProgressService.dayKey(DateTime.now()),

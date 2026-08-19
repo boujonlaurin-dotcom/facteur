@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -258,71 +259,58 @@ class FeedCacheService {
   }
 
   /// Sections de la Tournée persistées **pour [dayKey]** et [variant], clés par
-  /// `sectionKey`. Les entrées d'un autre jour sont ignorées (et purgées par
-  /// [purgeStaleTourneeSections]) ; une entrée corrompue est évincée.
-  Map<String, CachedTourneeSection> readTourneeSections(
+  /// `sectionKey`. Purge au passage, toutes variantes confondues, ce qui date
+  /// d'une autre édition ou ne se relit pas (une seule passe sur les clés
+  /// plutôt qu'un balayage de purge séparé).
+  ///
+  /// Appelée **sur le chemin de peinture du boot** : le tri jour/variante se
+  /// fait donc sans jamais `jsonDecode` une entrée qu'on ne rendra pas — le
+  /// `day_key` est cherché dans la **chaîne encodée** (`{"saved_at":…,
+  /// "day_key":"AAAA-MM-JJ",…}`, même pré-filtre que
+  /// [patchTourneeContentStatus]), et la variante dans le nom de la clé. Sans
+  /// ça, un utilisateur ayant basculé en mode serein dans la journée paierait
+  /// au boot le décodage de ses ~10 sections de l'autre mode, sur le thread UI
+  /// — exactement le coût que ce lot cherche à supprimer.
+  Map<String, CachedTourneeSection> readTourneeSectionsForToday(
     String userId, {
     required FeedCacheVariant variant,
     required String dayKey,
   }) {
     final result = <String, CachedTourneeSection>{};
+    final stale = <String>[];
+    final dayMarker = '"day_key":"$dayKey"';
     final variantPrefix = '${_tourneeUserPrefix(userId)}${variant.name}:';
     for (final key in _tourneeKeysForUser(userId)) {
-      if (!key.startsWith(variantPrefix)) continue;
       final encoded = _box.get(key);
       if (encoded == null) continue;
+      // Édition périmée ou entrée illisible : jamais réaffichée, autant rendre
+      // la place tout de suite.
+      if (!encoded.contains(dayMarker)) {
+        stale.add(key);
+        continue;
+      }
+      if (!key.startsWith(variantPrefix)) continue;
       try {
         final decoded = jsonDecode(encoded);
-        if (decoded is! Map<String, dynamic>) {
-          _box.delete(key);
-          continue;
-        }
-        if (decoded['day_key'] != dayKey) continue;
-        final header = decoded['header'];
-        final data = decoded['data'];
-        final savedAt = decoded['saved_at'];
+        final header = decoded is Map<String, dynamic> ? decoded['header'] : null;
+        final data = decoded is Map<String, dynamic> ? decoded['data'] : null;
         if (header is! Map<String, dynamic> || data == null) {
-          _box.delete(key);
+          stale.add(key);
           continue;
         }
-        result[key.substring(variantPrefix.length)] = CachedTourneeSection(
-          savedAt: DateTime.fromMillisecondsSinceEpoch(
-            savedAt is int ? savedAt : 0,
-          ),
-          header: header,
-          data: data,
-        );
+        result[key.substring(variantPrefix.length)] =
+            CachedTourneeSection(header: header, data: data);
       } catch (e) {
         if (kDebugMode) {
-          debugPrint('FeedCacheService.readTourneeSections corrupted: $e');
+          debugPrint(
+            'FeedCacheService.readTourneeSectionsForToday corrupted: $e',
+          );
         }
-        _box.delete(key);
-      }
-    }
-    return result;
-  }
-
-  /// Supprime les sections Tournée de [userId] datées d'un autre jour que
-  /// [dayKey] (édition périmée : jamais réaffichée, autant rendre la place).
-  Future<void> purgeStaleTourneeSections(
-    String userId, {
-    required String dayKey,
-  }) async {
-    final stale = <String>[];
-    for (final key in _tourneeKeysForUser(userId)) {
-      final encoded = _box.get(key);
-      if (encoded == null) continue;
-      try {
-        final decoded = jsonDecode(encoded);
-        if (decoded is! Map<String, dynamic> || decoded['day_key'] != dayKey) {
-          stale.add(key);
-        }
-      } catch (_) {
         stale.add(key);
       }
     }
-    if (stale.isEmpty) return;
-    await _box.deleteAll(stale);
+    if (stale.isNotEmpty) unawaited(_box.deleteAll(stale));
+    return result;
   }
 
   /// Propage un statut de lecture dans les sections Tournée persistées.
@@ -413,9 +401,11 @@ class CachedFeedRaw {
 }
 
 /// Entrée « section de la Tournée » persistée (SWR in-day).
+///
+/// Pas de `savedAt` ici, contrairement à [CachedFeedRaw] : la fraîcheur d'une
+/// section n'est pas un TTL glissant mais le `day_key` de l'édition, déjà filtré
+/// par [FeedCacheService.readTourneeSectionsForToday].
 class CachedTourneeSection {
-  final DateTime savedAt;
-
   /// En-tête d'affichage de la section (label, accent, logo…), sérialisé par
   /// le provider depuis la section **réellement rendue**. Permet de reconstruire
   /// la section sans `userSourcesProvider` / `veilleActiveConfigProvider`, qui
@@ -425,9 +415,5 @@ class CachedTourneeSection {
   /// Payload brut de `GET /api/feed`, prêt pour `FeedRepository.parseFeedData`.
   final dynamic data;
 
-  const CachedTourneeSection({
-    required this.savedAt,
-    required this.header,
-    required this.data,
-  });
+  const CachedTourneeSection({required this.header, required this.data});
 }
