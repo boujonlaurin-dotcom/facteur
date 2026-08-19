@@ -46,7 +46,10 @@ from app.services.editorial.schemas import (
     compute_divergence_level,
 )
 from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
-from app.services.perspective_service import Perspective, PerspectiveService
+from app.services.perspective_service import (
+    PerspectiveService,
+    perspective_to_dict,
+)
 from app.services.title_annotation_service import (
     TitleAnnotationService,
     # get_title_annotation_service,  # DÉSACTIVÉ (T1) : réactiver avec la boucle LLM bias
@@ -554,17 +557,11 @@ class EditorialPipelineService:
         ) -> None:
             """Enrich one subject with perspective data. Fallback on error.
 
-            The cluster (articles ingested in our DB within the last 24-48h)
-            is the source of truth for "how many media cover this topic". We:
-              1. Build cluster-based perspectives — one per unique source.
-              2. Augment with Google News for NEW domains only.
-              3. Compute perspective_count / bias_distribution on the merged
-                 list (filtered on known bias), so `sum(bias_distribution)
-                 == perspective_count` while the count includes our own
-                 curated sources — not just Google News.
-            This aligns the carousel source_count with the Analyse de biais
-            header and ensures the LLM divergence analysis talks about the
-            same media set.
+            ``coverage_count`` est calculé sur un snapshot unique contenant le
+            pivot, le cluster et les résultats internes/Google News. Tous les
+            candidats sont filtrés par cohérence thématique, dédupliqués par
+            domaine et les biais ``unknown`` restent consultables. Les mesures
+            politiques utilisent ensuite uniquement le sous-ensemble connu.
             """
             if not cluster or not cluster.contents:
                 return
@@ -576,36 +573,8 @@ class EditorialPipelineService:
             )
             representative = ordered_contents[0]
 
-            # Step 1 — cluster-based perspectives (source of truth).
-            # Helper is shared with /contents/{id}/perspectives so the
-            # endpoint returns the same merged count as this pipeline (the
-            # PR #390 invariant still holds between header and bottom sheet).
-            # Exclure le représentatif — c'est l'article ouvert, pas une
-            # "autre source". Sans ça, perspective_count l'inclut (N) alors
-            # que l'endpoint /perspectives le retire du snapshot (N-1), d'où
-            # un off-by-one permanent card/section + une barre de biais
-            # divergente.
-            ordered_without_rep = [
-                c for c in ordered_contents if c.id != representative.id
-            ]
-            try:
-                cluster_perspectives = (
-                    await perspective_service.build_cluster_perspectives(
-                        ordered_without_rep
-                    )
-                )
-            except Exception:
-                logger.warning(
-                    "editorial_pipeline.cluster_perspectives_failed",
-                    topic_id=subject.topic_id,
-                )
-                cluster_perspectives = []
-
-            cluster_domains = {
-                p.source_domain for p in cluster_perspectives if p.source_domain
-            }
-
-            # Step 2 — Google News augmentation (new domains only)
+            # Recherche hybride (interne + Google News), puis construction de
+            # l'univers commun avec le cluster et le pivot.
             exclude_domain = None
             if representative.source and representative.source.url:
                 try:
@@ -615,10 +584,14 @@ class EditorialPipelineService:
                         exclude_domain = exclude_domain[4:]
                 except Exception:
                     pass
+            if not exclude_domain:
+                exclude_domain = perspective_service._extract_domain(
+                    representative.url or ""
+                )
 
             try:
                 (
-                    gnews_perspectives,
+                    discovered_perspectives,
                     _,
                 ) = await perspective_service.get_perspectives_hybrid(
                     content=representative,
@@ -629,83 +602,77 @@ class EditorialPipelineService:
                     "editorial_pipeline.perspectives_fallback",
                     topic_id=subject.topic_id,
                 )
-                gnews_perspectives = []
+                discovered_perspectives = []
 
-            # Keep only Google News perspectives whose domain is not already
-            # covered by the cluster — no double-counting.
-            new_gnews = [
-                p
-                for p in gnews_perspectives
-                if p.source_domain and p.source_domain not in cluster_domains
-            ]
-
-            merged_perspectives: list[Perspective] = cluster_perspectives + new_gnews
+            try:
+                coverage_universe = await perspective_service.build_coverage_universe(
+                    representative,
+                    ordered_contents,
+                    discovered_perspectives,
+                )
+            except Exception:
+                # Best-effort : un problème d'enrichissement ne doit pas faire
+                # tomber tout le digest. Le pivot reste au minimum la couverture
+                # mono-source honnête.
+                logger.warning(
+                    "editorial_pipeline.coverage_universe_failed",
+                    topic_id=subject.topic_id,
+                )
+                try:
+                    coverage_universe = (
+                        await perspective_service.build_cluster_perspectives(
+                            [representative]
+                        )
+                    )
+                except Exception:
+                    coverage_universe = []
 
             # Pivot stable: propagate representative id so the mobile bottom sheet
             # re-fetches /perspectives on the SAME content as the one used here.
             subject.representative_content_id = representative.id
 
-            # Single source of truth for the 3 UI counters (header, spectrum bar,
-            # bottom sheet): exclude perspectives without a known bias_stance.
-            # The bottom sheet endpoint (routers/contents.py) applies the same
-            # filter, so the invariant `sum(bias_distribution) == perspective_count`
-            # holds. The new twist vs. PR #390: the merged pool includes the
-            # cluster's own sources, so the count actually reflects what users
-            # see in the carousel.
-            known_perspectives = [
-                p for p in merged_perspectives if p.bias_stance != "unknown"
+            pivot_domain = (exclude_domain or "").lower().removeprefix("www.")
+            alternatives = [
+                p
+                for p in coverage_universe
+                if not pivot_domain or p.source_domain != pivot_domain
             ]
+            known_alternatives = [p for p in alternatives if p.bias_stance != "unknown"]
 
-            # Safety net: if every merged perspective has an unknown bias
-            # (source not in DOMAIN_BIAS_MAP nor resolvable via DB), fall
-            # back to counting the cluster sources themselves. Otherwise
-            # the card footer would show a single logo even when the digest
-            # actually grouped several outlets together. The bias
-            # distribution stays all-zero so the spectrum bar and divergence
-            # analysis remain hidden — we only lift the raw source counter.
-            # Cf. docs/bugs/bug-digest-perspective-undercount.md (Axe 2).
-            if not known_perspectives and cluster_perspectives:
-                subject.perspective_count = len(cluster_perspectives)
+            subject.coverage_count = len(coverage_universe)
+            # Champ legacy : alternatives connues ; quand elles sont toutes
+            # unknown, conserver l'ancien filet évite un compteur nul pour les
+            # clients qui ne lisent pas encore coverage_count.
+            if not known_alternatives and alternatives:
+                subject.perspective_count = len(alternatives)
                 subject.bias_distribution = compute_bias_distribution([])
                 subject.bias_highlights = None
                 logger.info(
                     "editorial_pipeline.perspective_count_safety_net",
                     topic_id=subject.topic_id,
-                    cluster_sources=len(cluster_perspectives),
+                    unknown_alternatives=len(alternatives),
                 )
             else:
-                subject.perspective_count = len(known_perspectives)
+                subject.perspective_count = len(known_alternatives)
                 subject.bias_distribution = compute_bias_distribution(
-                    known_perspectives
+                    known_alternatives
                 )
                 subject.bias_highlights = compute_bias_highlights(
                     subject.bias_distribution
                 )
 
-            # Persist the full known-bias merged list so the
-            # /contents/{id}/perspectives endpoint can return the exact same
-            # snapshot — otherwise the bottom sheet re-runs Google News at
-            # call time and shows different media than the CTA logos that
-            # come from this pipeline run.
-            # When the safety net above kicked in (no known bias), persist
-            # the cluster perspectives as-is (bias_stance=unknown) so the
-            # endpoint doesn't bail out to the live path — it already has
-            # the full cluster list to return, and the mobile footer logos
-            # stay coherent with the digest-time cluster.
+            # Nouveau snapshot complet : pivot inclus et unknown conservés.
+            subject.coverage_articles = [
+                perspective_to_dict(p) for p in coverage_universe
+            ]
+
+            # Snapshot legacy : alternatives seulement, avec la sémantique
+            # historique connue-bias (ou le filet all-unknown).
             snapshot_perspectives = (
-                known_perspectives if known_perspectives else cluster_perspectives
+                known_alternatives if known_alternatives else alternatives
             )
             subject.perspective_articles = [
-                {
-                    "title": p.title,
-                    "url": p.url,
-                    "source_name": p.source_name,
-                    "source_domain": p.source_domain,
-                    "bias_stance": p.bias_stance,
-                    "published_at": p.published_at,
-                    "description": p.description,
-                }
-                for p in snapshot_perspectives
+                perspective_to_dict(p) for p in snapshot_perspectives
             ]
 
             # Axe C — observability: log the composition so we can verify in
@@ -715,22 +682,19 @@ class EditorialPipelineService:
             logger.info(
                 "editorial_pipeline.perspectives_composition",
                 topic_id=subject.topic_id,
-                cluster_sources=len(cluster_perspectives),
-                gnews_added=len(new_gnews),
-                total_merged=len(merged_perspectives),
-                known_bias=len(known_perspectives),
-                unknown_bias=len(merged_perspectives) - len(known_perspectives),
+                candidates=len(ordered_contents) + len(discovered_perspectives),
+                coverage_count=subject.coverage_count,
+                alternatives=len(alternatives),
+                known_bias=len(known_alternatives),
+                unknown_bias=len(alternatives) - len(known_alternatives),
                 final_persisted_count=len(subject.perspective_articles or []),
                 perspective_count=subject.perspective_count,
+                invariant_ok=(subject.coverage_count == len(alternatives) + 1),
             )
 
-            # Build perspective_sources — max 6, deduplicated by domain.
-            # Use known_perspectives so the CTA logos match the bottom sheet
-            # (which also filters out unknown bias). When the safety net
-            # above fell back to cluster sources (no known bias), feed the
-            # same list here so the footer renders logos for each outlet
-            # in the cluster, consistent with perspective_count.
-            sources_pool = known_perspectives or cluster_perspectives
+            # Champ legacy de preview — max 6. ``coverage_sources`` ci-dessous
+            # reste complet et inclut le pivot.
+            sources_pool = known_alternatives or alternatives
             seen_domains: set[str] = set()
             unique_perspectives = []
             for p in sources_pool:
@@ -744,9 +708,7 @@ class EditorialPipelineService:
             # empty source_domain: the ILIKE "%%" pattern would match every
             # row in the sources table.
             logo_map: dict[str, str] = {}
-            perspectives_with_domain = [
-                p for p in unique_perspectives if p.source_domain
-            ]
+            perspectives_with_domain = [p for p in coverage_universe if p.source_domain]
             if perspectives_with_domain:
                 try:
                     domain_patterns = [
@@ -786,6 +748,15 @@ class EditorialPipelineService:
                 ).model_dump(mode="json")
                 for p in unique_perspectives
             ]
+            subject.coverage_sources = [
+                PerspectiveSourceMini(
+                    name=p.source_name,
+                    domain=p.source_domain,
+                    bias_stance=p.bias_stance,
+                    logo_url=logo_map.get(p.source_domain),
+                ).model_dump(mode="json")
+                for p in coverage_universe
+            ]
 
             # The LLM divergence analysis must describe the SAME media set
             # as the counters above — feed it the merged list (cluster +
@@ -793,10 +764,7 @@ class EditorialPipelineService:
             # LR-1 PR 2 : on ne paie l'appel mistral-large que sur des sujets
             # assez couverts (>= divergence_llm_min_perspectives). En deçà, le
             # fallback déterministe `compute_divergence_level` ci-dessous suffit.
-            if (
-                len(merged_perspectives)
-                >= get_settings().divergence_llm_min_perspectives
-            ):
+            if len(alternatives) >= get_settings().divergence_llm_min_perspectives:
                 try:
                     source_bias = await perspective_service.resolve_bias(
                         domain=exclude_domain or "",
@@ -820,7 +788,7 @@ class EditorialPipelineService:
                                 "published_at": p.published_at,
                                 "description": p.description,
                             }
-                            for p in merged_perspectives
+                            for p in alternatives
                         ],
                         article_description=representative.description,
                     )
@@ -866,13 +834,13 @@ class EditorialPipelineService:
         )
 
         perspective_time = time.time() - step_start
-        # Axe C — roll-up across all subjects so a single log line is enough
-        # to verify that carousel source_count ~ perspective_count on each
-        # topic, and to catch regressions on the cluster/GNews merge.
+        # Roll-up de la nouvelle vérité publique. ``source_count`` n'entre plus
+        # dans cet invariant : il reste un signal de ranking indépendant.
         coherent = sum(
             1
             for s in subjects
-            if s.perspective_count >= s.source_count and s.source_count > 0
+            if s.coverage_count > 0
+            and len(s.coverage_articles or []) == s.coverage_count
         )
         logger.info(
             "editorial_pipeline.perspectives_done",
@@ -881,9 +849,7 @@ class EditorialPipelineService:
             subjects_with_perspectives=sum(
                 1 for s in subjects if s.perspective_count > 0
             ),
-            # "coherent" means the header count is at least the cluster count
-            # — the invariant we want to hold after this fix.
-            subjects_coherent_with_cluster=coherent,
+            subjects_with_coherent_coverage_snapshot=coherent,
             divergence_analyses=sum(1 for s in subjects if s.divergence_analysis),
         )
 

@@ -63,7 +63,10 @@ void main() {
         divergenceLevel: 'medium',
         perspectiveCount: 3,
       ));
-      expect(find.text('Angles différents · 3 sources'), findsOneWidget);
+      expect(
+        find.text('Angles différents · 3 médias au total'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('inline divergence line hidden when level is null',
@@ -72,8 +75,11 @@ void main() {
         divergenceAnalysis: 'Analyse',
         perspectiveCount: 3,
       ));
-      expect(find.text('Angles différents · 3 sources'), findsNothing);
-      expect(find.text('Fort désaccord · 3 sources'), findsNothing);
+      expect(
+        find.text('Angles différents · 3 médias au total'),
+        findsNothing,
+      );
+      expect(find.text('Fort désaccord · 3 médias au total'), findsNothing);
     });
 
     testWidgets('analysis text is hidden by default (E1.b collapsed)',
@@ -127,7 +133,7 @@ void main() {
       expect(find.byIcon(Icons.expand_more), findsOneWidget);
     });
 
-    testWidgets('CTA "Voir les N perspectives" appears only when expanded',
+    testWidgets('CTA "Voir les N médias au total" appears only when expanded',
         (tester) async {
       bool tapped = false;
       await tester.pumpWidget(buildWidget(
@@ -136,13 +142,13 @@ void main() {
         perspectiveCount: 3,
       ));
       // Replié : CTA caché
-      expect(find.text('Voir les 3 perspectives'), findsNothing);
+      expect(find.text('Voir les 3 médias au total'), findsNothing);
 
       // Déplier
       await tester.tap(find.text("Lire l'analyse"));
       await tester.pump();
 
-      final ctaFinder = find.text('Voir les 3 perspectives');
+      final ctaFinder = find.text('Voir les 3 médias au total');
       expect(ctaFinder, findsOneWidget);
       expect(find.byType(OutlinedButton), findsOneWidget);
 
@@ -159,7 +165,7 @@ void main() {
       ));
       await tester.tap(find.text("Lire l'analyse"));
       await tester.pump();
-      expect(find.text('Voir les 3 perspectives'), findsNothing);
+      expect(find.text('Voir les 3 médias au total'), findsNothing);
       expect(find.byType(OutlinedButton), findsNothing);
     });
 
@@ -171,7 +177,7 @@ void main() {
       ));
       await tester.tap(find.text("Lire l'analyse"));
       await tester.pump();
-      expect(find.text('Voir les 1 perspectives'), findsNothing);
+      expect(find.text('Voir les 1 médias au total'), findsNothing);
       expect(find.byType(OutlinedButton), findsNothing);
     });
 
@@ -245,10 +251,10 @@ void main() {
         excludeSourceId: only.id,
         excludeSourceName: only.name,
       ));
-      // perspectiveCount = 1 → "Voir les perspectives" CTA hidden anyway.
+      // perspectiveCount = 1 → CTA médias masqué de toute façon.
       await tester.tap(find.text("Lire l'analyse"));
       await tester.pump();
-      expect(find.textContaining('perspectives'), findsNothing);
+      expect(find.textContaining('médias au total'), findsNothing);
     });
   });
 }

@@ -1253,6 +1253,64 @@ async def test_editorial_label_falls_back_to_actu_title(
     assert response.topics[0].label == expected_label
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "coverage_count, expected",
+    [
+        (2, 2),
+        # Snapshot legacy : une alternative + le média courant. source_count
+        # reste un signal de ranking et ne doit jamais gonfler le total.
+        (None, 2),
+    ],
+)
+async def test_editorial_response_uses_coverage_truth_or_legacy_fallback(
+    service, mock_session, coverage_count, expected
+):
+    cid = uuid4()
+    content = _make_editorial_content(content_id=cid, title="Conflit au Liban")
+    coverage_sources = [
+        {"name": "Le Monde", "domain": "lemonde.fr"},
+        {"name": "Libération", "domain": "liberation.fr"},
+    ]
+    subject = {
+        "topic_id": "t1",
+        "label": "À la une : Liban",
+        "rank": 1,
+        "source_count": 14,
+        "perspective_count": 1,
+        "coverage_sources": coverage_sources,
+        "actu_article": {
+            "content_id": str(cid),
+            "title": "Conflit au Liban",
+        },
+    }
+    if coverage_count is not None:
+        subject["coverage_count"] = coverage_count
+    digest = _make_digest_mock(
+        format_version="editorial_v1",
+        items={"subjects": [subject]},
+    )
+
+    followed_result = Mock()
+    followed_result.scalars.return_value.all.return_value = []
+    content_result = Mock()
+    content_result.scalars.return_value.all.return_value = [content]
+    mock_session.execute.side_effect = [followed_result, content_result]
+
+    with (
+        patch.object(
+            service, "_get_batch_action_states", new=AsyncMock(return_value={})
+        ),
+        patch.object(service, "_compute_target_size", new=AsyncMock(return_value=5)),
+    ):
+        response = await service._build_editorial_response(digest, digest.user_id)
+
+    topic = response.topics[0]
+    assert topic.source_count == 14
+    assert topic.coverage_count == expected
+    assert topic.coverage_sources == coverage_sources
+
+
 # ─── Tests: propagation de `read_at` (fix coche Essentiel) ────────────────────
 
 

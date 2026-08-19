@@ -207,7 +207,14 @@ class EssentielArticle {
   /// couverture (seuil [kCoverageChipMinSources]).
   final int sourceCount;
 
-  /// Logos des rédactions qui couvrent le sujet, tronqués à 3 par le backend.
+  /// Total réel des rédactions, média courant inclus. Zéro = champ absent dans
+  /// un ancien cache, auquel cas [coverageCount] applique le fallback legacy.
+  final int coverageCountValue;
+
+  /// Snapshot complet des rédactions réellement comptées.
+  final List<SourceMini> coverageSources;
+
+  /// Logos legacy des perspectives, gardés pour lire les anciens caches.
   final List<SourceMini> perspectiveSources;
 
   /// Polarisation du sujet d'origine (`low` | `medium` | `high`) — alimente
@@ -249,6 +256,8 @@ class EssentielArticle {
     this.theme,
     this.perspectiveCount = 0,
     this.sourceCount = 0,
+    this.coverageCountValue = 0,
+    this.coverageSources = const [],
     this.perspectiveSources = const [],
     this.divergenceLevel,
     this.isRead = false,
@@ -262,13 +271,55 @@ class EssentielArticle {
     this.isActuDuJour = false,
   });
 
-  /// Nombre de sources à afficher sur la carte : le plus grand entre le
-  /// compteur de ranking [sourceCount] (clustering en RAM au digest, plancher
-  /// à 2, jamais réactualisé) et [perspectiveCount] (cluster + Google News
-  /// persisté, = ce que montre le reader). `max` ne régresse jamais sous
-  /// l'affichage actuel. Bug « couverture carte » (voir bug doc).
+  /// Recopie l'article en ne changeant que les champs fournis. Réécrire le
+  /// constructeur à la main perdait silencieusement tout champ oublié (la
+  /// couverture et le chapô ont disparu ainsi au passage « lu »).
+  EssentielArticle copyWith({
+    bool? isRead,
+    bool? isSaved,
+    bool? isLiked,
+    bool? isDismissed,
+    int? timeSpentSeconds,
+    DateTime? completedAt,
+  }) =>
+      EssentielArticle(
+        contentId: contentId,
+        title: title,
+        url: url,
+        publishedAt: publishedAt,
+        sourceName: sourceName,
+        sourceLetter: sourceLetter,
+        sectionLabel: sectionLabel,
+        rank: rank,
+        sourceId: sourceId,
+        description: description,
+        thumbnailUrl: thumbnailUrl,
+        kind: kind,
+        theme: theme,
+        perspectiveCount: perspectiveCount,
+        sourceCount: sourceCount,
+        coverageCountValue: coverageCountValue,
+        coverageSources: coverageSources,
+        perspectiveSources: perspectiveSources,
+        divergenceLevel: divergenceLevel,
+        isRead: isRead ?? this.isRead,
+        isSaved: isSaved ?? this.isSaved,
+        isLiked: isLiked ?? this.isLiked,
+        isDismissed: isDismissed ?? this.isDismissed,
+        timeSpentSeconds: timeSpentSeconds ?? this.timeSpentSeconds,
+        completedAt: completedAt ?? this.completedAt,
+        isFollowedSource: isFollowedSource,
+        isFollowedTopic: isFollowedTopic,
+        isActuDuJour: isActuDuJour,
+      );
+
+  /// Total réel, média courant inclus. Les vieux caches Hive n'ont pas le
+  /// champ : alternatives + pivot est alors le seul fallback autorisé.
   int get coverageCount =>
-      sourceCount > perspectiveCount ? sourceCount : perspectiveCount;
+      coverageCountValue > 0 ? coverageCountValue : perspectiveCount + 1;
+
+  List<SourceMini> get effectiveCoverageSources =>
+      coverageSources.isNotEmpty ? coverageSources : perspectiveSources;
 
   /// État de lecture serveur-truth (avant fusion session), miroir de
   /// [Content.readState] — l'Essentiel n'a que des articles (jamais vidéo).
@@ -329,6 +380,11 @@ class EssentielArticle {
       sectionLabel: (json['section_label'] as String?) ?? '',
       perspectiveCount: (json['perspective_count'] as num?)?.toInt() ?? 0,
       sourceCount: (json['source_count'] as num?)?.toInt() ?? 0,
+      coverageCountValue: (json['coverage_count'] as num?)?.toInt() ?? 0,
+      coverageSources: [
+        for (final raw in (json['coverage_sources'] as List?) ?? const [])
+          if (raw is Map) SourceMini.fromJson(raw.cast<String, dynamic>()),
+      ],
       perspectiveSources: [
         for (final raw in (json['perspective_sources'] as List?) ?? const [])
           if (raw is Map) SourceMini.fromJson(raw.cast<String, dynamic>()),
@@ -361,6 +417,8 @@ class EssentielArticle {
     'section_label': sectionLabel,
     'perspective_count': perspectiveCount,
     'source_count': sourceCount,
+    'coverage_count': coverageCountValue,
+    'coverage_sources': [for (final s in coverageSources) s.toJson()],
     'perspective_sources': [for (final s in perspectiveSources) s.toJson()],
     'divergence_level': divergenceLevel,
     'rank': rank,

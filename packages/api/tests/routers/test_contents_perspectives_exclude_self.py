@@ -2,13 +2,12 @@
 perspectives list (PO refinement R3, post PR #619).
 
 Covers three layers:
-- ``_normalize_url_for_match`` — URL canonicalisation used as the equality
-  key for stripping the reference from snapshot perspectives.
+- ``_normalize_domain`` — canonicalisation du domaine, désormais la clé
+  d'égalité qui retire le média courant du snapshot de couverture.
 - ``_recompute_bias_distribution`` — keeps the bias counters in sync with
   the filtered list returned to the front.
-- ``_load_cluster_articles_for_representative`` — must drop the reference
-  ``content_id`` from the cluster pool so the live path can never surface
-  the open article as one of its alternatives.
+- ``_load_cluster_articles_for_representative`` — loads the complete coverage
+  pool; the endpoint subsequently removes the whole domain currently open.
 """
 
 from datetime import UTC, date, datetime
@@ -23,23 +22,25 @@ from app.models.enums import ContentType, SourceType
 from app.models.source import Source
 from app.routers.contents import (
     _load_cluster_articles_for_representative,
-    _normalize_url_for_match,
+    _normalize_domain,
     _recompute_bias_distribution,
 )
 
 # --- Helper unit tests ------------------------------------------------------
 
 
-def test_normalize_url_strips_scheme_www_and_trailing_slash():
-    base = _normalize_url_for_match("https://www.lemonde.fr/article/abc/")
-    assert base == "lemonde.fr/article/abc"
-    assert _normalize_url_for_match("http://lemonde.fr/article/abc") == base
-    assert _normalize_url_for_match("https://LEMONDE.fr/article/abc") == base
+def test_normalize_domain_strips_scheme_www_and_path():
+    """Deux URL du même média collapsent sur une seule clé de couverture."""
+    assert _normalize_domain("https://www.lemonde.fr/article/abc/") == "lemonde.fr"
+    assert _normalize_domain("http://lemonde.fr/autre-article") == "lemonde.fr"
+    assert _normalize_domain("https://LEMONDE.fr") == "lemonde.fr"
+    # Domaine nu (tel que persisté dans le snapshot) accepté sans schéma.
+    assert _normalize_domain("www.lemonde.fr") == "lemonde.fr"
 
 
-def test_normalize_url_empty_inputs():
-    assert _normalize_url_for_match(None) == ""
-    assert _normalize_url_for_match("") == ""
+def test_normalize_domain_empty_inputs():
+    assert _normalize_domain(None) == ""
+    assert _normalize_domain("") == ""
 
 
 def test_recompute_bias_distribution_tallies_known_stances_only():
@@ -70,8 +71,8 @@ async def digest_with_subject(db_session):
 
     The subject references the same 3 content_ids in both ``actu_article``
     and ``extra_actu_articles`` so the cluster loader treats them as
-    carousel siblings. The loader is asked for the cluster of ``ref`` — it
-    must return the two siblings and *not* the reference itself.
+    carousel siblings. The loader returns the complete pool so coverage can be
+    reconstructed once, before the endpoint excludes the current domain.
     """
     user_id = uuid4()
 
@@ -148,7 +149,7 @@ async def digest_with_subject(db_session):
 
 
 @pytest.mark.asyncio
-async def test_load_cluster_articles_excludes_reference_content_id(
+async def test_load_cluster_articles_returns_complete_coverage_pool(
     db_session, digest_with_subject
 ):
     cluster = await _load_cluster_articles_for_representative(
@@ -157,8 +158,8 @@ async def test_load_cluster_articles_excludes_reference_content_id(
         user_id=digest_with_subject["user_id"],
     )
     returned_ids = {c.id for c in cluster}
-    assert digest_with_subject["ref"].id not in returned_ids
     assert returned_ids == {
+        digest_with_subject["ref"].id,
         digest_with_subject["sib_a"].id,
         digest_with_subject["sib_b"].id,
     }

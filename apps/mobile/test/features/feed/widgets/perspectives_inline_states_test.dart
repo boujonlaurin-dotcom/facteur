@@ -23,6 +23,7 @@ Future<void> _pumpInline(
   WidgetTester tester, {
   required PerspectivesSectionStatus status,
   List<Perspective> perspectives = const [],
+  int coverageCount = 0,
   String? divergenceLevel,
   VoidCallback? onOpenAnalysis,
 }) async {
@@ -37,6 +38,7 @@ Future<void> _pumpInline(
               child: PerspectivesInlineSection(
                 status: status,
                 perspectives: perspectives,
+                coverageCount: coverageCount,
                 biasDistribution: const {'left': 1, 'center': 1, 'right': 1},
                 contentId: 'test-content-id',
                 sourceName: 'Test',
@@ -158,24 +160,39 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 1));
 
-    expect(find.text('Comparer les angles (2)'), findsOneWidget);
+    expect(
+      find.text('Comparer les angles · 3 médias'),
+      findsOneWidget,
+    );
     expect(find.byType(CoverageSpectrumBar), findsOneWidget);
-    expect(find.byType(CoverageComparisonCard), findsNWidgets(2));
+    // Carte CTA Analyse en tête du carrousel.
+    expect(find.text('Analyse Facteur'), findsOneWidget);
+    // La ListView virtualise : seule la première carte est montée au départ,
+    // mais la deuxième doit rester atteignable par scroll.
+    expect(find.byType(CoverageComparisonCard), findsOneWidget);
+    final secondCard = find.byWidgetPredicate(
+      (widget) =>
+          widget is CoverageComparisonCard &&
+          widget.perspective.sourceName == 'A',
+    );
+    await tester.scrollUntilVisible(
+      secondCard,
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(secondCard, findsOneWidget);
     expect(
       tester.getSize(find.byType(CoverageComparisonCard).first).height,
       192,
     );
-    final horizontalCarousel = tester
-        .widgetList<SingleChildScrollView>(find.byType(SingleChildScrollView))
-        .singleWhere(
-          (scrollView) => scrollView.scrollDirection == Axis.horizontal,
-        );
-    expect(
-      tester.getSize(find.byWidget(horizontalCarousel)).height,
-      223,
-    );
-    // Carte CTA Analyse en fin de carrousel.
-    expect(find.text('Analyse Facteur'), findsOneWidget);
+    final horizontalCarousel = tester.widget<ListView>(find.byType(ListView));
+    expect(horizontalCarousel.scrollDirection, Axis.horizontal);
+    expect(tester.getSize(find.byType(ListView)).height, 223);
     // Le disclaimer Mistral n'est plus inline (il vit dans le bottom sheet).
     expect(find.textContaining('Mistral'), findsNothing);
   });

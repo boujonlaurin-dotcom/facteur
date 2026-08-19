@@ -1406,7 +1406,7 @@ class _TriageTagView extends StatelessWidget {
                 CoverageChip(
                   key: const Key('triage-coverage-chip'),
                   sourceCount: article.coverageCount,
-                  sources: article.perspectiveSources,
+                  sources: article.effectiveCoverageSources,
                   colors: colors,
                 ),
             ],

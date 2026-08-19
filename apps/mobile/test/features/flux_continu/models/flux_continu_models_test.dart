@@ -85,7 +85,8 @@ void main() {
 
   group('sectionKey', () {
     test('uses kind.name for digest sections', () {
-      expect(sectionKey(digestSection(kind: SectionKind.essentiel)), 'essentiel');
+      expect(
+          sectionKey(digestSection(kind: SectionKind.essentiel)), 'essentiel');
       expect(sectionKey(digestSection(kind: SectionKind.bonnes)), 'bonnes');
     });
 
@@ -149,7 +150,6 @@ void main() {
       final updated = state.copyWith(closingDismissed: true);
       expect(updated.closingDismissed, isTrue);
     });
-
   });
 
   group('FluxSection.hasOverflow', () {
@@ -195,7 +195,8 @@ void main() {
       expect(themeSection().followedSourceCount, 0);
     });
 
-    test('FeedThemeSection: copyWith preserves followedSourceCount (Story 22.5)',
+    test(
+        'FeedThemeSection: copyWith preserves followedSourceCount (Story 22.5)',
         () {
       // Risque n°1 du hand-off : `followedSourceCount` oublié dans copyWith
       // retomberait à 0 au 1er dédup/loadMore → CTA « Ajouter » sur une section
@@ -393,7 +394,7 @@ void main() {
   });
 
   group('EssentielArticle — couverture multi-sources', () {
-    test('parses source_count + perspective_sources', () {
+    test('parses coverage_count + coverage_sources and legacy previews', () {
       final a = EssentielArticle.fromJson({
         'content_id': 'c-1',
         'title': 'Titre',
@@ -404,18 +405,33 @@ void main() {
         'section_label': 'Climat',
         'rank': 1,
         'source_count': 4,
+        'coverage_count': 3,
+        'coverage_sources': [
+          {'name': 'Le Monde', 'domain': 'lemonde.fr'},
+          {'name': 'Libération', 'domain': 'liberation.fr'},
+          {'name': 'Reporterre', 'domain': 'reporterre.net'},
+        ],
         'perspective_sources': [
           {'name': 'Le Monde', 'domain': 'lemonde.fr', 'bias_stance': 'center'},
           {'name': 'Libération', 'logo_url': 'https://x/l.png'},
         ],
       });
       expect(a.sourceCount, 4);
+      expect(a.coverageCount, 3);
+      expect(a.coverageSources, hasLength(3));
+      expect(a.effectiveCoverageSources, hasLength(3));
       expect(a.perspectiveSources, hasLength(2));
       expect(a.perspectiveSources.first.name, 'Le Monde');
       expect(a.perspectiveSources[1].logoUrl, 'https://x/l.png');
+
+      final restored = EssentielArticle.fromJson(a.toJson());
+      expect(restored.coverageCount, 3);
+      expect(restored.coverageSources, a.coverageSources);
+      expect(restored.perspectiveSources, a.perspectiveSources);
     });
 
-    test('retro-compat : un snapshot Hive sans les champs parse en défauts', () {
+    test('retro-compat : un snapshot Hive sans les champs parse en défauts',
+        () {
       final a = EssentielArticle.fromJson({
         'content_id': 'c-1',
         'title': 'Titre',
@@ -427,15 +443,22 @@ void main() {
         'rank': 1,
       });
       expect(a.sourceCount, 0);
+      expect(a.coverageCount, 1);
+      expect(a.coverageSources, isEmpty);
+      expect(a.effectiveCoverageSources, isEmpty);
       expect(a.perspectiveSources, isEmpty);
     });
   });
 
   // ---------------------------------------------------------------------------
-  // coverageCount — max(sourceCount, perspectiveCount) — bug « carte bloquée »
+  // coverageCount — vérité explicite, puis fallback perspectiveCount + pivot.
   // ---------------------------------------------------------------------------
   group('coverageCount', () {
-    EssentielArticle article({int sourceCount = 0, int perspectiveCount = 0}) {
+    EssentielArticle article({
+      int sourceCount = 0,
+      int perspectiveCount = 0,
+      int coverageCount = 0,
+    }) {
       return EssentielArticle(
         contentId: 'c',
         title: 't',
@@ -447,36 +470,57 @@ void main() {
         rank: 1,
         sourceCount: sourceCount,
         perspectiveCount: perspectiveCount,
+        coverageCountValue: coverageCount,
       );
     }
 
-    DigestTopic topic({int sourceCount = 0, int perspectiveCount = 0}) {
+    DigestTopic topic({
+      int sourceCount = 0,
+      int perspectiveCount = 0,
+      int coverageCount = 0,
+    }) {
       return DigestTopic(
         topicId: 't',
         label: 'Topic',
         sourceCount: sourceCount,
         perspectiveCount: perspectiveCount,
+        coverageCountValue: coverageCount,
       );
     }
 
-    test('EssentielArticle : perspective (reader) > source (ranking figé)', () {
-      expect(article(sourceCount: 2, perspectiveCount: 7).coverageCount, 7);
+    test('EssentielArticle : coverage_count explicite gagne', () {
+      expect(
+        article(
+          sourceCount: 14,
+          perspectiveCount: 1,
+          coverageCount: 2,
+        ).coverageCount,
+        2,
+      );
     });
 
-    test('EssentielArticle : source >= perspective → source', () {
-      expect(article(sourceCount: 5, perspectiveCount: 3).coverageCount, 5);
+    test('EssentielArticle legacy : alternatives + pivot, jamais source_count',
+        () {
+      expect(article(sourceCount: 14, perspectiveCount: 1).coverageCount, 2);
     });
 
-    test('EssentielArticle : égaux → la valeur commune', () {
-      expect(article(sourceCount: 4, perspectiveCount: 4).coverageCount, 4);
+    test('EssentielArticle legacy : sept alternatives donnent huit médias', () {
+      expect(article(sourceCount: 2, perspectiveCount: 7).coverageCount, 8);
     });
 
-    test('DigestTopic : perspective (reader) > source (ranking figé)', () {
-      expect(topic(sourceCount: 2, perspectiveCount: 8).coverageCount, 8);
+    test('DigestTopic : coverage_count explicite gagne', () {
+      expect(
+        topic(
+          sourceCount: 14,
+          perspectiveCount: 1,
+          coverageCount: 2,
+        ).coverageCount,
+        2,
+      );
     });
 
-    test('DigestTopic : source >= perspective → source', () {
-      expect(topic(sourceCount: 6, perspectiveCount: 1).coverageCount, 6);
+    test('DigestTopic legacy : alternatives + pivot, jamais source_count', () {
+      expect(topic(sourceCount: 14, perspectiveCount: 1).coverageCount, 2);
     });
   });
 
@@ -525,7 +569,7 @@ void main() {
       final a = EssentielArticle.fromContent(content(), rank: 6);
       // Couverture / divergence absentes du carrousel : la carte de tri ne
       // rendra ni puce couverture ni badge de polarisation.
-      expect(a.coverageCount, 0);
+      expect(a.coverageCount, 1);
       expect(a.divergenceLevel, isNull);
       expect(a.perspectiveSources, isEmpty);
       expect(a.isActuDuJour, isFalse);

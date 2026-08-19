@@ -217,7 +217,7 @@ class Perspective {
       case 'right':
         return 'droite';
       default:
-        return 'centre';
+        return 'autres';
     }
   }
 
@@ -271,6 +271,7 @@ enum PerspectivesSectionStatus { loading, empty, ready }
 /// Bottom sheet to display alternative perspectives
 class PerspectivesBottomSheet extends ConsumerStatefulWidget {
   final List<Perspective> perspectives;
+  final int coverageCount;
   final Map<String, int> biasDistribution;
   final List<String> keywords;
   final String sourceBiasStance;
@@ -285,6 +286,7 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
     required this.biasDistribution,
     required this.keywords,
     required this.contentId,
+    this.coverageCount = 0,
     this.sourceBiasStance = 'unknown',
     this.sourceName = '',
     this.comparisonQuality = 'low',
@@ -307,6 +309,10 @@ class _PerspectivesBottomSheetState
 
   static const _groupOrder = ['gauche', 'centre', 'droite'];
 
+  int get _coverageCount => widget.coverageCount > 0
+      ? widget.coverageCount
+      : widget.perspectives.length + 1;
+
   @override
   void initState() {
     super.initState();
@@ -315,7 +321,7 @@ class _PerspectivesBottomSheetState
       if (!mounted) return;
       ref.read(analyticsServiceProvider).trackPerspectiveComparisonOpened(
             contentId: widget.contentId,
-            sourcesCount: widget.perspectives.length,
+            sourcesCount: _coverageCount,
           );
     });
   }
@@ -357,11 +363,14 @@ class _PerspectivesBottomSheetState
   List<Perspective> get _sortedPerspectives {
     final sorted = [...widget.perspectives];
     sorted.sort(
-      (a, b) => _groupOrder
-          .indexOf(a.biasGroup)
-          .compareTo(_groupOrder.indexOf(b.biasGroup)),
+      (a, b) => _groupRank(a.biasGroup).compareTo(_groupRank(b.biasGroup)),
     );
     return sorted;
+  }
+
+  int _groupRank(String group) {
+    final rank = _groupOrder.indexOf(group);
+    return rank < 0 ? _groupOrder.length : rank;
   }
 
   List<Perspective> get _filteredPerspectives {
@@ -551,16 +560,27 @@ class _PerspectivesBottomSheetState
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: Text(
-                                  'Comparer les angles',
-                                  style: textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: colors.textPrimary,
-                                    fontSize:
-                                        (textTheme.titleMedium?.fontSize ??
-                                                16) +
-                                            1,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Comparer les angles',
+                                      style: textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: colors.textPrimary,
+                                        fontSize:
+                                            (textTheme.titleMedium?.fontSize ??
+                                                    16) +
+                                                1,
+                                      ),
+                                    ),
+                                    Text(
+                                      '$_coverageCount médias au total',
+                                      style: textTheme.labelSmall?.copyWith(
+                                        color: colors.textTertiary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                               IconButton(
@@ -803,6 +823,7 @@ class _PerspectiveCard extends ConsumerWidget {
         ? findSourceByDomain(
             sourcesAsync.valueOrNull!, perspective.sourceDomain)
         : null;
+    final hasKnownBias = perspective.biasStance != 'unknown';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -860,18 +881,19 @@ class _PerspectiveCard extends ConsumerWidget {
                     ],
                   ),
                 ),
-                Positioned(
-                  left: 12,
-                  top: 12,
-                  bottom: 8,
-                  child: Container(
-                    width: 4,
-                    decoration: BoxDecoration(
-                      color: perspective.getBiasColor(colors),
-                      borderRadius: BorderRadius.circular(2),
+                if (hasKnownBias)
+                  Positioned(
+                    left: 12,
+                    top: 12,
+                    bottom: 8,
+                    child: Container(
+                      width: 4,
+                      decoration: BoxDecoration(
+                        color: perspective.getBiasColor(colors),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
 
@@ -897,28 +919,29 @@ class _PerspectiveCard extends ConsumerWidget {
                 ),
                 child: Row(
                   children: [
-                    // Bias badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: perspective
-                            .getBiasColor(colors)
-                            .withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        perspective.getBiasLabel(),
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w600,
-                          color: perspective.getBiasColor(colors),
+                    if (hasKnownBias) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: perspective
+                              .getBiasColor(colors)
+                              .withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          perspective.getBiasLabel(),
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            color: perspective.getBiasColor(colors),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
+                      const SizedBox(width: 8),
+                    ],
                     // Favicon
                     if (perspective.sourceDomain.isNotEmpty) ...[
                       ClipRRect(
@@ -1467,6 +1490,7 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
 
 class PerspectivesInlineSection extends ConsumerStatefulWidget {
   final List<Perspective> perspectives;
+  final int coverageCount;
   final Map<String, int> biasDistribution;
   final List<String> keywords;
   final String sourceBiasStance;
@@ -1493,6 +1517,7 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   const PerspectivesInlineSection({
     super.key,
     this.perspectives = const [],
+    this.coverageCount = 0,
     this.biasDistribution = const {},
     this.keywords = const [],
     required this.contentId,
@@ -1623,6 +1648,7 @@ class _PerspectivesInlineSectionState
   // l'offset cible du tap-to-scroll (barre de biais interactive).
   static const double _kCoverageCardWidth = 248;
   static const double _kCoverageCardGap = 13;
+  static const double _kUnknownSeparatorWidth = 38;
   static const double _kCarouselPaddingH = 18;
   // Largeur de la carte CTA « Analyse Facteur », désormais en TÊTE du carrousel
   // (avant les cartes sources) : décale l'offset cible du tap-to-scroll.
@@ -1630,6 +1656,10 @@ class _PerspectivesInlineSectionState
 
   // Pilote le scroll du carrousel pour le tap-to-scroll de la barre de biais.
   final ScrollController _carouselScrollController = ScrollController();
+
+  int get _coverageCount => widget.coverageCount > 0
+      ? widget.coverageCount
+      : _displayedPerspectives.length + 1;
 
   @override
   void initState() {
@@ -1684,12 +1714,12 @@ class _PerspectivesInlineSectionState
   }
 
   /// Tap sur un segment de la barre de biais → scrolle le carrousel vers la 1ʳᵉ
-  /// carte de cette stance. Si la stance n'est pas présente dans les 8 cartes
-  /// affichées (segment hors plage), fallback sur la carte la plus proche dans
+  /// carte de cette stance. Si la stance n'est pas présente, fallback sur la
+  /// carte la plus proche dans
   /// l'ordre canonique 5-stances.
   void _onSpectrumSegmentTap(String stanceKey) {
     if (!_carouselScrollController.hasClients) return;
-    final variants = _sortedPerspectives.take(8).toList();
+    final variants = _sortedPerspectives;
     if (variants.isEmpty) return;
 
     var index = variants.indexWhere((p) => p.biasStance == stanceKey);
@@ -1709,11 +1739,16 @@ class _PerspectivesInlineSectionState
     }
 
     final maxExtent = _carouselScrollController.position.maxScrollExtent;
+    final knownCount = variants.where((p) => p.biasStance != 'unknown').length;
+    final separatorOffset = index >= knownCount && knownCount < variants.length
+        ? _kUnknownSeparatorWidth + _kCoverageCardGap
+        : 0.0;
     // La carte CTA « Analyse Facteur » précède les cartes sources → décalage
     // fixe (largeur CTA + gap) avant la 1ʳᵉ carte source.
     final target = (_kAnalysisCtaWidth +
                 _kCoverageCardGap +
-                (_kCoverageCardWidth + _kCoverageCardGap) * index)
+                (_kCoverageCardWidth + _kCoverageCardGap) * index +
+                separatorOffset)
         .clamp(0.0, maxExtent);
     HapticFeedback.selectionClick();
     _carouselScrollController.animateTo(
@@ -1782,14 +1817,14 @@ class _PerspectivesInlineSectionState
     final colors = context.facteurColors;
     final isDark = context.isDarkMode;
     final textTheme = Theme.of(context).textTheme;
-    final variants = _sortedPerspectives.take(8).toList();
+    final variants = _sortedPerspectives;
     final isReady = widget.status == PerspectivesSectionStatus.ready;
     final isEmpty = widget.status == PerspectivesSectionStatus.empty;
     final isLoading = widget.status == PerspectivesSectionStatus.loading;
     final shouldShowBand = !isEmpty || _emptyStage != _EmptyStage.collapsed;
     final label = (isLoading || isEmpty)
         ? 'Comparer les angles'
-        : 'Comparer les angles (${_displayedPerspectives.length})';
+        : 'Comparer les angles · $_coverageCount médias';
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 250),
@@ -2012,24 +2047,19 @@ class _PerspectivesInlineSectionState
     return () => showSourceDetailModal(context, ref, matched);
   }
 
-  /// Carrousel horizontal : cartes de couverture (gap 13) + carte CTA Analyse
-  /// en fin de course. Viewport à hauteur fixe → cartes équi-hauteur.
+  /// Carrousel horizontal virtualisé : CTA, biais connus L→R, séparateur, puis
+  /// toutes les sources unknown. Aucune limite arbitraire de cartes.
   Widget _buildCarousel(List<Perspective> variants) {
     // Sources suivies → résolution par domaine pour rendre la pastille cliquable.
     final sources = ref.watch(userSourcesProvider).valueOrNull;
-    // RepaintBoundary explicite par carte (et par CTA). `FacteurCard` n'isole
-    // ses cartes que via `webRepaintBoundary`, un no-op hors web
-    // (cf. core/web/web_perf.dart) : sur natif, sans ce boundary, tout le Row se
-    // re-rastérisait à chaque frame de translation (ombre blurRadius 6 +
-    // DiffTitle multi-span + favicon par carte). Ces boundaries confinent le
-    // raster de chaque carte à son propre layer, réutilisé tel quel pendant le
-    // scroll. On garde SingleChildScrollView+Row (carrousel court, ≤8 cartes) :
-    // build eager → `maxScrollExtent` exact pour le tap-to-scroll de la barre de
-    // biais (`_onSpectrumSegmentTap`) et zéro hitch de construction paresseuse
-    // en cours de défilement (ce qu'introduirait une ListView virtualisée ici).
+    final known = variants.where((p) => p.biasStance != 'unknown').toList();
+    final unknown = variants.where((p) => p.biasStance == 'unknown').toList();
+    final itemCount =
+        1 + known.length + (unknown.isNotEmpty ? 1 : 0) + unknown.length;
+
     return SizedBox(
       height: _kCarouselViewportHeight,
-      child: SingleChildScrollView(
+      child: ListView.builder(
         controller: _carouselScrollController,
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(
@@ -2038,35 +2068,65 @@ class _PerspectivesInlineSectionState
           _kCarouselPaddingH,
           16,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Carte CTA « Analyse Facteur » en tête du carrousel (avant les
-            // cartes sources) : toujours rendue, le tap déclenche un fetch lazy.
-            RepaintBoundary(
+        itemCount: itemCount,
+        itemBuilder: (context, itemIndex) {
+          if (itemIndex == 0) {
+            return Padding(
+              padding: EdgeInsets.only(
+                right: variants.isEmpty ? 0 : _kCoverageCardGap,
+              ),
               child: _AnalysisCtaCard(
                 onTap: widget.onOpenAnalysis,
-                count: _displayedPerspectives.length,
+                count: _coverageCount,
               ),
-            ),
-            if (variants.isNotEmpty) const SizedBox(width: _kCoverageCardGap),
-            for (var i = 0; i < variants.length; i++) ...[
-              if (i > 0) const SizedBox(width: _kCoverageCardGap),
-              RepaintBoundary(
-                child: CoverageComparisonCard(
-                  key: ValueKey('coverage_${_animationGeneration}_$i'),
-                  perspective: variants[i],
-                  firstCardKey: i == 0 ? widget.firstCardKey : null,
-                  onSourceTap: _sourceTapFor(
-                    context,
-                    sources,
-                    variants[i].sourceDomain,
-                  ),
+            );
+          }
+
+          final afterCta = itemIndex - 1;
+          if (afterCta < known.length) {
+            final perspective = known[afterCta];
+            return Padding(
+              padding: const EdgeInsets.only(right: _kCoverageCardGap),
+              child: CoverageComparisonCard(
+                key: ValueKey('coverage_${_animationGeneration}_$afterCta'),
+                perspective: perspective,
+                firstCardKey: afterCta == 0 ? widget.firstCardKey : null,
+                onSourceTap: _sourceTapFor(
+                  context,
+                  sources,
+                  perspective.sourceDomain,
                 ),
               ),
-            ],
-          ],
-        ),
+            );
+          }
+
+          final separatorIndex = known.length;
+          if (unknown.isNotEmpty && afterCta == separatorIndex) {
+            return const Padding(
+              padding: EdgeInsets.only(right: _kCoverageCardGap),
+              child: _UnknownSourcesSeparator(),
+            );
+          }
+
+          final unknownIndex = afterCta - known.length - 1;
+          final perspective = unknown[unknownIndex];
+          final sourceIndex = known.length + unknownIndex;
+          return Padding(
+            padding: EdgeInsets.only(
+              right: unknownIndex == unknown.length - 1 ? 0 : _kCoverageCardGap,
+            ),
+            child: CoverageComparisonCard(
+              key: ValueKey('coverage_${_animationGeneration}_$sourceIndex'),
+              perspective: perspective,
+              firstCardKey: sourceIndex == 0 ? widget.firstCardKey : null,
+              onSourceTap: _sourceTapFor(
+                context,
+                sources,
+                perspective.sourceDomain,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -2233,6 +2293,40 @@ class _PerspectivesInlineSectionState
             // ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _UnknownSourcesSeparator extends StatelessWidget {
+  const _UnknownSourcesSeparator();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return SizedBox(
+      width: _PerspectivesInlineSectionState._kUnknownSeparatorWidth,
+      child: Column(
+        children: [
+          Expanded(child: VerticalDivider(color: colors.border, width: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: Text(
+                'Autres sources',
+                maxLines: 1,
+                style: GoogleFonts.courierPrime(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                  color: colors.textTertiary,
+                ),
+              ),
+            ),
+          ),
+          Expanded(child: VerticalDivider(color: colors.border, width: 1)),
+        ],
       ),
     );
   }
@@ -2525,6 +2619,7 @@ Future<void> showAnalysisBottomSheet({
   required BuildContext context,
   required ValueListenable<AnalysisSheetData> data,
   required List<Perspective> perspectives,
+  required int coverageCount,
   required VoidCallback onRetry,
 }) {
   final reduceMotion = MediaQuery.of(context).disableAnimations;
@@ -2537,6 +2632,7 @@ Future<void> showAnalysisBottomSheet({
     builder: (sheetContext) => _AnalysisSheet(
       data: data,
       perspectives: perspectives,
+      coverageCount: coverageCount,
       onRetry: onRetry,
     ),
   );
@@ -2545,11 +2641,13 @@ Future<void> showAnalysisBottomSheet({
 class _AnalysisSheet extends StatelessWidget {
   final ValueListenable<AnalysisSheetData> data;
   final List<Perspective> perspectives;
+  final int coverageCount;
   final VoidCallback onRetry;
 
   const _AnalysisSheet({
     required this.data,
     required this.perspectives,
+    required this.coverageCount,
     required this.onRetry,
   });
 
@@ -2623,7 +2721,7 @@ class _AnalysisSheet extends StatelessWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Synthèse neutre · ${perspectives.length} médias',
+                              'Synthèse neutre · $coverageCount médias au total',
                               style: GoogleFonts.courierPrime(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,

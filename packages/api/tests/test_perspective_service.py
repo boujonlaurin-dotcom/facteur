@@ -1,7 +1,11 @@
 import json
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
+from app.models.enums import SourceType
 from app.services.perspective_service import (
     PERSPECTIVE_TITLE_JACCARD_MIN,
     Perspective,
@@ -47,7 +51,9 @@ async def test_perspective_filtering_logic():
     ]
 
     # 2. Test with URL exclusion
-    results_url = await service._parse_rss(mock_rss, exclude_url="http://lemonde.fr/article1")
+    results_url = await service._parse_rss(
+        mock_rss, exclude_url="http://lemonde.fr/article1"
+    )
     assert len(results_url) == 2
     assert results_url[0].title == "Autre Article"
 
@@ -70,22 +76,16 @@ def test_strip_source_suffix_uses_known_source_name():
         == "Sujet brûlant"
     )
     # Pipe variant
-    assert (
-        _strip_source_suffix("Headline | The Guardian", "The Guardian")
-        == "Headline"
-    )
+    assert _strip_source_suffix("Headline | The Guardian", "The Guardian") == "Headline"
     # Case-insensitive
-    assert (
-        _strip_source_suffix("Foo - LE MONDE", "Le Monde") == "Foo"
-    )
+    assert _strip_source_suffix("Foo - LE MONDE", "Le Monde") == "Foo"
 
 
 def test_strip_source_suffix_fallback_regex_when_source_mismatches():
     """When <source> doesn't match (Google News localized variant), fallback."""
     # `Figaro` doesn't equal `Le Figaro` exactly → fallback regex catches it.
     assert (
-        _strip_source_suffix("Autre Article - Figaro", "Le Figaro")
-        == "Autre Article"
+        _strip_source_suffix("Autre Article - Figaro", "Le Figaro") == "Autre Article"
     )
 
 
@@ -101,9 +101,7 @@ def test_strip_source_suffix_preserves_legitimate_dash_titles():
     )
     # Contains a colon → not a source suffix
     assert (
-        _strip_source_suffix(
-            "Accord États-Unis – Iran : Finkielkraut espère", None
-        )
+        _strip_source_suffix("Accord États-Unis – Iran : Finkielkraut espère", None)
         == "Accord États-Unis – Iran : Finkielkraut espère"
     )
     # Numeric date suffix (Google News-style timestamp on radio shows)
@@ -117,6 +115,105 @@ def test_strip_source_suffix_handles_empty_and_whitespace():
     assert _strip_source_suffix("", "Le Monde") == ""
     assert _strip_source_suffix("Foo - Le Monde  ", "Le Monde") == "Foo"
     assert _strip_source_suffix("Foo", "Le Monde") == "Foo"
+
+
+def _coverage_content(
+    domain: str,
+    *,
+    title: str = "Le Parlement adopte la réforme des retraites",
+    bias: str | None = None,
+    source_type=None,
+    topics: list[str] | None = None,
+):
+    return SimpleNamespace(
+        id=uuid4(),
+        title=title,
+        url=f"https://{domain}/article",
+        description="Description",
+        topics=topics if topics is not None else ["politique", "retraites"],
+        entities=[],
+        language="fr",
+        published_at=datetime.now(UTC),
+        source=SimpleNamespace(
+            name=domain,
+            url=f"https://{domain}/",
+            bias_stance=(SimpleNamespace(value=bias) if bias else None),
+            reliability_score=None,
+            type=source_type,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_coverage_universe_keeps_fourteen_domains_including_unknown_bias():
+    """A single known political bias must not collapse a 14-outlet topic."""
+    service = PerspectiveService()
+    contents = [
+        _coverage_content(
+            f"media-{index}.example",
+            bias="center" if index == 0 else None,
+        )
+        for index in range(14)
+    ]
+
+    universe = await service.build_coverage_universe(contents[0], contents, [])
+
+    assert len(universe) == 14
+    assert universe[0].content_id == str(contents[0].id)
+    assert sum(p.bias_stance != "unknown" for p in universe) == 1
+    assert sum(p.bias_stance == "unknown" for p in universe) == 13
+    assert len({p.source_domain for p in universe}) == 14
+
+
+@pytest.mark.asyncio
+async def test_coverage_universe_rejects_off_topic_duplicates_and_aggregators():
+    service = PerspectiveService()
+    pivot = _coverage_content("pivot.example", bias="center")
+    duplicate = _coverage_content("pivot.example", bias="right")
+    off_topic = _coverage_content(
+        "weather.example",
+        title="Une tempête de neige paralyse plusieurs régions américaines",
+        topics=["meteo"],
+    )
+    reddit_repost = _coverage_content(
+        "reddit.com",
+        source_type=SourceType.REDDIT,
+    )
+    discovered = [
+        Perspective(
+            title=pivot.title,
+            url="https://news.google.com/story",
+            source_name="Google News",
+            source_domain="news.google.com",
+            bias_stance="unknown",
+        ),
+        Perspective(
+            title=pivot.title,
+            url="https://pivot.example/duplicate",
+            source_name="Pivot duplicate",
+            source_domain="www.pivot.example",
+            bias_stance="unknown",
+        ),
+        Perspective(
+            title=pivot.title,
+            url="https://other.example/story",
+            source_name="Other",
+            source_domain="other.example",
+            bias_stance="unknown",
+        ),
+    ]
+
+    universe = await service.build_coverage_universe(
+        pivot,
+        [pivot, duplicate, off_topic, reddit_repost],
+        discovered,
+    )
+
+    assert [p.source_domain for p in universe] == [
+        "pivot.example",
+        "other.example",
+    ]
+    assert universe[1].bias_stance == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +271,7 @@ def _seed_signals_inputs():
         PERSPECTIVE_DISCRIMINANT_ENTITY_TYPES,
         _parse_entity_names,
     )
+
     seed_disc = set(
         _parse_entity_names(SEED_ENTITIES, types=PERSPECTIVE_DISCRIMINANT_ENTITY_TYPES)
     )

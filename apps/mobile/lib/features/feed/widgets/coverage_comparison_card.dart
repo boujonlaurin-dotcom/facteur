@@ -159,6 +159,7 @@ class _Footer extends StatelessWidget {
       perspective.publishedAt,
     );
     final reliabilityGlyph = _reliabilityGlyph(colors);
+    final hasKnownBias = perspective.biasStance != 'unknown';
 
     // Zone source (pastille + nom) — rendue tappable quand [onSourceTap] est
     // fourni. Le GestureDetector enfant l'emporte sur le tap de la carte pour
@@ -207,27 +208,29 @@ class _Footer extends StatelessWidget {
                       )
                     : sourceGroup,
               ),
-              const SizedBox(width: 9),
-              // Chip biais (dot + libellé MAJ coloré).
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: biasColor,
-                  shape: BoxShape.circle,
+              // Une source unknown reste consultable mais n'affiche aucun
+              // marqueur politique — ni point, ni « ? ».
+              if (hasKnownBias) ...[
+                const SizedBox(width: 9),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: biasColor,
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                perspective.getBiasLabel().toUpperCase(),
-                style: GoogleFonts.courierPrime(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                  color: biasColor,
+                const SizedBox(width: 4),
+                Text(
+                  perspective.getBiasLabel().toUpperCase(),
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                    color: biasColor,
+                  ),
                 ),
-              ),
-              // Glyphe fiabilité (✔ high / ⚠ low), après le chip biais.
+              ],
               if (reliabilityGlyph != null) ...[
                 const SizedBox(width: 5),
                 reliabilityGlyph,

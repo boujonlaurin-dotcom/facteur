@@ -179,7 +179,7 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
               article: lead,
               analyticsOrigin: 'section_digest',
               sourceCount: topic.coverageCount,
-              perspectiveSources: topic.perspectiveSources,
+              perspectiveSources: topic.effectiveCoverageSources,
               divergenceLevel: topic.divergenceLevel,
               onTap: () => _openArticle(context, lead, section: section),
             );

@@ -192,6 +192,9 @@ class EssentielKeptArticlesNotifier
       a.timeSpentSeconds == b.timeSpentSeconds &&
       a.perspectiveCount == b.perspectiveCount &&
       a.sourceCount == b.sourceCount &&
+      a.coverageCountValue == b.coverageCountValue &&
+      listEquals(a.coverageSources, b.coverageSources) &&
+      listEquals(a.perspectiveSources, b.perspectiveSources) &&
       a.title == b.title &&
       a.thumbnailUrl == b.thumbnailUrl;
 }

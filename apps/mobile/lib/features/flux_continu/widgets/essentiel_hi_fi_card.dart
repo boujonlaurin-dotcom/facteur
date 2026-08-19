@@ -1546,7 +1546,7 @@ class _MediumTile extends StatelessWidget {
                                 const SizedBox(width: 8),
                                 CoverageChip(
                                   sourceCount: article.coverageCount,
-                                  sources: article.perspectiveSources,
+                                  sources: article.effectiveCoverageSources,
                                   colors: colors,
                                 ),
                               ],
@@ -1677,7 +1677,7 @@ class _SourceRow extends StatelessWidget {
           CoverageChip(
             key: const Key('essentiel-coverage-chip'),
             sourceCount: article.coverageCount,
-            sources: article.perspectiveSources,
+            sources: article.effectiveCoverageSources,
             colors: colors,
           ),
         ],

@@ -111,6 +111,10 @@ class DigestTopic(BaseModel):
     articles: list[DigestTopicArticle] = Field(default_factory=list)
     # Perspective analysis fields
     perspective_count: int = 0
+    # Total des médias réellement consultables pour ce sujet, article courant
+    # inclus. ``source_count`` ne sert qu'au ranking.
+    coverage_count: int = 0
+    coverage_sources: list[dict] = Field(default_factory=list)
     bias_distribution: dict[str, int] | None = None
     bias_highlights: str | None = None
     divergence_analysis: str | None = None

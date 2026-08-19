@@ -163,6 +163,8 @@ EssentielArticle _article({
   DateTime? completedAt,
   int sourceCount = 0,
   int perspectiveCount = 0,
+  int coverageCount = 0,
+  List<SourceMini> coverageSources = const [],
   List<SourceMini> perspectiveSources = const [],
   String? divergenceLevel,
   String? description,
@@ -188,6 +190,8 @@ EssentielArticle _article({
     isRead: isRead,
     completedAt: completedAt,
     sourceCount: sourceCount,
+    coverageCountValue: coverageCount,
+    coverageSources: coverageSources,
     perspectiveSources: perspectiveSources,
     divergenceLevel: divergenceLevel,
   );
@@ -494,12 +498,16 @@ void main() {
               rank: 1,
               source: 'Le Monde Diplomatique',
               sourceCount: 4,
+              coverageCount: 4,
+              coverageSources: covered,
               perspectiveSources: covered,
             ),
             _article(
               rank: 2,
               source: 'Le Monde Diplomatique',
               sourceCount: 3,
+              coverageCount: 3,
+              coverageSources: covered,
               perspectiveSources: covered,
             ),
             // Sous le seuil : aucune puce.
@@ -517,37 +525,41 @@ void main() {
     });
 
     testWidgets(
-        'la couverture affiche le plus grand entre source_count (ranking) et '
-        'perspective_count (reader) — bug carte bloquée à ~2', (tester) async {
+        'coverage_count explicite gagne sur source_count (ranking) — '
+        'régression compteur gonflé', (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
-          // Ranking figé à 1, mais la couverture réelle (reader) = 7 : la puce
-          // doit refléter le 7, pas rester bloquée sous le seuil.
-          articles: [_article(rank: 1, sourceCount: 1, perspectiveCount: 7)],
+          articles: [
+            _article(
+              rank: 1,
+              sourceCount: 14,
+              perspectiveCount: 1,
+              coverageCount: 2,
+            ),
+          ],
           onTapArticle: (_) {},
         ),
       ));
       await tester.pump();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('7 sources'), findsOneWidget);
-      expect(find.text('1 source'), findsNothing);
+      expect(find.text('2 sources'), findsOneWidget);
+      expect(find.text('14 sources'), findsNothing);
     });
 
-    testWidgets(
-        'aucune puce quand la couverture réelle reste < 2 (source et '
-        'perspective sous le seuil)', (tester) async {
+    testWidgets('aucune puce pour un ancien payload sans alternative',
+        (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
-          articles: [_article(rank: 1, sourceCount: 1, perspectiveCount: 1)],
+          articles: [_article(rank: 1, sourceCount: 14, perspectiveCount: 0)],
           onTapArticle: (_) {},
         ),
       ));
@@ -1059,6 +1071,7 @@ void main() {
               description: 'Un chapô qui ne doit plus être rendu.',
               thumbnailUrl: 'https://example.com/1.jpg',
               sourceCount: 4,
+              coverageCount: 4,
               divergenceLevel: 'high',
             ),
             _article(rank: 2),
@@ -1168,6 +1181,7 @@ void main() {
               // le pire cas que `kTriageCardHeight` doit tenir.
               thumbnailUrl: 'https://example.com/1.jpg',
               sourceCount: 4,
+              coverageCount: 4,
               divergenceLevel: 'high',
             ),
             _article(rank: 2),
@@ -1334,6 +1348,7 @@ void main() {
                 title: title,
                 thumbnailUrl: 'https://example.com/1.jpg',
                 sourceCount: 4,
+                coverageCount: 4,
               ),
               _article(rank: 2),
             ],
@@ -1384,6 +1399,7 @@ void main() {
                   'fait une carte nettement plus haute que celle du dessus',
               thumbnailUrl: 'https://example.com/2.jpg',
               sourceCount: 4,
+              coverageCount: 4,
               divergenceLevel: 'high',
             ),
           ],
@@ -3110,6 +3126,7 @@ void main() {
               rank: 1,
               thumbnailUrl: 'https://example.com/1.jpg',
               sourceCount: 4,
+              coverageCount: 4,
               divergenceLevel: 'high',
             ),
             // Carte du dessous neutralisée (pas de thème) pour ne pas polluer
@@ -3137,7 +3154,12 @@ void main() {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [
-            _article(rank: 1, sourceCount: 4, divergenceLevel: 'high'),
+            _article(
+              rank: 1,
+              sourceCount: 4,
+              coverageCount: 4,
+              divergenceLevel: 'high',
+            ),
             _article(rank: 2, theme: null),
           ],
           onTapArticle: (_) {},

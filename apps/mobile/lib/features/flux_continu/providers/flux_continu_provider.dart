@@ -1838,27 +1838,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               articles: [
                 for (final a in articles)
                   if (a.contentId == contentId)
-                    EssentielArticle(
-                      contentId: a.contentId,
-                      title: a.title,
-                      url: a.url,
-                      thumbnailUrl: a.thumbnailUrl,
-                      publishedAt: a.publishedAt,
-                      sourceName: a.sourceName,
-                      sourceLetter: a.sourceLetter,
-                      sectionLabel: a.sectionLabel,
-                      rank: a.rank,
-                      kind: a.kind,
-                      theme: a.theme,
-                      perspectiveCount: a.perspectiveCount,
-                      isRead: true,
-                      isSaved: a.isSaved,
-                      isLiked: a.isLiked,
-                      isDismissed: a.isDismissed,
-                      isFollowedSource: a.isFollowedSource,
-                      isFollowedTopic: a.isFollowedTopic,
-                      isActuDuJour: a.isActuDuJour,
-                    )
+                    a.copyWith(isRead: true)
                   else
                     a,
               ],

@@ -3,7 +3,7 @@
 Couvre la résolution lecture-seule de `Source.reliability_score` :
 - `_extract_reliability_from_source` (source eager-loadée, sans DB) ;
 - `resolve_reliability` (lookup DB par URL puis par nom, défaut "unknown") ;
-- `_perspective_to_dict` porte bien le champ.
+- `perspective_to_dict` porte bien le champ.
 
 Aucune migration : la colonne `sources.reliability_score` existe déjà (Story 7.1).
 """
@@ -15,8 +15,11 @@ from uuid import uuid4
 
 from app.models.enums import BiasStance, ReliabilityScore, SourceType
 from app.models.source import Source
-from app.routers.contents import _perspective_to_dict
-from app.services.perspective_service import Perspective, PerspectiveService
+from app.services.perspective_service import (
+    Perspective,
+    PerspectiveService,
+    perspective_to_dict,
+)
 
 
 async def _make_source(
@@ -70,7 +73,7 @@ def test_perspective_to_dict_carries_reliability():
         bias_stance="center",
         reliability_score="high",
     )
-    d = _perspective_to_dict(p)
+    d = perspective_to_dict(p)
     assert d["reliability_score"] == "high"
 
 
@@ -82,7 +85,7 @@ def test_perspective_to_dict_reliability_defaults_none():
         source_domain="x.com",
         bias_stance="unknown",
     )
-    assert _perspective_to_dict(p)["reliability_score"] is None
+    assert perspective_to_dict(p)["reliability_score"] is None
 
 
 async def test_resolve_reliability_no_db_returns_unknown():

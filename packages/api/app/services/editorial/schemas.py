@@ -94,11 +94,18 @@ class EditorialSubject(BaseModel):
     deep_article: MatchedDeepArticle | None = None
     # Perspective analysis — populated by PerspectiveService (ÉTAPE 3C)
     perspective_count: int = 0
+    # Vérité publique de couverture : tous les domaines éditoriaux cohérents,
+    # pivot inclus. ``source_count`` reste uniquement un signal de ranking.
+    coverage_count: int = 0
     bias_distribution: dict[str, int] | None = None
     bias_highlights: str | None = None
     divergence_analysis: str | None = None
     divergence_level: str | None = None  # "low" | "medium" | "high"
     perspective_sources: list[dict] | None = None  # PerspectiveSourceMini dicts
+    # Snapshot complet pivot inclus. Les biais unknown restent présents ; les
+    # visualisations politiques filtrent séparément leur sous-ensemble connu.
+    coverage_articles: list[dict] | None = None
+    coverage_sources: list[dict] | None = None
     # Full merged perspectives (cluster + GNews, known-bias filtered) used
     # to compute perspective_count / bias_distribution. Persisted so the
     # /contents/{id}/perspectives endpoint can return the SAME set the

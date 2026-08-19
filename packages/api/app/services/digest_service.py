@@ -1971,6 +1971,9 @@ class DigestService:
                     "theme": s.theme,
                     "is_a_la_une": s.is_a_la_une,
                     "perspective_count": s.perspective_count,
+                    "coverage_count": s.coverage_count,
+                    "coverage_articles": s.coverage_articles,
+                    "coverage_sources": s.coverage_sources,
                     "bias_distribution": s.bias_distribution,
                     "bias_highlights": s.bias_highlights,
                     "divergence_analysis": s.divergence_analysis,
@@ -2468,6 +2471,13 @@ class DigestService:
                         ),
                         articles=topic_articles,
                         perspective_count=subject.get("perspective_count", 0),
+                        # Snapshot récent : valeur explicite. Snapshot legacy :
+                        # le seul fallback honnête est alternatives + pivot ;
+                        # ne jamais réutiliser source_count (signal ranking).
+                        coverage_count=subject.get("coverage_count")
+                        if subject.get("coverage_count") is not None
+                        else int(subject.get("perspective_count", 0) or 0) + 1,
+                        coverage_sources=subject.get("coverage_sources") or [],
                         bias_distribution=subject.get("bias_distribution"),
                         bias_highlights=subject.get("bias_highlights"),
                         divergence_analysis=_divergence_str,

@@ -2598,6 +2598,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       context: context,
       data: _analysisSheetData,
       perspectives: _inlinePerspectives,
+      coverageCount:
+          _perspectivesResponse?.coverageCount ?? _inlinePerspectives.length + 1,
       onRetry: _requestPerspectivesAnalysis,
     );
   }
@@ -4119,6 +4121,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 key: _perspectivesKey,
                                 status: _perspectivesStatus,
                                 perspectives: _inlinePerspectives,
+                                coverageCount:
+                                    _perspectivesResponse?.coverageCount ?? 0,
                                 biasDistribution:
                                     _perspectivesResponse?.biasDistribution ??
                                         const {},
@@ -4782,6 +4786,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       key: _perspectivesKey,
                       status: _perspectivesStatus,
                       perspectives: _inlinePerspectives,
+                      coverageCount: _perspectivesResponse?.coverageCount ?? 0,
                       biasDistribution:
                           _perspectivesResponse?.biasDistribution ?? const {},
                       keywords: _perspectivesResponse?.keywords ?? const [],
