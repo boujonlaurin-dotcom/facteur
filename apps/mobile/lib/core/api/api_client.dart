@@ -49,6 +49,19 @@ class ApiClient {
   /// `docs/bugs/bug-widget-fiabilite.md`).
   static const String _anonymousRequestFlag = 'facteur_anonymous_request';
 
+  /// Token porté par la requête, mémorisé pour savoir *lequel* le backend a
+  /// rejeté — c'est la seule information qui distingue « mon JWT est périmé »
+  /// de « un autre acteur a déjà roté le token pendant que j'attendais ».
+  static const String _sentAccessTokenKey = 'facteur_sent_access_token';
+
+  /// Marque un rejeu piloté par [_recoverUnauthorized]. Sert à borner les
+  /// requêtes : un rejeu ne redéclenche jamais la récupération.
+  static const String _authRecoveryRequestFlag =
+      'facteur_auth_recovery_request';
+
+  /// Nombre maximum de rejeux d'une requête après un 401.
+  static const int _maxAuthReplays = 2;
+
   /// Budget d'attente d'une session au moment d'émettre une requête.
   ///
   /// Les 100 ms d'origine étaient calibrées pour une race Riverpod ; elles ne
@@ -56,11 +69,15 @@ class ApiClient {
   /// où l'app partait en anonyme, prenait un 401 et se déloguait. Même esprit
   /// que `resolveMorningRitualMaxWait` : on laisse le temps au démarrage à
   /// froid, sans jamais bloquer une requête qui a déjà sa session.
-  static const Duration _sessionWaitBudget = Duration(seconds: 2);
+  static const Duration _defaultSessionWaitBudget = Duration(seconds: 2);
   static const Duration _sessionPollInterval = Duration(milliseconds: 100);
 
   late final Dio _dio;
   final SupabaseClient _supabase;
+  final CurrentSessionFn? _currentSessionFnOverride;
+  late final CurrentSessionFn _currentSession =
+      _currentSessionFnOverride ?? () => _supabase.auth.currentSession;
+  final Duration _sessionWaitBudget;
   final void Function(int code)? onAuthError;
 
   /// Callback invoqué quand une requête aboutit après un état d'erreur auth
@@ -75,7 +92,11 @@ class ApiClient {
     this.onAuthError,
     this.onAuthRecovered,
     String? appVersion,
-  }) {
+    @visibleForTesting CurrentSessionFn? currentSessionFnOverride,
+    @visibleForTesting Duration sessionWaitBudget = _defaultSessionWaitBudget,
+    @visibleForTesting HttpClientAdapter? httpClientAdapter,
+  })  : _currentSessionFnOverride = currentSessionFnOverride,
+        _sessionWaitBudget = sessionWaitBudget {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -91,6 +112,9 @@ class ApiClient {
         headers: headers,
       ),
     );
+    if (httpClientAdapter != null) {
+      _dio.httpClientAdapter = httpClientAdapter;
+    }
 
     _setupInterceptors();
   }
@@ -101,6 +125,12 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          // Les replays auth ont déjà reçu explicitement le token à tester.
+          // Ne pas le remplacer pendant leur nouveau passage dans Dio.
+          if (options.extra[_authRecoveryRequestFlag] == true) {
+            return handler.next(options);
+          }
+
           final session = await _awaitSession();
 
           if (session != null) {
@@ -108,6 +138,7 @@ class ApiClient {
             print(
                 'ApiClient: Attaching token ${session.accessToken.substring(0, 10)}...');
             options.headers['Authorization'] = 'Bearer ${session.accessToken}';
+            options.extra[_sentAccessTokenKey] = session.accessToken;
           } else {
             // Requête émise quand même : certains endpoints sont publics. Mais
             // on la marque pour que son éventuel 401 ne puisse pas être lu
@@ -123,6 +154,13 @@ class ApiClient {
           final statusCode = error.response?.statusCode;
 
           if (statusCode == 401) {
+            // `_dio.fetch` repasse par les interceptors. Les replays sont
+            // pilotés explicitement par le premier 401 afin de borner les
+            // requêtes ; leurs erreurs doivent simplement lui remonter.
+            if (error.requestOptions.extra[_authRecoveryRequestFlag] == true) {
+              return handler.next(error);
+            }
+
             // La requête est partie sans header : le 401 est attendu et ne dit
             // rien de la session. La traiter comme une expiration déconnectait
             // l'utilisateur au cold boot (C3). On laisse le 401 remonter au
@@ -135,46 +173,13 @@ class ApiClient {
               return handler.next(error);
             }
 
-            // Single-flight refresh via SessionRefresher : si plusieurs
-            // requêtes parallèles reçoivent 401 (typique au resume après
-            // background), un seul refresh est envoyé au SDK Supabase. Évite
-            // la race "double-refresh" sur les refresh tokens single-use
-            // (cf. docs/bugs/bug-android-disconnect-race.md).
-            Session? refreshedSession;
             try {
-              // Pas de `timeout:` explicite : `SessionRefresher` calcule un
-              // budget adaptatif (8 s au premier plan, 20 s au cold boot /
-              // réveil). Les 5 s fixes d'avant expiraient systématiquement au
-              // réveil par tap widget, ce qui armait le logout ci-dessous.
-              refreshedSession = await SessionRefresher.instance.refresh();
-            } catch (_) {
-              // Refresh failed — recheck currentSession avant de logout :
-              // un autre acteur (SDK auto-refresh) a peut-être obtenu une
-              // session valide entre-temps.
-              refreshedSession = _supabase.auth.currentSession;
-            }
-
-            if (refreshedSession != null) {
-              try {
-                final opts = error.requestOptions;
-                opts.headers['Authorization'] =
-                    'Bearer ${refreshedSession.accessToken}';
-                final response = await _dio.fetch<dynamic>(opts);
-                onAuthRecovered?.call();
-                return handler.resolve(response);
-              } catch (retryErr) {
-                // Le retry a échoué pour une autre raison — laisser bubble.
-                _logError(error);
-                return handler.next(error);
-              }
-            }
-
-            // Vraiment plus de session valide → signal logout
-            if (onAuthError != null) {
-              // ignore: avoid_print
-              print(
-                  '⛔️ ApiClient: 401 after refresh attempt — no valid session. Triggering onAuthError.');
-              onAuthError!(401);
+              final response = await _recoverUnauthorized(error);
+              onAuthRecovered?.call();
+              return handler.resolve(response);
+            } on DioException catch (finalError) {
+              _logError(finalError);
+              return handler.next(finalError);
             }
           } else if (statusCode == 403) {
             // Un 403 `email_not_confirmed` peut provenir d'un JWT stale (le
@@ -274,15 +279,99 @@ class ApiClient {
   /// budget ne s'applique qu'au cold boot, où la session est en cours de
   /// restauration depuis Hive.
   Future<Session?> _awaitSession() async {
-    var session = _supabase.auth.currentSession;
+    var session = _currentSession();
     if (session != null) return session;
 
     final deadline = DateTime.now().add(_sessionWaitBudget);
     while (session == null && DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(_sessionPollInterval);
-      session = _supabase.auth.currentSession;
+      session = _currentSession();
     }
     return session;
+  }
+
+  /// Récupère un 401 avec au plus [_maxAuthReplays] rejeux et un seul refresh.
+  ///
+  /// Le token réellement rejeté pilote toute la décision : si une autre requête
+  /// a déjà publié un JWT différent, on le rejoue sans relancer de refresh —
+  /// c'est le cas typique d'un 401 arrivé en retard après qu'un voisin a déjà
+  /// fait tourner la session. Une fois le token stable et toujours rejeté, la
+  /// session est réellement morte : on signale l'expiration, **une fois**.
+  ///
+  /// Un rejeu ne repasse jamais ici ([_authRecoveryRequestFlag]) : la boucle
+  /// est le seul ordonnanceur, donc le nombre de requêtes est borné.
+  Future<Response<dynamic>> _recoverUnauthorized(DioException error) async {
+    final options = error.requestOptions;
+    var rejectedToken = options.extra[_sentAccessTokenKey] as String?;
+
+    for (var attempt = 0; attempt < _maxAuthReplays; attempt++) {
+      // Seule la première passe a le droit de déclencher le single-flight ;
+      // les suivantes se contentent d'un token déjà publié par un autre acteur.
+      final candidate = attempt == 0
+          ? await _refreshedSessionOtherThan(rejectedToken)
+          : _sessionOtherThan(rejectedToken);
+      if (candidate == null) break;
+
+      try {
+        return await _replay(options, candidate.accessToken);
+      } on DioException catch (replayError) {
+        // Un échec non-401 ne dit rien de la session : il remonte tel quel.
+        if (replayError.response?.statusCode != 401) rethrow;
+        rejectedToken = candidate.accessToken;
+        error = replayError;
+      }
+    }
+
+    if (onAuthError != null) {
+      // ignore: avoid_print
+      print(
+          '⛔️ ApiClient: token stable encore rejeté après rejeu borné (${options.path}) — déclenchement onAuthError.');
+      onAuthError!(401);
+    }
+    throw error;
+  }
+
+  /// Session courante valide dont le token diffère de [rejectedToken] — `null`
+  /// si le seul token disponible est justement celui que le backend refuse.
+  Session? _sessionOtherThan(String? rejectedToken) {
+    final session = _currentSession();
+    if (session == null || session.isExpired) return null;
+    return session.accessToken == rejectedToken ? null : session;
+  }
+
+  /// Idem, en déclenchant au besoin le refresh single-flight.
+  ///
+  /// La relecture finale couvre les deux issues où le refresh ne rend pas
+  /// lui-même le bon token : il a échoué alors que le SDK venait de publier sa
+  /// propre session, ou il a rendu le token déjà rejeté.
+  Future<Session?> _refreshedSessionOtherThan(String? rejectedToken) async {
+    final alreadyPublished = _sessionOtherThan(rejectedToken);
+    if (alreadyPublished != null) return alreadyPublished;
+
+    Session? refreshed;
+    try {
+      // Pas de `timeout:` explicite : `SessionRefresher` calcule un budget
+      // adaptatif (8 s au premier plan, 20 s au cold boot / réveil). Les 5 s
+      // fixes d'avant expiraient systématiquement au réveil par tap widget,
+      // ce qui armait le logout.
+      refreshed = await SessionRefresher.instance.refresh();
+    } catch (_) {
+      // `SessionRefresher` a déjà attendu sa fenêtre de grâce ; la relecture
+      // ci-dessous suffit à couvrir une publication de dernière seconde.
+    }
+    if (refreshed != null &&
+        !refreshed.isExpired &&
+        refreshed.accessToken != rejectedToken) {
+      return refreshed;
+    }
+    return _sessionOtherThan(rejectedToken);
+  }
+
+  Future<Response<dynamic>> _replay(RequestOptions options, String token) {
+    options.headers['Authorization'] = 'Bearer $token';
+    options.extra[_sentAccessTokenKey] = token;
+    options.extra[_authRecoveryRequestFlag] = true;
+    return _dio.fetch<dynamic>(options);
   }
 
   /// Extrait le champ `detail` d'une réponse d'erreur FastAPI (si dispo).
@@ -316,7 +405,7 @@ class ApiClient {
   /// `true` quand une session Supabase est disponible à l'instant T. Permet
   /// aux caches applicatifs de ne pas mémoriser une réponse obtenue en
   /// anonyme (cf. `FeedRepository._defaultViewLastResult`).
-  bool get hasSession => _supabase.auth.currentSession != null;
+  bool get hasSession => _currentSession() != null;
 
   /// Helper GET
   Future<dynamic> get(

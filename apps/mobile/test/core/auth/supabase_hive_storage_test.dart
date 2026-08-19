@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -112,6 +113,80 @@ void main() {
 
       final has = await SupabaseHiveStorage().hasAccessToken();
       expect(has, isFalse);
+    });
+  });
+
+  group('SupabaseHiveStorage - readValidAccessToken()', () {
+    // Le rafraîchissement de fond du widget lit la session par ce chemin :
+    // il ne doit JAMAIS voir le refresh token ni envoyer un JWT périmé, sous
+    // peine de faire tourner le token single-use de l'app (bug-android-
+    // disconnect-race.md).
+    final now = DateTime.utc(2026, 8, 19, 12);
+
+    Future<void> persist({required String accessToken, int? expiresAt}) {
+      return SupabaseHiveStorage().persistSession(jsonEncode({
+        'access_token': accessToken,
+        'refresh_token': 'must-never-leave-the-app-isolate',
+        if (expiresAt != null) 'expires_at': expiresAt,
+      }));
+    }
+
+    test('session encore valide → le JWT est rendu, sans mutation du blob',
+        () async {
+      await persist(
+        accessToken: 'valid-jwt',
+        expiresAt: now.add(const Duration(hours: 1)).millisecondsSinceEpoch ~/
+            1000,
+      );
+
+      final token = await SupabaseHiveStorage().readValidAccessToken(now: now);
+
+      expect(token, 'valid-jwt');
+      final raw = jsonDecode((await SupabaseHiveStorage().accessToken())!);
+      expect(raw['refresh_token'], 'must-never-leave-the-app-isolate',
+          reason: 'la lecture ne réécrit ni ne consomme la session');
+    });
+
+    test('JWT dans la marge d\'expiration → refusé', () async {
+      await persist(
+        accessToken: 'almost-expired-jwt',
+        expiresAt:
+            now.add(const Duration(seconds: 10)).millisecondsSinceEpoch ~/ 1000,
+      );
+
+      expect(await SupabaseHiveStorage().readValidAccessToken(now: now),
+          isNull);
+    });
+
+    test('session expirée → refusée sans tentative de refresh', () async {
+      await persist(
+        accessToken: 'expired-jwt',
+        expiresAt:
+            now.subtract(const Duration(minutes: 1)).millisecondsSinceEpoch ~/
+                1000,
+      );
+
+      expect(await SupabaseHiveStorage().readValidAccessToken(now: now),
+          isNull);
+    });
+
+    test('expiration absente → traitée comme expirée (fail-closed)', () async {
+      await persist(accessToken: 'unknown-expiry-jwt');
+
+      expect(await SupabaseHiveStorage().readValidAccessToken(now: now),
+          isNull);
+    });
+
+    test('blob illisible → refusé silencieusement', () async {
+      await SupabaseHiveStorage().persistSession('{not-json');
+
+      expect(await SupabaseHiveStorage().readValidAccessToken(now: now),
+          isNull);
+    });
+
+    test('aucune session persistée → null', () async {
+      expect(await SupabaseHiveStorage().readValidAccessToken(now: now),
+          isNull);
     });
   });
 

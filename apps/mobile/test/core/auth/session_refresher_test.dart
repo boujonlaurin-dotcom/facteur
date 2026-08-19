@@ -87,21 +87,40 @@ void main() {
   });
 
   test(
-      'refresh throw + currentSession null → l\'erreur est propagée',
+      'Already Used puis session publiée pendant la grâce → récupération réussie',
+      () async {
+    Session? current;
+    SessionRefresher.instance.refreshFnOverride = () async {
+      Future<void>.delayed(const Duration(milliseconds: 150), () {
+        current = makeSession(accessToken: 'published-later');
+      });
+      throw const AuthException('Already Used');
+    };
+    SessionRefresher.instance.currentSessionFnOverride = () => current;
+
+    final result = await SessionRefresher.instance.refresh();
+
+    expect(result?.accessToken, 'published-later');
+  });
+
+  test('refresh throw + currentSession null → l\'erreur est propagée',
       () async {
     SessionRefresher.instance.refreshFnOverride = () async {
       throw const AuthException('refresh_token expired');
     };
     SessionRefresher.instance.currentSessionFnOverride = () => null;
 
-    expect(
-      () => SessionRefresher.instance.refresh(),
+    final stopwatch = Stopwatch()..start();
+    await expectLater(
+      SessionRefresher.instance.refresh(),
       throwsA(isA<AuthException>()),
     );
+    expect(stopwatch.elapsed,
+        greaterThanOrEqualTo(const Duration(milliseconds: 450)),
+        reason: 'la session doit être relue pendant la fenêtre de grâce');
   });
 
-  test(
-      'refresh throw + currentSession expirée → l\'erreur est propagée',
+  test('refresh throw + currentSession expirée → l\'erreur est propagée',
       () async {
     final expired = makeSession(
       expiresAt: (DateTime.now().millisecondsSinceEpoch ~/ 1000) - 60,
