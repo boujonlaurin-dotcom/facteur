@@ -6,7 +6,11 @@ name: Build Android APK (beta)
 # Les vrais users passent par weekly-release.yml (flavor beta, UPDATE_CHANNEL=stable).
 on:
   push:
-    branches: [ main ]
+    # `main` = canal beta des testeurs. La 2ᵉ branche est un **build de review**
+    # d'une branche en cours : il ne produit QUE l'artefact (la publication de
+    # release est verrouillée sur `main`, cf. l'étape « Create Beta Release »),
+    # donc aucun testeur ne reçoit un APK d'une branche non mergée.
+    branches: [ main, claude/article-section-navigation-d0y3yk ]
   workflow_dispatch:
     inputs:
       api_base_url:
@@ -66,10 +70,19 @@ jobs:
           cd apps/mobile
           flutter pub run flutter_launcher_icons
 
-      # Generate version tag BEFORE build so it can be injected into the APK
+      # Generate version tag BEFORE build so it can be injected into the APK.
+      # Le préfixe distingue le canal : `beta-` (main, servi aux testeurs par
+      # l'updater in-app) vs `review-` (branche en cours). Le backend ne sert
+      # QUE les tags `beta-` et `release-` (cf. `app_update.py`), donc un build
+      # de review reste invisible pour tout le monde sauf celui qui a le lien.
       - name: Generate version
         id: version
-        run: echo "version=beta-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "version=beta-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+          else
+            echo "version=review-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build APK (beta flavor — side-loaded GitHub Releases)
         run: |
@@ -98,8 +111,33 @@ jobs:
           mv apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk \
              apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
 
+      # Build de review : release téléchargeable en un clic (l'artefact d'Actions
+      # demande d'être connecté et livre un zip). Tag `review-…` → hors des deux
+      # canaux de l'updater.
+      - name: Publish review build
+        if: github.ref != 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "Review — ${{ github.ref_name }}"
+          body: |
+            Build de review de la branche `${{ github.ref_name }}`.
+
+            - Commit : ${{ github.sha }}
+            - Flavor `beta`, API staging.
+            - Tag `review-…` : **hors des canaux de mise à jour**. L'updater
+              in-app ne lit que `beta-` et `release-`, personne ne reçoit ce
+              build sans ce lien.
+
+            Telecharge le `.apk` ci-dessous, ouvre-le sur ton Android, autorise
+            l'installation depuis une source inconnue si demande.
+          files: apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
+          prerelease: true
+
       - name: Create Beta Release
-        if: github.event.inputs.create_release != 'false'
+        # Jamais depuis une branche de review : le canal beta ne sert que ce qui
+        # est passé par `main`.
+        if: github.event.inputs.create_release != 'false' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}

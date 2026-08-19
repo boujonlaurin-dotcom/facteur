@@ -79,6 +79,17 @@ jobs:
             test/features/feed/feed_provider_widget_refresh_test.dart \
             test/android/widget_resources_test.dart
 
+      # Élargissement du paquet (cf. commentaire ci-dessus) : composition de la
+      # Tournée. C'est le code qui décide quels blocs de L'Essentiel sont rendus
+      # et dans quel ordre — un bloc favori qui disparaît en silence est invisible
+      # en analyse statique et n'a aucun autre garde-fou automatisé.
+      - name: Tests de composition de la Tournée
+        if: ${{ !cancelled() }}
+        run: |
+          flutter test \
+            test/features/flux_continu/providers/flux_continu_tournee_order_test.dart \
+            test/features/flux_continu/providers/flux_continu_block_score_order_test.dart \
+            test/features/flux_continu/utils/section_score_order_test.dart
       # Élargissement du paquet (cf. commentaire ci-dessus) : le dossier auth
       # est vert en entier et garde l'entrée dans l'app — inscription,
       # connexion, SSO Apple. Le SSO Apple est resté cassé en prod jusqu'à ce

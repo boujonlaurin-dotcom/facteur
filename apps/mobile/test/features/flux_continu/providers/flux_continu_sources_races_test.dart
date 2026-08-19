@@ -119,9 +119,20 @@ UserSourcesState _sourcesState({bool? essentiel}) => UserSourcesState(
       favoriteCap: 7,
     );
 
-FeedResponse _feedWithIds(List<String> ids, {String sourceId = 'src1'}) =>
+/// Complète une liste **non vide** jusqu'au plancher d'affichage
+/// [kSectionMinItems] : ce fichier teste des courses de **placement** de
+/// section, pas le compromis d'affichage V1 — une fixture sous le plancher
+/// serait masquée et rendrait la course inobservable.
+List<String> _atLeastFloor(List<String> ids) => ids.isEmpty
+    ? ids
+    : [
+        ...ids,
+        for (var i = ids.length; i < kSectionMinItems; i++) '${ids.first}_pad$i',
+      ];
+
+FeedResponse _feedWithIds(List<String> rawIds, {String sourceId = 'src1'}) =>
     FeedResponse(
-      items: ids
+      items: _atLeastFloor(rawIds)
           .map((id) => Content(
                 id: id,
                 title: 'title-$id',
@@ -253,6 +264,8 @@ void main() {
     expect(sourceSections(container).map((s) => s.sourceId), ['src1'],
         reason: 'le favori ne doit pas être droppé pour tout le cycle');
     expect(sourceSections(container).single.items.map((c) => c.id),
-        ['a1', 'a2']);
+        containsAll(['a1', 'a2']),
+        reason: 'la section porte bien son contenu (le padding au plancher '
+            'd\'affichage n\'est pas le sujet de cette course)');
   });
 }

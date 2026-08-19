@@ -26,9 +26,9 @@ on:
   workflow_dispatch:
     inputs:
       slug:
-        description: 'Sous-chemin de la preview (ex. swipe-nav)'
+        description: 'Sous-chemin de la preview (ex. essentiel-swipe)'
         required: true
-        default: 'swipe-nav'
+        default: 'blocs-favoris'
       api_base_url:
         description: 'URL de l API visée par le build'
         required: true

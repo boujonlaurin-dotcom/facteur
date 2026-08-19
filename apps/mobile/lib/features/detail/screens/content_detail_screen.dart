@@ -35,7 +35,6 @@ import '../../gamification/providers/gamification_preference_provider.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../lettres/widgets/progress_toast.dart';
 import '../deck/models/article_deck.dart';
-import '../deck/widgets/deck_progress_bar.dart';
 import '../models/article_completion_latch.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/providers/user_sources_state_provider.dart';
@@ -3797,9 +3796,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
+  /// Barre de progression **de lecture de l'article** — le seul repère du
+  /// header (Story 34.2 : le repère de position dans la section, segmenté, a
+  /// été retiré ; c'est le geste qui porte la séquence, pas un chrome).
   Widget _buildReadingProgressBar(FacteurColors colors) {
-    final slot = widget.deckSlot;
-    final segmented = slot != null && slot.showSegments && slot.length > 1;
     return ValueListenableBuilder<bool>(
       valueListenable: _articleCompleted,
       builder: (context, _, __) => ValueListenableBuilder<double>(
@@ -3807,16 +3807,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       builder: (context, progress, _) {
         final clamped = progress.clamp(0.0, 1.0);
         final completed = _completion.completed;
-        // Deck de section : la barre porte la position dans la séquence, elle
-        // doit donc être là dès l'arrivée (c'est elle qui dit « il en reste »).
-        if (segmented) {
-          return DeckProgressBar(
-            index: slot.index,
-            length: slot.length,
-            progress: clamped,
-            completed: completed,
-          );
-        }
         // Only show after 5% to avoid flashing on open
         if (progress < 0.05) return const SizedBox.shrink();
         // Grey→target lerp. Article terminé : la barre devient le signal de

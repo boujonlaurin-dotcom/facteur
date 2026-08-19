@@ -15,6 +15,8 @@ import 'package:facteur/features/feed/providers/feed_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart'
+    show kSectionMinItems;
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
 import 'package:facteur/features/flux_continu/services/tournee_progress_service.dart';
@@ -87,20 +89,47 @@ class _StubUserSourcesNotifier extends UserSourcesNotifier {
 
 /// [score] non nul ⇒ chaque article porte un `recommendationReason` : c'est le
 /// seul input du classement des blocs.
-FeedResponse _feed(List<String> ids, {double? score}) {
+FeedResponse _feed(List<String> ids, {double? score}) =>
+    _feedOf([for (final id in ids) (id: id, score: score)]);
+
+/// Variante à score **par article** — nécessaire dès qu'un bloc mélange des
+/// articles que la dédup inter-sections lui prendra et des articles à lui.
+/// Complète un bloc **non vide** jusqu'au plancher d'affichage
+/// [kSectionMinItems] avec des articles **non scorés**.
+///
+/// Deux propriétés indispensables ici : le bloc atteint le plancher (sinon il
+/// serait masqué et l'ordre testé deviendrait inobservable), et son score reste
+/// **exactement** celui des articles écrits par le test — un article sans
+/// `recommendationReason` ne contribue pas à `blockScore`.
+List<({String id, double? score})> _atLeastFloor(
+  List<({String id, double? score})> items,
+) =>
+    items.isEmpty
+        ? items
+        : [
+            ...items,
+            for (var i = items.length; i < kSectionMinItems; i++)
+              (id: '${items.first.id}_pad$i', score: null),
+          ];
+
+FeedResponse _feedOf(List<({String id, double? score})> rawItems) {
+  final items = _atLeastFloor(rawItems);
   return FeedResponse(
     items: [
-      for (final id in ids)
+      for (final item in items)
         Content(
-          id: id,
-          title: 'title-$id',
-          url: 'https://x.test/$id',
+          id: item.id,
+          title: 'title-${item.id}',
+          url: 'https://x.test/${item.id}',
           contentType: ContentType.article,
           publishedAt: DateTime(2026, 1, 1),
           source: Source(id: 's', name: 'S', type: SourceType.article),
-          recommendationReason: score == null
+          recommendationReason: item.score == null
               ? null
-              : RecommendationReason(label: 'Recommandé', scoreTotal: score),
+              : RecommendationReason(
+                  label: 'Recommandé',
+                  scoreTotal: item.score!,
+                ),
         ),
     ],
     pagination: Pagination(page: 1, perPage: 10, total: 0, hasNext: false),
@@ -412,6 +441,51 @@ void main() {
       expect(themeOrder(state), ['cinema', 'tech']);
     });
 
+    test(
+        'un bloc dépouillé par la dédup garde son rang : le score compte ses '
+        'articles servis, pas ses survivants', () async {
+      // Bug « blocs favoris absents de l'Essentiel ». La dédup inter-sections
+      // retire d'un bloc les articles déjà rendus plus haut (héros, Actus, bloc
+      // précédent). Scorer les seuls survivants punissait donc le bloc le plus
+      // pertinent du jour — celui dont les meilleurs articles sont montés dans
+      // la pile de tri — qui coulait en bas de Tournée, voire hors du cap.
+      //
+      // 'a' sert s1..s3 (100 chacun) ; 'b' sert les MÊMES s1..s3 plus b1 (10).
+      // Après dédup 'b' ne garde que b1 : score des survivants = 10 (il coulait
+      // sous 'c' à 150), score des articles servis = 300 (il tient son rang).
+      when(() => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            topic: any(named: 'topic'),
+            sourceId: any(named: 'sourceId'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          )).thenAnswer((invocation) async {
+        const List<({String id, double? score})> shared = [
+          (id: 's1', score: 100.0),
+          (id: 's2', score: 100.0),
+          (id: 's3', score: 100.0),
+        ];
+        return switch (invocation.namedArguments[#theme] as String?) {
+          'a' => _feedOf(shared),
+          'b' => _feedOf([...shared, (id: 'b1', score: 10.0)]),
+          'c' => _feedOf(const [
+              (id: 'c1', score: 50.0),
+              (id: 'c2', score: 50.0),
+              (id: 'c3', score: 50.0),
+            ]),
+          _ => _feedOf(const []),
+        };
+      });
+      final container = await buildContainer(themeSlugs: ['a', 'b', 'c']);
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      expect(themeOrder(state), ['a', 'b', 'c']);
+    });
+
     test('à score égal, l\'ordre manuel départage (compte personnalisé)',
         () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
@@ -430,13 +504,40 @@ void main() {
       expect(themeOrder(state), ['c', 'b', 'a']);
     });
 
-    test('mais le score l\'emporte sur l\'ordre manuel quand il départage',
-        () async {
+    test('le score ne déplace pas un bloc placé par l\'utilisateur', () async {
+      // Bug « l'ordre des favoris ne se reflète pas dans la Tournée » : le rang
+      // d'un bloc placé est un choix, pas une estimation. Ici les trois blocs
+      // sont également fournis (300 chacun) ⇒ aucun n'est en retrait ⇒ l'ordre
+      // composé dans « Mes favoris » est rendu tel quel.
       SharedPreferences.setMockInitialValues(<String, Object>{
         'tournee_customized_v1': true,
         'tournee_order_v1': ['theme:c', 'theme:b', 'theme:a'],
       });
-      // 'c' est manuellement en tête mais n'a qu'un article : il coule.
+      stubThemes(
+        {'a': 3, 'b': 3, 'c': 3},
+        scores: const {'a': 100, 'b': 100, 'c': 100},
+      );
+      final container = await buildContainer(themeSlugs: ['a', 'b', 'c']);
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      expect(themeOrder(state), ['c', 'b', 'a']);
+    });
+
+    test(
+        'seule exception : un bloc placé mais pauvre est déclassé en queue de '
+        'bloc favori (règle PO V1)', () async {
+      // Arbitrage assumé entre deux règles produit : « l'ordre composé est
+      // respecté » et « un bloc de curation pauvre est déclassé ». La seconde
+      // ne l'emporte que dans un cas net — score sous la moitié de la médiane
+      // des blocs favoris du jour — et elle **relègue** sans jamais masquer :
+      // 'c' reste rendu, il passe simplement derrière 'b' et 'a'.
+      // Médiane {c:100, b:300, a:300} = 300 ⇒ seuil 150 ⇒ seul 'c' est pauvre.
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_customized_v1': true,
+        'tournee_order_v1': ['theme:c', 'theme:b', 'theme:a'],
+      });
       stubThemes(
         {'a': 3, 'b': 3, 'c': 1},
         scores: const {'a': 100, 'b': 100, 'c': 100},
@@ -446,7 +547,31 @@ void main() {
 
       final state = await settle(container);
 
+      // 'b' puis 'a' gardent leur ordre composé relatif ; 'c' passe en queue.
       expect(themeOrder(state), ['b', 'a', 'c']);
+    });
+
+    test(
+        'le score classe encore les blocs que l\'utilisateur n\'a pas placés',
+        () async {
+      // 'b' est placé (immobile) ; 'a' et 'c' ne le sont pas → ils se classent
+      // entre eux par score, dans les slots que 'b' laisse libres.
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_customized_v1': true,
+        'tournee_order_v1': ['theme:b'],
+      });
+      stubThemes(
+        {'a': 1, 'b': 3, 'c': 3},
+        scores: const {'a': 100, 'b': 100, 'c': 100},
+      );
+      final container = await buildContainer(themeSlugs: ['a', 'b', 'c']);
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      // 'b' placé ⇒ 1ᵉʳ slot (applyOrder). Restent les slots 2 et 3 pour 'a'
+      // (1 article, score 100) et 'c' (3 articles, score 300) : 'c' devant.
+      expect(themeOrder(state), ['b', 'c', 'a']);
     });
   });
 
@@ -534,13 +659,20 @@ void main() {
       expect(sectionOrder(state), ['cinema', 'tech', 'source:media-1']);
     });
 
-    test('une source **favorite** reste, elle, classée par son score',
-        () async {
-      // Le filtre ne vise que la voie « Choisie pour vous » : une source que
-      // l'utilisateur a explicitement mise en favori garde son tri au score.
-      // (Story 10.2 — une source favorite n'est rendue dans la Tournée que si
-      // sa clé est en mode « Essentiel », donc présente dans `tournee_order_v1`
-      // ; l'ordre y place le thème en tête, c'est bien le score qui l'inverse.)
+    test(
+        'une source **favorite** reste dans le classement, mais l\'ordre '
+        'composé par l\'utilisateur prime', () async {
+      // Le filtre 22.7 ne vise que la voie « Choisie pour vous » : une source
+      // mise en favori reste **mesurée et classable** (elle est dans
+      // `blockScores` et dans l'ordre gelé), contrairement à une source
+      // suggérée qui en est exclue.
+      //
+      // Story 10.2 — une source favorite n'est rendue dans la Tournée que si sa
+      // clé est en mode « Essentiel », donc présente dans `tournee_order_v1` :
+      // elle est de ce fait toujours **placée** par l'utilisateur, et son rang
+      // suit l'ordre composé dans « Mes favoris », pas son score. C'est le sens
+      // du correctif : ici le thème pauvre reste devant le média bien scoré,
+      // parce que c'est comme ça que l'utilisateur les a rangés.
       SharedPreferences.setMockInitialValues(<String, Object>{
         'tournee_order_v1': ['theme:tech', 'source:media-1'],
       });
@@ -559,7 +691,10 @@ void main() {
 
       final state = await settle(container);
 
-      expect(sectionOrder(state), ['source:media-1', 'tech']);
+      expect(sectionOrder(state), ['tech', 'source:media-1']);
+      // La mesure, elle, reste intacte pour les deux blocs (PR-1) — c'est ce
+      // qui distingue une source favorite d'une source suggérée.
+      expect(state.blockScores.keys, containsAll(['theme:tech', 'source:media-1']));
     });
   });
 }
