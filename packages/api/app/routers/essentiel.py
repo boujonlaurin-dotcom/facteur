@@ -8,7 +8,7 @@ chaîne de fallback de `/api/digest` via `read_digest_or_fallback`.
 """
 
 import time
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 import structlog
@@ -20,7 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, safe_async_session, safe_fail_open_rollback
 from app.dependencies import get_current_user_id
-from app.models.content import Content
+from app.models.content import Content, UserContentStatus
+from app.models.enums import ContentStatus
 from app.models.essentiel_triage import EssentielTriageDecision
 from app.schemas.essentiel import (
     DEFAULT_MORE_LIMIT,
@@ -70,6 +71,42 @@ def _preparing_response() -> JSONResponse:
 _MIN_ESSENTIEL_CAROUSEL_ITEMS = 2
 
 
+async def _mark_essentiel_carousel_shown(
+    db: AsyncSession, user_uuid: UUID, content_ids: list[UUID]
+) -> None:
+    """Upsert `essentiel_last_shown_at = now()` pour les items effectivement
+    injectés dans la pile (Story 33.5) — alimente le cooldown anti-répétition
+    consommé par `carousel_selection_service.select_essentiel_carousel`. Même
+    patron que l'upsert `last_impressed_at` de `POST /feed/refresh`
+    (`app/routers/feed.py`). Pas de commit explicite : `get_db` commit la
+    session en fin de requête ; en cas d'échec, `safe_fail_open_rollback`
+    (appelant) annule ce statement avec le reste de l'enrichissement."""
+    if not content_ids:
+        return
+    now = datetime.now(UTC)
+    stmt = (
+        insert(UserContentStatus)
+        .values(
+            [
+                {
+                    "user_id": user_uuid,
+                    "content_id": content_id,
+                    "status": ContentStatus.UNSEEN.value,
+                    "essentiel_last_shown_at": now,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                for content_id in content_ids
+            ]
+        )
+        .on_conflict_do_update(
+            index_elements=["user_id", "content_id"],
+            set_={"essentiel_last_shown_at": now, "updated_at": now},
+        )
+    )
+    await db.execute(stmt)
+
+
 async def _enrich_essentiel_carousel(
     db: AsyncSession,
     user_uuid: UUID,
@@ -112,6 +149,9 @@ async def _enrich_essentiel_carousel(
 
         # position=0 : slot dédié côté mobile, non pertinent pour l'Essentiel.
         response.carousel = content.to_carousel_info(0)
+        await _mark_essentiel_carousel_shown(
+            db, user_uuid, [item.id for item in content.items]
+        )
     except Exception:
         logger.exception("essentiel_carousel_enrichment_failed")
         # Fail-open : rollback borné partagé (cf. `_enrich_community_carousel`).

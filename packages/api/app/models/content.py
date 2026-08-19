@@ -206,6 +206,13 @@ class UserContentStatus(Base):
     last_impressed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Dernière fois que cet article a été injecté dans le carrousel Phase B de
+    # la pile Essentiel (Story 33.5) — alimente le cooldown anti-répétition de
+    # `carousel_selection_service.select_essentiel_carousel`. NULL = jamais
+    # montré via ce mécanisme.
+    essentiel_last_shown_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Manual "already seen" flag — permanent strong penalty, no time decay
     manually_impressed: Mapped[bool] = mapped_column(
         default=False, server_default="false"

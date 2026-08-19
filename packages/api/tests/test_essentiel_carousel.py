@@ -1,9 +1,11 @@
-"""Tests de l'enrichissement carrousel de l'Essentiel (Story 32.1).
+"""Tests de l'enrichissement carrousel de l'Essentiel (Story 32.1 + 33.5).
 
 Vérifie au niveau fonction `_enrich_essentiel_carousel` :
 - présence du carrousel du jour quand un type Phase B est éligible ;
 - skip hors édition du jour (rewind J-7) ;
-- fail-open : une exception dans la construction laisse la réponse intacte.
+- fail-open : une exception dans la construction laisse la réponse intacte ;
+- Story 33.5 : le "dernier montré" est bien upserté sur les items attachés,
+  et un appel suivant dans les 7 jours n'en resert pas un.
 """
 
 import datetime
@@ -11,6 +13,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, SourceType
@@ -130,3 +133,60 @@ async def test_enrich_fails_open_on_exception(db_session):
         )
 
     assert out.carousel is None  # fail-open : pas de crash, pas de carrousel
+
+
+# ==========================================================================
+# Story 33.5 — cooldown anti-répétition (écriture + relecture)
+# ==========================================================================
+
+
+@pytest.mark.asyncio
+async def test_enrich_marks_shown_items(db_session):
+    """Après attache du carrousel, `essentiel_last_shown_at` est upserté pour
+    chacun de ses items."""
+    user_id = uuid4()
+    arts = await _seed_saved(db_session, user_id, n=3)
+    response = _empty_response()
+
+    out = await _enrich_essentiel_carousel(db_session, user_id, response, today_paris())
+    assert out.carousel is not None
+
+    rows = (
+        (
+            await db_session.execute(
+                select(UserContentStatus).where(
+                    UserContentStatus.user_id == user_id,
+                    UserContentStatus.content_id.in_([a.id for a in arts]),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 3
+    for row in rows:
+        assert row.essentiel_last_shown_at is not None
+
+
+@pytest.mark.asyncio
+async def test_enrich_does_not_reserve_recently_shown_article(db_session):
+    """Un article marqué montré il y a 2 jours n'est pas re-servi (seul type
+    éligible, sous le seuil une fois filtré → pas de carrousel du tout)."""
+    user_id = uuid4()
+    arts = await _seed_saved(db_session, user_id, n=3)
+    now = _now()
+    for a in arts:
+        row = (
+            await db_session.execute(
+                select(UserContentStatus).where(
+                    UserContentStatus.user_id == user_id,
+                    UserContentStatus.content_id == a.id,
+                )
+            )
+        ).scalar_one()
+        row.essentiel_last_shown_at = now - datetime.timedelta(days=2)
+    await db_session.commit()
+
+    response = _empty_response()
+    out = await _enrich_essentiel_carousel(db_session, user_id, response, today_paris())
+    assert out.carousel is None
