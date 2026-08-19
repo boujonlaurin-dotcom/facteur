@@ -27,14 +27,21 @@ typedef CurrentSessionFn = Session? Function();
 ///
 /// Si le SDK lance malgré tout une `AuthException` (ex. son propre
 /// `autoRefreshToken` interne a déjà consommé le token), on relit
-/// `currentSession` avant de propager l'erreur — un autre acteur a peut-être
-/// déjà obtenu une session valide.
+/// `currentSession` pendant une courte fenêtre bornée avant de propager
+/// l'erreur — un autre acteur a peut-être déjà obtenu une session valide, et sa
+/// publication arrive parfois juste après l'exception.
 class SessionRefresher {
   SessionRefresher._();
 
   static final SessionRefresher instance = SessionRefresher._();
 
   Completer<Session?>? _inflight;
+
+  /// Fenêtre pendant laquelle le SDK peut encore publier la session obtenue
+  /// par son auto-refresh après que notre appel a échoué (notamment
+  /// `Already Used`). Le polling reste volontairement court et borné.
+  static const Duration _recoveryGracePeriod = Duration(milliseconds: 500);
+  static const Duration _recoveryPollInterval = Duration(milliseconds: 50);
 
   /// Hooks injectables pour les tests. En production, défauts = SDK Supabase.
   @visibleForTesting
@@ -111,17 +118,19 @@ class SessionRefresher {
       unawaited(PostHogService().capture(event: 'auth_refresh_success'));
       completer.complete(session);
     } catch (e, st) {
-      // Le SDK a peut-être déjà obtenu une session fraîche via son propre
-      // autoRefreshToken interne. On relit avant de propager l'erreur.
-      final fresh = currentFn();
-      if (fresh != null && !fresh.isExpired) {
+      // Le SDK a peut-être déjà consommé le refresh token via son propre
+      // autoRefreshToken. La publication de `currentSession` peut arriver
+      // légèrement après l'exception : on lui laisse une courte fenêtre au
+      // lieu de conclure instantanément à une déconnexion.
+      final recovered = await _awaitValidCurrentSession(currentFn);
+      if (recovered != null) {
         debugPrint(
             'SessionRefresher: refresh threw but currentSession is valid — recovered.');
         unawaited(PostHogService().capture(
           event: 'auth_refresh_recovered',
           properties: {'exception': e.runtimeType.toString()},
         ));
-        completer.complete(fresh);
+        completer.complete(recovered);
       } else {
         debugPrint('SessionRefresher: ❌ refresh failed: $e');
         unawaited(PostHogService().capture(
@@ -133,6 +142,16 @@ class SessionRefresher {
       }
     } finally {
       _inflight = null;
+    }
+  }
+
+  Future<Session?> _awaitValidCurrentSession(CurrentSessionFn currentFn) async {
+    final deadline = DateTime.now().add(_recoveryGracePeriod);
+    while (true) {
+      final session = currentFn();
+      if (session != null && !session.isExpired) return session;
+      if (!DateTime.now().isBefore(deadline)) return null;
+      await Future<void>.delayed(_recoveryPollInterval);
     }
   }
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -53,6 +55,43 @@ class SupabaseHiveStorage extends LocalStorage {
     return token;
   }
 
+  /// Marge d'expiration du SDK (`gotrue` `Constants.expiryMargin`, non exporté
+  /// donc recopié ici) : un JWT à moins de 30 s de sa fin ne doit pas partir.
+  static const Duration _expiryMargin = Duration(seconds: 30);
+
+  /// JWT encore valide lu **directement** dans la session persistée, sans
+  /// passer par `Supabase.initialize`.
+  ///
+  /// C'est le seul moyen pour l'isolate de fond du widget d'obtenir un token
+  /// sans se voir confier le refresh token : le faire tourner depuis là
+  /// révoquerait celui de l'app et la déconnecterait
+  /// (cf. `docs/bugs/bug-android-disconnect-race.md`).
+  ///
+  /// Volontairement basé sur le champ `expires_at` du blob plutôt que sur
+  /// `Session.isExpired` : ce dernier répond `false` quand le JWT est illisible
+  /// (fail-open), alors qu'ici toute incertitude doit valoir « expiré ».
+  ///
+  /// [now] n'existe que pour les tests.
+  Future<String?> readValidAccessToken({DateTime? now}) async {
+    // `accessToken()` est mal nommé côté SDK : il rend tout le JSON de session.
+    final persisted = await accessToken();
+    if (persisted == null) return null;
+    try {
+      final decoded = jsonDecode(persisted);
+      if (decoded is! Map<String, dynamic>) return null;
+      final token = decoded['access_token'];
+      final expiresAt = decoded['expires_at'];
+      if (token is! String || token.isEmpty || expiresAt is! int) return null;
+
+      final safeUntil = DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000)
+          .subtract(_expiryMargin);
+      return (now ?? DateTime.now()).isBefore(safeUntil) ? token : null;
+    } catch (e) {
+      debugPrint('SupabaseHiveStorage: persisted session unreadable ($e).');
+      return null;
+    }
+  }
+
   @override
   Future<bool> hasAccessToken() async {
     if (_box == null) {
@@ -83,8 +122,10 @@ class SupabaseHiveStorage extends LocalStorage {
     }
     debugPrint(
         'SupabaseHiveStorage: Persisting session (length: ${session.length}).');
+    // `substring(0, 50)` nu lève sur une session plus courte — et ce log ne
+    // vaut pas de faire échouer une persistance de session.
     debugPrint(
-        'SupabaseHiveStorage: Data to persist: ${session.substring(0, 50)}...');
+        'SupabaseHiveStorage: Data to persist: ${session.substring(0, session.length.clamp(0, 50))}...');
     await _box!.put(_key, session);
     // Force flush for stability
     await _box!.flush();

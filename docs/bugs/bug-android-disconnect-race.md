@@ -143,3 +143,69 @@ Symétrique dans `api_client.dart` `catch (_)` : recheck `currentSession` avant 
 - Conversion 403 → 401 backend (rejeté dans `bug-feed-403-auth-recovery.md`)
 - Migration `SupabaseHiveStorage` → `flutter_secure_storage` pur (raison historique du custom storage = bugs Keychain macOS)
 - Refonte OAuth Apple/Google
+
+---
+
+## Vague 2 — les trois brèches restées ouvertes après P0
+
+Le single-flight (P0) a bien supprimé les refresh simultanés **partis en même
+temps**, mais trois chemins continuaient à faire tourner le refresh token
+single-use ou à conclure trop vite à une déconnexion.
+
+### B1 — 401 décalés : un refresh par vague, pas par requête
+
+`SessionRefresher` ne dédoublonne que ce qui est *en vol*. Au cold boot, les
+requêtes ne prennent pas leur 401 en même temps : la 1re déclenche un refresh
+qui se termine, puis la 2e arrive avec son 401 (obtenu avec l'ancien JWT) et
+relance un **second** refresh — avec un token déjà roté.
+
+Fix : `ApiClient` mémorise dans `RequestOptions.extra` le token réellement
+envoyé (`facteur_sent_access_token`). Sur 401, si la session courante porte
+déjà un token *différent*, elle est rejouée telle quelle, **sans refresh**.
+Le refresh n'est tenté qu'à la première passe, et seulement si aucun token plus
+récent n'a été publié.
+
+Les rejeux sont bornés (`_maxAuthReplays = 2`) et marqués
+(`facteur_auth_recovery_request`) pour qu'ils ne repassent jamais par la
+récupération : le nombre de requêtes émises par un 401 est donc borné à 3.
+`onAuthError(401)` n'est signalé qu'une fois, quand le token est **stable** et
+toujours rejeté — c'est-à-dire quand la session est réellement morte.
+
+### B2 — `Already Used` : la session arrive juste après l'exception
+
+Quand le `autoRefreshToken` interne du SDK a consommé le token avant nous,
+notre appel lève (`Already Used`) *puis* le SDK publie la session fraîche.
+La relecture instantanée de `currentSession` tombait dans cet interstice et
+concluait à une expiration.
+
+Fix : `SessionRefresher` relit `currentSession` sur une fenêtre bornée de
+500 ms (polling 50 ms) avant de propager l'erreur. Chemin d'échec uniquement —
+la lecture précède le premier sleep, donc une session déjà publiée coûte 0 ms.
+
+### B3 — l'isolate WorkManager du widget faisait tourner le token
+
+`WidgetBackgroundRefresh.run()` appelait `Supabase.initialize` puis
+`refreshSession()` dans **un autre isolate**, hors de portée du singleton : le
+job horaire pouvait roter le refresh token pendant que l'app dormait, et l'app
+se réveillait avec un token révoqué.
+
+Fix : l'isolate n'initialise plus Supabase du tout. Il lit la session persistée
+en lecture seule via `SupabaseHiveStorage.readValidAccessToken()` et n'utilise
+son JWT que s'il est encore valide (marge 30 s, celle du SDK). Sinon il
+abandonne le cycle en silence — **jamais** de refresh, jamais de purge.
+
+**Arbitrage assumé** : le widget n'a plus de fraîcheur autonome au-delà de
+l'expiration du JWT ; il attend la prochaine ouverture de l'app. L'intégrité de
+la session utilisateur prime sur la fraîcheur du widget.
+
+### Reste à faire
+
+- `auth_state.dart` (~l. 1389) garde son propre `await Future.delayed(500ms)`
+  avant de relire `currentSession`. Il fait doublon avec la fenêtre de grâce de
+  `SessionRefresher` et **s'y ajoute** (≈ 1 s avant l'écran de login). À
+  déléguer au refresher.
+- La branche 403 `email_not_confirmed` d'`ApiClient` rejoue encore sans
+  comparer le token rejeté et garde un `timeout: 5 s` fixe — celui-là même que
+  la branche 401 a abandonné parce qu'il expirait au réveil par tap widget.
+- Surveiller conjointement `FLUTTER-2B`, `auth_refresh_failure`,
+  `auth_refresh_recovered` et `auth_session_expired`.

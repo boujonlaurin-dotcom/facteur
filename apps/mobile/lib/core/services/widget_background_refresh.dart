@@ -3,7 +3,6 @@ import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../../config/constants.dart';
@@ -23,7 +22,11 @@ import 'widget_service.dart';
 /// Contraintes de conception, toutes issues des autres causes racines :
 ///  - **Dio nu**, sans les interceptors d'`ApiClient` : un 401 en tâche de fond
 ///    ne doit jamais pouvoir armer `onAuthError` → `signOut` (leçon de C3) ;
-///  - pas de session restaurable → **abandon silencieux**, jamais de purge ;
+///  - **jamais de `Supabase.initialize` ici** : un client Supabase vivant dans
+///    cet isolate ferait tourner le refresh token single-use en parallèle de
+///    l'app et la déconnecterait (cf. docs/bugs/bug-android-disconnect-race.md).
+///    D'où la lecture seule via [SupabaseHiveStorage.readValidAccessToken] ;
+///  - pas de session valide → **abandon silencieux**, jamais de purge ;
 ///  - fusion et non remplacement du payload (une page = 20 articles, le widget
 ///    en garde 80) via [WidgetService.updateWidgetMergingFlux].
 class WidgetBackgroundRefresh {
@@ -123,39 +126,6 @@ class WidgetBackgroundRefresh {
     }
   }
 
-  /// `Supabase.initialize` est **une fois par isolate**, pas une fois par run.
-  ///
-  /// L'isolate de fond de `home_widget` réutilise son `FlutterEngine` d'un
-  /// réveil à l'autre (champ statique dans `HomeWidgetBackgroundService`) :
-  /// depuis que le bouton 🔄 passe par ce chemin, [run] peut être appelée
-  /// plusieurs fois dans la même vie d'isolate. Un second `initialize` lève —
-  /// l'exception était avalée par le `catch` général de [run], et le refresh
-  /// n'échouait qu'à partir du **deuxième** appui, ce qui donne exactement le
-  /// symptôme « le bouton marche une fois sur deux ».
-  static bool _supabaseReady = false;
-
-  static Future<void> _ensureSupabase(SupabaseHiveStorage storage) async {
-    if (_supabaseReady) return;
-    try {
-      await Supabase.initialize(
-        url: SupabaseConstants.url,
-        anonKey: SupabaseConstants.anonKey,
-        authOptions: FlutterAuthClientOptions(localStorage: storage),
-      );
-    } catch (e) {
-      // Déjà initialisé (deux réveils rapprochés dans le même isolate) : on
-      // relit l'instance pour confirmer qu'elle répond — si elle ne répond pas,
-      // l'exception remonte et [run] la traitera comme un échec franc plutôt
-      // que de poursuivre sur un client mort.
-      final client = Supabase.instance.client;
-      debugPrint(
-        'WidgetBackgroundRefresh: Supabase already initialized '
-        '(${client.runtimeType}) — $e',
-      );
-    }
-    _supabaseReady = true;
-  }
-
   /// Le travail réel, exécuté dans l'isolate de fond.
   ///
   /// Retourne `true` même en cas d'échec « normal » (pas de session, réseau
@@ -166,25 +136,13 @@ class WidgetBackgroundRefresh {
       await Hive.initFlutter();
       final storage = SupabaseHiveStorage();
       await storage.initialize();
-      if (!await storage.hasAccessToken()) {
-        debugPrint('WidgetBackgroundRefresh: no persisted session, skipping.');
-        return true;
-      }
-
-      await _ensureSupabase(storage);
-
-      final session = Supabase.instance.client.auth.currentSession;
-      if (session == null) {
-        debugPrint('WidgetBackgroundRefresh: session not recovered, skipping.');
-        return true;
-      }
-      final token = session.isExpired
-          ? (await Supabase.instance.client.auth.refreshSession())
-              .session
-              ?.accessToken
-          : session.accessToken;
+      // Lecture seule : cet isolate n'initialise pas Supabase et ne voit donc
+      // jamais le refresh token. Un JWT périmé est abandonné en silence — le
+      // widget attendra la prochaine ouverture de l'app pour se rafraîchir.
+      final token = await storage.readValidAccessToken();
       if (token == null) {
-        debugPrint('WidgetBackgroundRefresh: refresh yielded no token.');
+        debugPrint(
+            'WidgetBackgroundRefresh: no valid persisted session, skipping.');
         return true;
       }
 
