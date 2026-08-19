@@ -18,10 +18,12 @@ import '../../digest/providers/digest_provider.dart'
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/repositories/digest_repository.dart';
 import '../../feed/models/content_model.dart';
-import '../../feed/providers/feed_provider.dart' show feedRepositoryProvider;
+import '../../feed/providers/feed_provider.dart'
+    show feedRepositoryProvider, feedCacheServiceProvider;
 import '../../feed/providers/tab_order_prefs_provider.dart'
     show tabOrderPrefsProvider;
 import '../../feed/repositories/feed_repository.dart';
+import '../../feed/services/feed_cache_service.dart';
 import '../../grille/providers/grille_provider.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/models/user_sources_state.dart';
@@ -44,6 +46,7 @@ import '../utils/notif_teasers.dart';
 import '../utils/section_fit.dart';
 import '../utils/section_score_order.dart';
 import '../utils/theme_color_mapping.dart';
+import '../utils/tournee_section_codec.dart';
 import 'tournee_order_prefs_provider.dart'; // tourneeOrderPrefsProvider, TourneeOrderState, applyOrder (réexporté)
 
 /// Accent applied to the legacy "Actus du jour" digest topic section
@@ -94,11 +97,16 @@ const int _kMaxFavoriteSourceSections = kTourneeVisibleCap;
 /// Number of items requested per page for each theme section of the Tournée
 /// (initial load + each "loadMoreTheme" call).
 ///
-/// Maintenu à 10 (décision PO) : le cold-open tire déjà ~10 appels
-/// `personalized=true` en parallèle sur un unique worker uvicorn, doubler la
+/// Maintenu à 10 (décision PO) : le cold-open tire déjà un appel
+/// `personalized=true` **par section** sur un unique worker uvicorn, doubler la
 /// page doublerait cette charge. Le volume est repris côté lazy loading
 /// ([_themeHasMore] + top-up de la page dédiée) plutôt que par une page plus
 /// grosse.
+///
+/// Story 22.8 — ce budget a grossi : `kFavoriteCap` 7 → 10 (thèmes et sources
+/// comptés séparément) porte le pire cas d'environ 19 à environ 25 appels, soit
+/// ~2 tours de plus à [_kPhase2FanoutConcurrency]. Non mesuré dans ce lot ;
+/// c'est le premier endroit à regarder si le temps d'ouverture régresse.
 const int kThemeSectionPageLimit = 10;
 
 /// Borne de concurrence du fan-out Phase 2 (cold-open). Le backend tourne sous
@@ -823,8 +831,27 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // par `SectionBlock`) plutôt qu'une section absente. Réservé aux favoris
     // **explicites** : un compte neuf (fallback canonique) garde l'ancien
     // comportement (thèmes pauvres droppés, pas d'empty-state non choisi).
-    _themes = picked.isFallback ? const [] : _shellThemeSections(favorites);
-    _sources = _shellSourceSections(favoriteSources);
+    //
+    // SWR in-day — quand du **vrai contenu est déjà monté** (revalidation d'un
+    // cache in-day, pull-to-refresh), le seed passe par [_reseedShells] : les
+    // sections dont la clé survit gardent leurs items jusqu'à leur remplacement
+    // par le fan-out (`_upsertByKey`), celles qui ont disparu des favoris
+    // sortent. Sans ça, la 1ʳᵉ section revalidée publierait un état où toutes
+    // les autres sont redevenues vides (`sectionTask` émet inconditionnellement)
+    // ⇒ flash contenu → vide → contenu sur toute la page. C'est ce que promet
+    // déjà le commentaire du rendu progressif plus bas (« pas de blink »).
+    final hasMountedContent = !(state.valueOrNull?.isSkeleton ?? true);
+    List<FeedThemeSection> seed(
+      List<FeedThemeSection> existing,
+      List<FeedThemeSection> freshShells,
+    ) =>
+        hasMountedContent ? _reseedShells(existing, freshShells) : freshShells;
+
+    _themes = seed(
+      _themes,
+      picked.isFallback ? const [] : _shellThemeSections(favorites),
+    );
+    _sources = seed(_sources, _shellSourceSections(favoriteSources));
     // Issue #1 — seed des coquilles « Choisie pour vous » AVANT le fan-out
     // (mêmes clés que le rendu réel) : elles sont ordonnées dès la Phase 1 et se
     // remplissent sur place au lieu d'apparaître en net-new (le « pop » ressenti).
@@ -832,7 +859,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final t in topThemes)
         if (t.isSuggested) t
     ];
-    _suggested = _shellSuggestedSections(_usableSuggestions(suggestions));
+    _suggested = seed(
+      _suggested,
+      _shellSuggestedSections(_usableSuggestions(suggestions)),
+    );
     // Reseed complet ⇒ les coquilles ne sont pas encore résolues : on repart
     // d'une classification vierge (aucune section maigre tant que le fan-out /
     // le chemin cache n'a pas confirmé un contenu réel).
@@ -842,11 +872,20 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // ré-ouverture dans la journée rejoue l'ordre trié dès le premier emit
     // (zéro saut), un ordre daté d'hier est ignoré.
     await _loadScoreOrderForToday();
+    // SWR in-day — même exigence pour les balayages : les sections étant
+    // rejouées depuis le cache local, un `_dismissedIds` vide au boot ferait
+    // réapparaître l'article que l'utilisateur venait de masquer. Union avec
+    // l'existant : un refetch ne perd jamais les balayages de la session.
+    _dismissedIds.addAll(await _loadDismissedIdsForToday());
     unawaited(_purgeOldPrefsKeys());
     unawaited(_markEssentielViewedIfNeeded());
 
     if (!fetchThemes) {
-      // Chemin cache in-day : pas de fan-out réseau, on compose directement.
+      // Chemin cache in-day : pas de fan-out réseau. Les sections de la Tournée
+      // persistées ce jour remplacent leurs coquilles ⇒ la page est peinte
+      // **complète** (articles compris) avant le moindre appel ; la
+      // revalidation qui suit les remplacera en place (`_upsertByKey`).
+      _hydrateSectionsFromCache(isSerene);
       return _compose(isSerene);
     }
 
@@ -1660,6 +1699,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (contentId.isEmpty) return;
     if (_dismissedIds.contains(contentId)) return;
     _dismissedIds.add(contentId);
+    // Persistance jour-par-jour (fire-and-forget) : sans elle, le SWR in-day
+    // ressusciterait l'article à la prochaine ouverture.
+    unawaited(
+      ref
+          .read(tourneeProgressServiceProvider)
+          .setDismissedIdsToday(Set.of(_dismissedIds)),
+    );
     final current = state.valueOrNull;
     if (current == null) return;
     state = AsyncData(
@@ -2032,6 +2078,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   Future<void> _purgeOldPrefsKeys() async {
     await ref.read(tourneeProgressServiceProvider).purgeOldPrefsKeys();
+  }
+
+  Future<Set<String>> _loadDismissedIdsForToday() async {
+    return ref
+        .read(tourneeProgressServiceProvider)
+        .loadDismissedIdsForToday();
   }
 
   /// Hydrate [_scoreOrderKeys] depuis les prefs pour la journée courante.
@@ -2432,13 +2484,22 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ];
   }
 
-  Future<FeedResponse?> _fetchOneTheme(FavoriteRef favRef, bool isSerene) {
+  Future<FeedResponse?> _fetchOneTheme(FavoriteRef favRef, bool isSerene) async =>
+      (await _fetchOneThemeWithRaw(favRef, isSerene))?.feed;
+
+  /// [_fetchOneTheme] + le payload brut, que le fan-out persiste pour le SWR
+  /// in-day (les modèles feed n'ont pas de `toJson` : on rejoue le brut dans
+  /// `FeedRepository.parseFeedData` à l'hydratation).
+  Future<FeedRawResult?> _fetchOneThemeWithRaw(
+    FavoriteRef favRef,
+    bool isSerene,
+  ) {
     // `personalized: true` flips the backend to "followed sources only +
     // 24h window + user_subtopics boost" for the Tournée du jour theme
     // sections (vs. the unrestricted exploration mode used by feed chips).
     return switch (favRef) {
-      ThemeFavoriteRef(:final slug) => _fetchWithRetry<FeedResponse>(
-          () => _feedRepo.getFeed(
+      ThemeFavoriteRef(:final slug) => _fetchWithRetry<FeedRawResult>(
+          () => _feedRepo.getFeedWithRaw(
             page: 1,
             limit: kThemeSectionPageLimit,
             theme: slug,
@@ -2450,8 +2511,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // Backend `/api/feed` accepts a UUID stringified in the `topic` param
       // (story 22.1) — looked up against `user_topic_profiles` scoped on the
       // current user, so no cross-user leak.
-      CustomTopicFavoriteRef(:final id) => _fetchWithRetry<FeedResponse>(
-          () => _feedRepo.getFeed(
+      CustomTopicFavoriteRef(:final id) => _fetchWithRetry<FeedRawResult>(
+          () => _feedRepo.getFeedWithRaw(
             page: 1,
             limit: kThemeSectionPageLimit,
             topic: id,
@@ -2463,8 +2524,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // Story 23.2 PR-4 : la veille est résolue via `/api/veille/feed`,
       // exposée par FluxContinuRepository.getVeilleFeedItems (normalise la
       // réponse en FeedResponse Content-compatible).
-      VeilleFavoriteRef() => _fetchWithRetry<FeedResponse>(
-          () => ref.read(fluxContinuRepositoryProvider).getVeilleFeedItems(
+      VeilleFavoriteRef() => _fetchWithRetry<FeedRawResult>(
+          () =>
+              ref.read(fluxContinuRepositoryProvider).getVeilleFeedItemsWithRaw(
                 limit: kThemeSectionPageLimit,
                 serein: isSerene,
               ),
@@ -2531,12 +2593,19 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         .toList(growable: false);
   }
 
-  Future<FeedResponse?> _fetchOneSource(String sourceId, bool isSerene) {
+  Future<FeedResponse?> _fetchOneSource(String sourceId, bool isSerene) async =>
+      (await _fetchOneSourceWithRaw(sourceId, isSerene))?.feed;
+
+  /// [_fetchOneSource] + le payload brut (cf. [_fetchOneThemeWithRaw]).
+  Future<FeedRawResult?> _fetchOneSourceWithRaw(
+    String sourceId,
+    bool isSerene,
+  ) {
     // `personalized: true` + `source_id` ⇒ backend route vers le scoring
     // piliers (fenêtre adaptative 24→48→72h), mêmes critères que les sections
     // thème. Flâner appelle sans `personalized` → reste chronologique.
-    return _fetchWithRetry<FeedResponse>(
-      () => _feedRepo.getFeed(
+    return _fetchWithRetry<FeedRawResult>(
+      () => _feedRepo.getFeedWithRaw(
         page: 1,
         limit: kThemeSectionPageLimit,
         sourceId: sourceId,
@@ -2678,16 +2747,20 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Squelette commun fetch→build→append→emit : seul varie le fetch, le
     // builder et la liste cible. `append` est invoqué uniquement si la section
     // est non-nulle ; l'émission est systématique (remplissage progressif).
+    // Le payload brut remonte jusqu'ici pour alimenter le cache SWR in-day.
     Future<void> sectionTask(
-      Future<FeedResponse?> Function() fetch,
+      Future<FeedRawResult?> Function() fetch,
       FeedThemeSection? Function(FeedResponse? feed) build,
       void Function(FeedThemeSection section) append, {
       required String resolvedKey,
+      required int rank,
       void Function()? onEmpty,
     }) async {
-      final section = build(await fetch());
+      final result = await fetch();
+      final section = build(result?.feed);
       if (section != null) {
         append(section);
+        _persistSection(section, result?.raw, isSerene: isSerene, rank: rank);
       } else {
         // Issue #1 — une suggestion résolue **vide** retire sa coquille seedée
         // (sinon un squelette « Choisie pour vous » resterait sans contenu). Un
@@ -2746,6 +2819,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       ];
     }
 
+    // Rempli plus bas (le rang dépend de la liste complète des tâches) mais lu
+    // seulement à l'exécution des tâches, donc après le tri : sert à la fois au
+    // tri et au `rank` persisté avec chaque section (ordre de réinsertion au
+    // prochain boot in-day).
+    final rank = <String, int>{};
+    int rankOf(String key) => rank[key] ?? renderedKeys.length;
+
     final entries = <({String key, Future<void> Function() task})>[];
     // Thèmes / sujets / veille — tous fetchés quel que soit leur rang
     // (thin-classification, block scores, modale favoris en dépendent).
@@ -2754,7 +2834,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       entries.add((
         key: key,
         task: () => sectionTask(
-              () => _fetchOneTheme(favRef, isSerene),
+              () => _fetchOneThemeWithRaw(favRef, isSerene),
               (feed) => _buildFavoriteThemeSection(
                 favRef,
                 feed,
@@ -2766,6 +2846,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               // coquille + contenu).
               (section) => _themes = _upsertByKey(_themes, section),
               resolvedKey: key,
+              rank: rankOf(key),
             ),
       ));
     }
@@ -2775,10 +2856,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       entries.add((
         key: key,
         task: () => sectionTask(
-              () => _fetchOneSource(src.id, isSerene),
+              () => _fetchOneSourceWithRaw(src.id, isSerene),
               (feed) => _buildSourceSection(feed: feed, source: src),
               (section) => _sources = _upsertByKey(_sources, section),
               resolvedKey: key,
+              rank: rankOf(key),
             ),
       ));
     }
@@ -2790,8 +2872,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         key: key,
         task: () => sectionTask(
               () => (s.kind == 'source' && s.sourceId != null)
-                  ? _fetchOneSource(s.sourceId!, isSerene)
-                  : _fetchOneTheme(
+                  ? _fetchOneSourceWithRaw(s.sourceId!, isSerene)
+                  : _fetchOneThemeWithRaw(
                       ThemeFavoriteRef(slug: s.interestSlug),
                       isSerene,
                     ),
@@ -2801,6 +2883,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               // contenu, et la coquille « poperait »).
               (section) => _suggested = _upsertByKey(_suggested, section),
               resolvedKey: key,
+              // Jamais persistées (cf. [_persistSection]) : le rang n'est lu que
+              // pour le tri des tâches.
+              rank: rankOf(key),
               onEmpty: () => _suggested = _removeByKey(_suggested, key),
             ),
       ));
@@ -2809,10 +2894,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // masqués / au-delà du cap, réserve suggestion) prennent un rang de queue
     // dérivé de leur index d'origine (ordre relatif préservé, elles restent
     // fetchées) — sans dépendre de la stabilité de `List.sort` (non garantie).
-    final rank = <String, int>{
+    rank.addAll({
       for (var i = 0; i < entries.length; i++)
         entries[i].key: renderPos[entries[i].key] ?? renderedKeys.length + i,
-    };
+    });
     entries.sort((a, b) => rank[a.key]!.compareTo(rank[b.key]!));
     final tasks = [for (final e in entries) e.task];
 
@@ -2824,6 +2909,146 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Recompose final : garantit un état cohérent même si toutes les tâches
     // ont renvoyé une section nulle (rien émis dans la boucle).
     emit();
+  }
+
+  // ---------------------------------------------------------------------------
+  // SWR in-day — cache local des sections de la Tournée.
+  // ---------------------------------------------------------------------------
+
+  /// Contexte du cache SWR : service Hive + user + variante + jour éditorial.
+  /// `null` dès qu'une brique manque (box Hive non ouverte en test, pas de
+  /// session) ⇒ tout le SWR dégrade en no-op, jamais en erreur.
+  ({
+    FeedCacheService cache,
+    String userId,
+    FeedCacheVariant variant,
+    String dayKey,
+  })? _sectionCacheContext(bool isSerene) {
+    try {
+      final cache = ref.read(feedCacheServiceProvider);
+      if (cache == null) return null;
+      final userId = ref.read(authStateProvider).user?.id;
+      if (userId == null || userId.isEmpty) return null;
+      return (
+        cache: cache,
+        userId: userId,
+        variant: isSerene ? FeedCacheVariant.serein : FeedCacheVariant.normal,
+        dayKey: TourneeProgressService.dayKey(DateTime.now()),
+      );
+    } catch (e) {
+      // Auth/Hive indisponibles (tests, boot très précoce) : le SWR est un
+      // confort, il ne doit jamais casser le rendu de la Tournée.
+      debugPrint('FluxContinu: section cache unavailable: $e');
+      return null;
+    }
+  }
+
+  /// Persiste une section résolue par le fan-out (fire-and-forget).
+  ///
+  /// Fail-closed sur deux fronts : pas de `raw` (chemin dégradé, ex.
+  /// `getVeilleFeedItems` qui avale les DioException) ou section **vide** ⇒ on
+  /// ne mémorise rien. Sinon une panne réseau du matin se rejouerait toute la
+  /// journée comme un contenu légitime.
+  void _persistSection(
+    FeedThemeSection section,
+    dynamic raw, {
+    required bool isSerene,
+    required int rank,
+  }) {
+    if (raw == null || section.items.isEmpty) return;
+    if (section.isSuggested) return;
+    final ctx = _sectionCacheContext(isSerene);
+    if (ctx == null) return;
+    unawaited(
+      ctx.cache.saveTourneeSection(
+        ctx.userId,
+        sectionKey(section),
+        variant: ctx.variant,
+        dayKey: ctx.dayKey,
+        // `rank` = position de rendu au moment de l'écriture : sert à réinsérer
+        // dans le bon ordre les sections que le seed n'a pas pu produire.
+        header: {...encodeTourneeSectionHeader(section), 'rank': rank},
+        rawData: raw,
+      ),
+    );
+  }
+
+  /// Remplace les coquilles du chemin cache in-day par les sections persistées
+  /// **du jour** : la Tournée est peinte complète (articles compris) avant le
+  /// moindre appel réseau.
+  ///
+  /// Deux cas, tous deux nécessaires :
+  ///  - la coquille existe (favoris résolus) ⇒ on l'hydrate en place ;
+  ///  - la coquille **manque** ⇒ on réinsère la section depuis son en-tête
+  ///    persisté, par `rank` croissant. C'est le cas nominal au boot : ni
+  ///    `userInterestsProvider` ni `userSourcesProvider` ne sont résolus (lecture
+  ///    `_peekValue`), donc le seed ne produit aucune section thème/source.
+  ///
+  /// Jamais de suggestion « Choisie pour vous » (leur retrait `onEmpty` les
+  /// ferait disparaître sous le doigt) ni de `_resolvedSectionKeys` (pilote
+  /// `demote`/`underfilled` ⇒ saut d'ordre au boot).
+  void _hydrateSectionsFromCache(bool isSerene) {
+    final ctx = _sectionCacheContext(isSerene);
+    if (ctx == null) return;
+    final cached = ctx.cache.readTourneeSectionsForToday(
+      ctx.userId,
+      variant: ctx.variant,
+      dayKey: ctx.dayKey,
+    );
+    if (cached.isEmpty) return;
+
+    FeedThemeSection? decode(CachedTourneeSection entry) {
+      try {
+        final feed = FeedRepository.parseFeedData(
+          data: entry.data,
+          page: 1,
+          limit: kThemeSectionPageLimit,
+        );
+        if (feed.items.isEmpty) return null;
+        return decodeTourneeSection(entry.header, feed.items);
+      } catch (e) {
+        debugPrint('FluxContinu: section cache decode failed: $e');
+        return null;
+      }
+    }
+
+    final hydratedKeys = <String>{};
+    FeedThemeSection hydrateOne(FeedThemeSection shell) {
+      final key = sectionKey(shell);
+      final entry = cached[key];
+      if (entry == null) return shell;
+      final section = decode(entry);
+      if (section == null) return shell;
+      hydratedKeys.add(key);
+      return section;
+    }
+
+    _themes = _themes.map(hydrateOne).toList();
+    _sources = _sources.map(hydrateOne).toList();
+
+    final suggestedKeys = {for (final s in _suggested) sectionKey(s)};
+    final extras = <({int rank, FeedThemeSection section})>[];
+    cached.forEach((key, entry) {
+      if (hydratedKeys.contains(key) || suggestedKeys.contains(key)) return;
+      final section = decode(entry);
+      if (section == null) return;
+      extras.add((
+        rank: (entry.header['rank'] as num?)?.toInt() ?? 1 << 30,
+        section: section,
+      ));
+    });
+    extras.sort((a, b) => a.rank.compareTo(b.rank));
+    for (final extra in extras) {
+      if (extra.section.kind == SectionKind.source) {
+        _sources = [..._sources, extra.section];
+      } else {
+        _themes = [..._themes, extra.section];
+      }
+    }
+    _perfBoot(
+      'sections_hydrated_ms',
+      ' n=${hydratedKeys.length + extras.length}',
+    );
   }
 
   /// Remplace, dans [list], la section de même `sectionKey` que [section] par

@@ -340,12 +340,30 @@ class UserErrorBannerConstants {
 }
 
 /// Story 22.1 — système d'intérêts unifié 4-états.
-/// Cap dur du nombre de favoris (intérêts ET sources, séparément).
-/// DOIT rester synchronisé avec `packages/api/app/constants.py::FAVORITE_CAP`.
+/// Plafond du nombre de favoris (intérêts ET sources, comptés séparément).
+/// DOIT rester synchronisé avec `packages/api/app/constants.py::FAVORITE_CAP`
+/// — la parité est vérifiée par `tests/test_constants_parity.py` côté backend.
+///
+/// Story 22.8 — porté 7 → 10 (alimente `TOURNEE_TARGET_SECTIONS = 10` par les
+/// favoris choisis plutôt que par les suggestions).
+///
+/// ⚠️ Cette constante **n'applique aucun plafond** : l'ajout d'un favori est
+/// refusé par le backend seul (`favorite_cap_reached`,
+/// `routers/user_interests.py` + `routers/user_sources_state.py`). Le champ
+/// `favorite_cap` de la réponse API est bien désérialisé
+/// (`UserInterestsState.favoriteCap`, `UserSourcesState.favoriteCap`) mais
+/// n'est lu nulle part. Les deux seuls usages réels de cette valeur sont :
+///   1. le nombre affiché dans `FavoriteCapReachedException` quand le corps du
+///      422 ne porte pas de `cap` (`user_interests_repository.dart`) ;
+///   2. le dimensionnement de `kTourneeVisibleCap` (Tournée), qui en dérive.
+///
+/// L'usage (2) la rend load-bearing : une hausse de `FAVORITE_CAP` côté backend
+/// **seul** laisserait les apps déjà installées avec un cap Tournée trop petit
+/// (cartes éditoriales coupées). Toute évolution se fait donc des deux côtés.
 class InterestConstants {
   InterestConstants._();
 
-  static const int favoriteCap = 7;
+  static const int favoriteCap = 10;
 }
 
 /// Alias top-level expliciment demandé par le hand-off 22.1.2.

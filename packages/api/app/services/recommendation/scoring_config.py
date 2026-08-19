@@ -569,11 +569,21 @@ class ScoringWeights:
     TOURNEE_SUGGEST_SOURCE_FOLLOWED_BASELINE = 0.30
 
     # Cible de sections thématiques de la Tournée (favoris validés + suggestions
-    # « Choisie pour vous » confondus). Seul knob du nombre moyen : les
-    # suggestions **complètent** les favoris jusqu'à cette cible (additif), au
-    # lieu de remplir le reliquat du plafond favoris. Les cartes éditoriales
-    # (Actus, Bonnes, Grille) s'ajoutent par-dessus.
-    TOURNEE_TARGET_SECTIONS = 8
+    # « Choisie pour vous » confondus). Les suggestions **complètent** les
+    # favoris jusqu'à cette cible (additif), au lieu de remplir le reliquat du
+    # plafond favoris. Les cartes éditoriales (Actus, Bonnes, Grille) s'ajoutent
+    # par-dessus.
+    #
+    # Story 22.8 — porté 8 → 10. ⚠️ Ce n'est PAS le seul knob du nombre de
+    # sections, et pas le facteur limitant : `sub_cap = min(SUBCAP, max(remaining,
+    # FLOOR))` fait que `SUBCAP = 5` écrase `remaining` dès qu'un compte a moins
+    # de 3 favoris. Le bump 8 → 10 pris isolément ne change donc la Tournée que
+    # des comptes à 4 ou 5 favoris validés (+1 section). C'est `FAVORITE_CAP`
+    # (7 → 10, `app/constants.py`) qui alimente réellement la cible : la Tournée
+    # grossit avec ce que l'utilisateur a **choisi**, tandis que `SUBCAP` reste à
+    # 5 pour préserver l'arbitrage 22.6 (les suggestions restent un accent
+    # quotidien, pas le gros d'un compte peu configuré).
+    TOURNEE_TARGET_SECTIONS = 10
 
     # Plafond dur de sections « Choisie pour vous » (thèmes + sources confondus)
     # par arrangement. Levier *distinct* de la cible : borne le nombre de
@@ -585,9 +595,9 @@ class ScoringWeights:
     # Plancher de suggestions « Choisie pour vous » (Story 22.6). Garantit un
     # accent quotidien même aux comptes qui ont déjà atteint (ou dépassé)
     # `TOURNEE_TARGET_SECTIONS` de favoris : `_arrange_tournee` vise
-    # `min(SUBCAP, max(remaining, FLOOR))` suggestions. Effet : 0 favori → 5
-    # (borné par SUBCAP), 8+ favoris → 4. Le pool réel peut en servir moins un
-    # jour pauvre (jamais d'invention hors invariant 22.3).
+    # `min(SUBCAP, max(remaining, FLOOR))` suggestions. Effet (cible 10, 22.8) :
+    # 0 à 5 favoris → 5 (borné par SUBCAP), 6+ favoris → 4. Le pool réel peut en
+    # servir moins un jour pauvre (jamais d'invention hors invariant 22.3).
     TOURNEE_SUGGEST_FLOOR = 4
 
     # Fenêtre de récence (jours) du comptage d'articles par candidat (aligné

@@ -33,6 +33,15 @@ const String kMorningRitualPrefsKeyPrefix = 'morning_ritual_shown_';
 /// `purgeOldPrefsKeys` — une seule entrée, jamais d'accumulation.
 const String kTourneeScoreOrderKey = 'tournee_score_order_v1';
 
+/// Articles balayés (« masquer ») pendant la journée tournée courante.
+///
+/// Même forme auto-invalidante que [kTourneeScoreOrderKey] : `{"day": ...,
+/// "ids": [...]}`. Nécessaire depuis le SWR in-day — les sections étant
+/// rejouées depuis le cache local à la réouverture, un `_dismissedIds` en
+/// mémoire seule ferait **réapparaître** l'article que l'utilisateur venait de
+/// balayer (le pire ressenti possible).
+const String kTourneeDismissedIdsKey = 'tournee_dismissed_ids_v1';
+
 /// Boundary hour (Paris time) at which the "tournée day" flips.
 const int kTourneeDayBoundaryHour = 7;
 const int kTourneeDayBoundaryMinute = 30;
@@ -187,6 +196,48 @@ class TourneeProgressService {
     } catch (e) {
       debugPrint('TourneeProgress: loadPoorKeysForToday failed: $e');
       return null;
+    }
+  }
+
+  /// Articles balayés aujourd'hui (vide si l'entrée date d'un autre jour, est
+  /// absente ou illisible — un balayage réapparu vaut mieux qu'un crash).
+  Future<Set<String>> loadDismissedIdsForToday({DateTime? now}) async {
+    try {
+      final prefs = await _prefs();
+      final raw = prefs.getString(kTourneeDismissedIdsKey);
+      if (raw == null) return const <String>{};
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const <String>{};
+      if (decoded['day'] != dayKey(now ?? DateTime.now())) {
+        return const <String>{};
+      }
+      final ids = decoded['ids'];
+      if (ids is! List) return const <String>{};
+      return <String>{
+        for (final id in ids)
+          if (id is String) id,
+      };
+    } catch (e) {
+      debugPrint('TourneeProgress: loadDismissedIdsForToday failed: $e');
+      return const <String>{};
+    }
+  }
+
+  Future<void> setDismissedIdsToday(
+    Set<String> ids, {
+    DateTime? now,
+  }) async {
+    try {
+      final prefs = await _prefs();
+      await prefs.setString(
+        kTourneeDismissedIdsKey,
+        jsonEncode({
+          'day': dayKey(now ?? DateTime.now()),
+          'ids': ids.toList(),
+        }),
+      );
+    } catch (e) {
+      debugPrint('TourneeProgress: setDismissedIdsToday failed: $e');
     }
   }
 

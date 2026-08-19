@@ -12,10 +12,19 @@ import 'package:flutter_test/flutter_test.dart';
 Future<FluxContinuState> settle(ProviderContainer container) async {
   container.read(fluxContinuProvider);
   FluxContinuState? prev;
+  // Stabilité exigée sur **deux** passes consécutives, séparées d'un vrai
+  // délai : une seule passe sans nouvelle émission ne prouve rien (une section
+  // dont la chaîne fetch→build→emit compte quelques hops de plus arriverait
+  // juste après, et le test assertait alors sur une Tournée incomplète).
+  var stable = 0;
   for (var i = 0; i < 60; i++) {
     await pumpEventQueue(times: 3);
     final cur = container.read(fluxContinuProvider).valueOrNull;
-    if (cur != null && !cur.isSkeleton && identical(cur, prev)) break;
+    if (cur != null && !cur.isSkeleton && identical(cur, prev)) {
+      if (++stable >= 2) break;
+    } else {
+      stable = 0;
+    }
     final progressed = cur != null && !identical(cur, prev);
     prev = cur;
     // Lot cold start (B1) — le bootstrap contient désormais de vrais timers

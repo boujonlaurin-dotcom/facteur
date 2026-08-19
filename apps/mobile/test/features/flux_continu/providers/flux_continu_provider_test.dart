@@ -10,7 +10,6 @@ import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/digest/repositories/digest_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/providers/feed_provider.dart';
-import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart';
@@ -31,6 +30,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
+
+import 'feed_repository_mock.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
@@ -38,10 +39,11 @@ import 'flux_continu_settle.dart';
 
 class _MockDigestRepository extends Mock implements DigestRepository {}
 
-class _MockFeedRepository extends Mock implements FeedRepository {}
+// Le fan-out appelle getFeedWithRaw (SWR in-day) : le mock partagé délègue
+// vers getFeed, que ces suites stubbent.
+typedef _MockFeedRepository = MockFeedRepository;
 
-class _MockFluxContinuRepository extends Mock
-    implements FluxContinuRepository {}
+typedef _MockFluxContinuRepository = MockFluxContinuRepository;
 
 class _MockEssentielRepository extends Mock implements EssentielRepository {}
 
@@ -601,7 +603,7 @@ void main() {
       );
     });
 
-    test('13 favorites cap (14th ignored)', () async {
+    test('favorites cap (le favori au-delà du cap est ignoré)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(
         () => feedRepo.getFeed(
@@ -613,13 +615,16 @@ void main() {
         ),
       ).thenAnswer((_) async => _feedResponseWith(3));
 
-      // 14 favoris thème (slugs arbitraires — `visualFor` a un fallback) : le cap
-      // [_kMaxFavoriteSections] = [kTourneeVisibleCap] = 13 garde les 13 premiers,
-      // le 14e est ignoré.
+      // `kTourneeVisibleCap + 1` favoris thème (slugs arbitraires — `visualFor` a
+      // un fallback) : le cap [_kMaxFavoriteSections] = [kTourneeVisibleCap]
+      // garde les premiers, le dernier est ignoré. Exprimé en fonction de la
+      // constante (et non en dur) pour ne pas re-casser au prochain bump —
+      // Story 22.8 l'a portée de 13 à 16.
       final container = makeContainer(
         interests: _interestsState(
           favorites: [
-            for (var i = 0; i < 14; i++) ThemeFavoriteRef(slug: 'theme$i'),
+            for (var i = 0; i < kTourneeVisibleCap + 1; i++)
+              ThemeFavoriteRef(slug: 'theme$i'),
           ],
         ),
       );
@@ -630,7 +635,7 @@ void main() {
           .whereType<FeedThemeSection>()
           .map((s) => s.themeSlug)
           .toList();
-      expect(slugs, [for (var i = 0; i < 13; i++) 'theme$i']);
+      expect(slugs, [for (var i = 0; i < kTourneeVisibleCap; i++) 'theme$i']);
     });
   });
 

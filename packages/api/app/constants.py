@@ -6,15 +6,32 @@ sont hard-codées pour rester en phase avec le mobile (constante miroir
 `kFavoriteCap` côté Flutter, cf. plan 22.1).
 """
 
-FAVORITE_CAP: int = 7
+FAVORITE_CAP: int = 10
 """Cap d'affichage de la « Tournée du jour » (Story 22.2 — révision 2026-05-18 ;
-élargi 5 → 7 le 2026-06-08, cf. plan « limites + affordance modal favoris »).
+élargi 5 → 7 le 2026-06-08, cf. plan « limites + affordance modal favoris » ;
+élargi 7 → 10 le 2026-08-18, Story 22.8).
 
-N'est PLUS un cap dur : l'utilisateur peut avoir > 7 favoris ; seuls les 7
-premiers (ordre `position` modifiable) sont retenus pour la Tournée du jour.
+N'est PLUS un cap dur *d'affichage* : l'utilisateur peut avoir > 10 favoris ;
+seuls les 10 premiers (ordre `position` modifiable) sont retenus pour la Tournée
+du jour. En revanche l'**ajout** reste borné par cette valeur (409
+`favorite_cap_reached` dans `routers/user_interests.py` et
+`routers/user_sources_state.py`).
+
+Le bump 22.8 vise `TOURNEE_TARGET_SECTIONS = 10` : la Tournée grossit avec ce
+que l'utilisateur a **choisi**, pas avec les suggestions (`TOURNEE_SUGGEST_SUBCAP`
+reste à 5, arbitrage 22.6 préservé). Attention : la constante est partagée par
+les intérêts **et** les sources, comptés séparément — le plafond d'ajout monte
+donc pour les deux (10 thèmes + 10 sources possibles).
+
+⚠️ **Ne pas faire évoluer cette valeur côté backend seul.** Le cap d'affichage
+mobile `kTourneeVisibleCap` en **dérive** à la compilation
+(`quota + éditoriales + favoriteCap`) : une hausse ici sans release mobile
+laisserait les apps installées avec un cap trop petit, qui couperait
+silencieusement la carte « Bonnes Nouvelles ». La parité avec le miroir Dart
+`InterestConstants.favoriteCap` est vérifiée par `tests/test_constants_parity.py`.
+
 Conservé sous le nom `FAVORITE_CAP` pour compat des imports ; sémantiquement
-équivalent à `DAILY_TOUR_CAP`. Mirror mobile : `dailyTourCap` dans
-`apps/mobile/lib/config/constants.dart`.
+équivalent à `DAILY_TOUR_CAP`.
 """
 
 MIN_BACKFILL_FAVORITES: int = 2
@@ -22,7 +39,7 @@ MIN_BACKFILL_FAVORITES: int = 2
 
 Story 22.1 — décision PO 2026-05-16 : tout user existant doit avoir ≥ 2
 favoris pour que la tournée du jour (PR2) soit non-vide. Inférieur à
-FAVORITE_CAP (7) pour laisser de la place à la promo mobile post-migration
+FAVORITE_CAP (10) pour laisser de la place à la promo mobile post-migration
 (sync `theme_priority_*` SharedPrefs → POST favoris).
 """
 

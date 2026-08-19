@@ -349,8 +349,9 @@ async def get_top_themes(
     Story 22.1 — la table `user_favorite_interests` (ordre user) prime ; les
     Sujets favoris (custom topics) sont projetés sur leur `slug_parent` pour
     rester compatibles avec le format `TopThemeResponse` (rétrocompat mobile).
-    Story 22.2 — le user peut avoir > 5 favoris, mais seuls les `FAVORITE_CAP`
-    premiers (par `position` ASC) sont sélectionnés pour la Tournée du jour.
+    Story 22.2 — le user peut avoir plus de favoris que `FAVORITE_CAP`, mais
+    seuls les `FAVORITE_CAP` premiers (par `position` ASC) sont sélectionnés
+    pour la Tournée du jour.
     Les thèmes sans article récent (14 derniers jours) sont exclus du fallback.
     """
     from app.constants import FAVORITE_CAP
@@ -511,10 +512,21 @@ async def _arrange_tournee(
     les suggérées **s'ajoutent** derrière elles, déjà triées best-first pour
     aujourd'hui par `TourneeSuggester`. Story 22.6 : le nombre visé n'est plus le
     reliquat jusqu'à la cible mais `min(SUBCAP, max(remaining, FLOOR))`, donc
-    tout compte (même 8+ favoris) reçoit au moins `FLOOR` suggestions tant que le
-    pool le permet. Effet : 0 favori → 5, 7 favoris → 4, 8+ favoris → 4. No-op
-    seulement si le toggle est off ou si le pool est vide (jamais d'empty-state
-    suggéré : un pool pauvre sert simplement moins que `FLOOR`).
+    tout compte (même au-delà de la cible) reçoit au moins `FLOOR` suggestions
+    tant que le pool le permet. No-op seulement si le toggle est off ou si le
+    pool est vide (jamais d'empty-state suggéré : un pool pauvre sert simplement
+    moins que `FLOOR`).
+
+    Story 22.8 (cible 10, `FAVORITE_CAP` 10, SUBCAP 5, FLOOR 4) — sections
+    thématiques servies selon le nombre de favoris validés :
+
+    | favoris   | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+    |-----------|---|---|---|---|---|---|---|---|---|---|----|
+    | suggérées | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 4 | 4 | 4 |  4 |
+    | total     | 5 | 6 | 7 | 8 | 9 |10 |10 |11 |12 |13 | 14 |
+
+    `SUBCAP = 5` reste le plafond effectif des suggestions : c'est
+    `FAVORITE_CAP` qui porte la Tournée vers la cible, pas les suggestions.
     """
     from app.services.recommendation.scoring_config import ScoringWeights
 

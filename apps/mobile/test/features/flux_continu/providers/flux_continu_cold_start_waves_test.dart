@@ -18,7 +18,6 @@ import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/digest/repositories/digest_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/providers/feed_provider.dart';
-import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
@@ -37,16 +36,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
+
+import 'feed_repository_mock.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'flux_continu_settle.dart';
 
 class _MockDigestRepository extends Mock implements DigestRepository {}
 
-class _MockFeedRepository extends Mock implements FeedRepository {}
+// Le fan-out appelle getFeedWithRaw (SWR in-day) : le mock partagé délègue
+// vers getFeed, que ces suites stubbent.
+typedef _MockFeedRepository = MockFeedRepository;
 
-class _MockFluxContinuRepository extends Mock
-    implements FluxContinuRepository {}
+typedef _MockFluxContinuRepository = MockFluxContinuRepository;
 
 /// Stub essentiel pilotable : chaque `fetch()` notifie [onFetch] puis renvoie
 /// [result] (une future fournie par le test — complétable à la demande).
@@ -387,14 +389,15 @@ void main() {
     'B3 — les suggestions hors du cap affiché ne sont pas fetchées '
     '(+1 de réserve pour dismissSuggestion)',
     () async {
-      // 10 favoris + 5 suggestions. Cap d'affichage 13 avec quota 3 → 3
-      // suggestions visibles ; fetchées = 3 + 1 réserve = 4 ; droppée = 1.
+      // 10 favoris + 9 suggestions. Cap d'affichage 16 (Story 22.8), 10 favoris
+      // occupent 10 slots → 6 suggestions visibles ; fetchées = 6 + 1 réserve
+      // = 7 ; les 2 dernières ne sont jamais fetchées.
       final favorites = <FavoriteRef>[
         for (var i = 0; i < 10; i++) ThemeFavoriteRef(slug: 'theme$i'),
       ];
       when(() => fluxRepo.getTopThemes()).thenAnswer(
         (_) async => [
-          for (var i = 0; i < 5; i++)
+          for (var i = 0; i < 9; i++)
             TopTheme(
               interestSlug: 'sugg$i',
               weight: 1,
@@ -435,12 +438,14 @@ void main() {
       for (var i = 0; i < 10; i++) {
         expect(fetchedThemes, contains('theme$i'));
       }
-      // Suggestions : les 3 du quota affiché + 1 réserve, dans l'ordre
-      // daily_rank — la 5e n'est jamais fetchée.
+      // Suggestions : les 6 visibles sous le cap + 1 réserve, dans l'ordre
+      // daily_rank — les 2 dernières ne sont jamais fetchées.
       final suggFetched =
           fetchedThemes.where((t) => t.startsWith('sugg')).toList();
-      expect(suggFetched, ['sugg0', 'sugg1', 'sugg2', 'sugg3'],
-          reason: 'quota affiché (3) + 1 réserve, jamais le reste');
+      expect(
+          suggFetched,
+          ['sugg0', 'sugg1', 'sugg2', 'sugg3', 'sugg4', 'sugg5', 'sugg6'],
+          reason: 'suggestions visibles (6) + 1 réserve, jamais le reste');
     },
   );
 }
