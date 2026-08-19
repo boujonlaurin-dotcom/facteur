@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -154,7 +155,7 @@ async def feed_client(monkeypatch, feed_response_factory):
     The log is what's under test, not the pipeline — stubbing `_compute_feed`
     keeps these tests DB-free and fast.
     """
-    from app.database import get_db
+    from app.database import get_feed_db
     from app.dependencies import get_current_user_id
     from app.main import app
 
@@ -172,7 +173,7 @@ async def feed_client(monkeypatch, feed_response_factory):
         yield None
 
     app.dependency_overrides[get_current_user_id] = _fake_user
-    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_feed_db] = _fake_db
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -180,7 +181,7 @@ async def feed_client(monkeypatch, feed_response_factory):
             yield ac
     finally:
         app.dependency_overrides.pop(get_current_user_id, None)
-        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_feed_db, None)
 
 
 def _feed_requests(logs: list[dict]) -> list[dict]:
@@ -226,3 +227,62 @@ async def test_logs_bypass_for_non_cacheable_view(feed_client) -> None:
     assert entry["cache"] == "bypass"
     assert entry["variant_class"] == "none"
     assert entry["items"] == 3
+
+
+@pytest.mark.asyncio
+async def test_concurrent_misses_compute_once_and_touch_db_after_lock(
+    feed_client, monkeypatch, feed_response_factory
+) -> None:
+    """Same-key misses wait without DB work, then consume the first result."""
+    from app.database import get_feed_db
+    from app.dependencies import get_current_user_id
+    from app.main import app
+    from app.services.feed_cache import FEED_CACHE
+
+    user_id = uuid4()
+    variant = _personalized_variant(
+        theme="tech", topic=None, source_id=None, serein=False, limit=12
+    )
+    single_flight_lock = FEED_CACHE.lock(user_id, variant)
+    compute_started = asyncio.Event()
+    release_compute = asyncio.Event()
+    compute_calls = 0
+    db_access_while_locked: list[bool] = []
+
+    class TrackingSession:
+        async def execute(self, *_args, **_kwargs):
+            db_access_while_locked.append(single_flight_lock.locked())
+
+    session = TrackingSession()
+
+    async def _fake_user():
+        return str(user_id)
+
+    async def _fake_db():
+        yield session
+
+    async def _fake_compute(*, db, **_kwargs):
+        nonlocal compute_calls
+        compute_calls += 1
+        # Represents `_resolve_topic_param` / the first service SELECT.
+        await db.execute("first-business-read")
+        compute_started.set()
+        await release_compute.wait()
+        return feed_response_factory(items=3)
+
+    app.dependency_overrides[get_current_user_id] = _fake_user
+    app.dependency_overrides[get_feed_db] = _fake_db
+    monkeypatch.setattr("app.routers.feed._compute_feed", _fake_compute)
+
+    url = "/api/feed/?personalized=true&theme=tech&limit=12"
+    tasks = [asyncio.create_task(feed_client.get(url)) for _ in range(5)]
+    await asyncio.wait_for(compute_started.wait(), timeout=1)
+    # Give the other requests a scheduling turn to reach the held lock.
+    await asyncio.sleep(0)
+    release_compute.set()
+    responses = await asyncio.gather(*tasks)
+
+    assert [response.status_code for response in responses] == [200] * 5
+    assert all(response.json() == responses[0].json() for response in responses)
+    assert compute_calls == 1
+    assert db_access_while_locked == [True]

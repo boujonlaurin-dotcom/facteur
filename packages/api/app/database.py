@@ -147,6 +147,20 @@ async_session_maker = async_sessionmaker(
     autoflush=False,
 )
 
+# Read-only session path for GET /api/feed/. ``execution_options`` derives an
+# engine that shares the existing pool, while instructing the DBAPI connection
+# not to open a transaction for each statement. This matters for the feed: its
+# request-scoped session can wait on the cache single-flight lock and spend
+# several seconds scoring results without holding a PostgreSQL transaction.
+feed_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+feed_async_session_maker = async_sessionmaker(
+    feed_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
+
 
 # Defaults pushed via SET LOCAL au début de CHAQUE session (helper +
 # get_db). Pourquoi SET LOCAL et pas connect_args : Supavisor en mode
@@ -456,3 +470,16 @@ async def get_db() -> AsyncSession:
                     error=str(close_exc),
                     exc_type=type(close_exc).__name__,
                 )
+
+
+async def get_feed_db() -> AsyncSession:
+    """Yield a feed-only AUTOCOMMIT session without eager database work.
+
+    Unlike :func:`get_db`, this dependency deliberately applies no ``SET
+    LOCAL``, commit, rollback, or explicit transaction. Creating the session is
+    lazy, so cache hits and requests waiting on the feed single-flight lock do
+    not check out a connection. Once reads begin, the DBAPI connection remains
+    in AUTOCOMMIT mode and cannot sit ``idle in transaction`` during scoring.
+    """
+    async with feed_async_session_maker() as session:
+        yield session
