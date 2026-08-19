@@ -524,6 +524,45 @@ void main() {
     },
   );
 
+  test(
+    'un article balayé reste absent après réouverture in-day',
+    () async {
+      const favorites = [ThemeFavoriteRef(slug: 'theme0')];
+      final first = makeContainer(
+        interests: _interestsState(favorites: favorites),
+      );
+      await settle(first);
+
+      final dismissed = first
+          .read(fluxContinuProvider)
+          .value!
+          .sections
+          .whereType<FeedThemeSection>()
+          .firstWhere((s) => sectionKey(s) == 'theme:theme0')
+          .items
+          .first
+          .id;
+      first.read(fluxContinuProvider.notifier).confirmDismiss(dismissed);
+      await pumpEventQueue(times: 5);
+      first.dispose();
+
+      final second = makeContainer(
+        interests: _interestsState(favorites: favorites),
+      );
+      addTearDown(second.dispose);
+      final state = await settle(second);
+
+      final ids = state.sections
+          .whereType<FeedThemeSection>()
+          .expand((s) => s.items)
+          .map((c) => c.id);
+      expect(ids, isNot(contains(dismissed)),
+          reason: 'le balayage du jour est persisté, le SWR ne le ressuscite '
+              'pas');
+      expect(state.dismissedIds, contains(dismissed));
+    },
+  );
+
   test('patchTourneeContentStatus ne décode que les entrées porteuses',
       () async {
     final box = await openBox(FeedCacheService.boxName);

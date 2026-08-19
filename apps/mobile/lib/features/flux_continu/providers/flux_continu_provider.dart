@@ -872,6 +872,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // ré-ouverture dans la journée rejoue l'ordre trié dès le premier emit
     // (zéro saut), un ordre daté d'hier est ignoré.
     await _loadScoreOrderForToday();
+    // SWR in-day — même exigence pour les balayages : les sections étant
+    // rejouées depuis le cache local, un `_dismissedIds` vide au boot ferait
+    // réapparaître l'article que l'utilisateur venait de masquer. Union avec
+    // l'existant : un refetch ne perd jamais les balayages de la session.
+    _dismissedIds.addAll(await _loadDismissedIdsForToday());
     unawaited(_purgeOldPrefsKeys());
     unawaited(_markEssentielViewedIfNeeded());
 
@@ -1694,6 +1699,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (contentId.isEmpty) return;
     if (_dismissedIds.contains(contentId)) return;
     _dismissedIds.add(contentId);
+    // Persistance jour-par-jour (fire-and-forget) : sans elle, le SWR in-day
+    // ressusciterait l'article à la prochaine ouverture.
+    unawaited(
+      ref
+          .read(tourneeProgressServiceProvider)
+          .setDismissedIdsToday(Set.of(_dismissedIds)),
+    );
     final current = state.valueOrNull;
     if (current == null) return;
     state = AsyncData(
@@ -2086,6 +2098,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   Future<void> _purgeOldPrefsKeys() async {
     await ref.read(tourneeProgressServiceProvider).purgeOldPrefsKeys();
+  }
+
+  Future<Set<String>> _loadDismissedIdsForToday() async {
+    return ref
+        .read(tourneeProgressServiceProvider)
+        .loadDismissedIdsForToday();
   }
 
   /// Hydrate [_scoreOrderKeys] depuis les prefs pour la journée courante.
