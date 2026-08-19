@@ -20,6 +20,7 @@
 /// thèmes canoniques ne réapparaissent plus au prochain reload.
 library;
 
+import 'package:facteur/config/constants.dart' show kFavoriteCap;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -35,9 +36,28 @@ const _kTourneeCustomizedKey = 'tournee_customized_v1';
 ///
 /// Couvre favoris + suggestions « Choisie pour vous » + cartes éditoriales
 /// (Actus, Bonnes, Grille) — pas la carte hi-fi Essentiel du haut, rendue à
-/// part. Dimensionné pour la cible backend de ~8 sections thématiques :
-/// 8 thématiques + Actus + Bonnes + Grille = 11, + marge.
-const int kTourneeVisibleCap = 13;
+/// part.
+///
+/// **Ce n'est pas un knob libre : c'est une quantité dérivée.** Le
+/// rééquilibrage de `_orderedTourneeKeys` réserve [kTourneeSuggestQuota] slots
+/// en queue du cap aux suggestions, donc il ne reste que `cap - quota` slots
+/// aux favoris **et** à l'éditorial. Pour qu'un compte au plafond de favoris
+/// garde ses cartes éditoriales, il faut
+/// `cap - quota >= kTourneeEditorialCount + kFavoriteCap` — d'où l'égalité
+/// ci-dessous, qui est la forme *tendue* de cette inégalité.
+///
+/// Écrire la formule plutôt que sa valeur n'est pas cosmétique : la Story 22.8
+/// avait d'abord posé 15 (en oubliant la réserve de quota), ce qui coupait
+/// **Bonnes Nouvelles** — dernière du bloc non-suggéré, donc première
+/// sacrifiée — en silence. Verrouillé par le test « plafond de favoris +
+/// suggestions » (`flux_continu_tournee_order_test.dart`).
+///
+/// Limite connue et **inchangée** : [kFavoriteCap] est un plafond *par nature*
+/// (thèmes et sources comptés séparément), donc un compte qui cumule les deux
+/// dépasse le cap et se fait quand même élaguer. L'égalité ci-dessous protège
+/// l'éditorial du cas mono-nature, pas du cumul.
+const int kTourneeVisibleCap =
+    kTourneeSuggestQuota + kTourneeEditorialCount + kFavoriteCap;
 
 /// Quota de sections « Choisie pour vous » garanti **sous le cap** (Story 22.6).
 /// Un ordre personnalisé relègue les suggestions en fin de liste où le cap les
@@ -90,6 +110,20 @@ const String kTourneeGrilleKey = 'grille';
 
 /// Clé de la veille (singleton à V1) — alignée sur la branche `'veille'` de `sectionKey`.
 const String kTourneeVeilleKey = 'veille';
+
+/// Cartes éditoriales de la Tournée : elles occupent des slots sous
+/// [kTourneeVisibleCap] sans être des favoris ni des suggestions.
+const List<String> kTourneeEditorialKeys = [
+  kTourneeActusKey,
+  kTourneeGrilleKey,
+  kTourneeBonnesKey,
+];
+
+/// Cardinalité de [kTourneeEditorialKeys], en `const int` parce que
+/// [kTourneeVisibleCap] en dépend et que Dart ne const-fold pas `List.length`.
+/// L'accord entre les deux est vérifié par un test — ajouter une carte
+/// éditoriale sans toucher ce nombre couperait une section en silence.
+const int kTourneeEditorialCount = 3;
 
 /// `true` ssi [key] désigne une section **réordonnable** de la Tournée, au sens
 /// « l'utilisateur peut la déplacer ». Source unique de vérité partagée par la

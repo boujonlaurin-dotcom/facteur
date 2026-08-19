@@ -1,9 +1,10 @@
 // PR 2 — couverture du bloc favori UNIFIÉ de la Tournée composé par le
 // FluxContinuNotifier : ordre 100 % libre (thèmes + sources + veille mélangés
-// via « Composer ma Tournée »), cap d'affichage 13, exclusion des sujets perso,
-// et masquage de la veille (veilleHidden).
+// via « Composer ma Tournée »), cap d'affichage [kTourneeVisibleCap], exclusion
+// des sujets perso, et masquage de la veille (veilleHidden).
 import 'dart:io';
 
+import 'package:facteur/config/constants.dart' show kFavoriteCap;
 import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/digest/models/dual_digest_response.dart';
 import 'package:facteur/features/digest/providers/digest_provider.dart';
@@ -376,6 +377,50 @@ void main() {
     );
   }
 
+  /// Sections « Choisie pour vous » renvoyées par `getTopThemes`.
+  List<TopTheme> suggestedThemes(List<String> slugs) => [
+        for (final slug in slugs)
+          TopTheme(
+            interestSlug: slug,
+            weight: 1.0,
+            articleCount: 4,
+            origin: 'suggested',
+            reason: const SuggestionReason(label: 'Tu suis ce thème'),
+          ),
+      ];
+
+  /// Feed thème minimal (2 articles) pour chaque slug — de quoi construire une
+  /// section non maigre.
+  Map<String, List<String>> themeFeedFor(List<String> slugs) => {
+        for (final slug in slugs) slug: ['$slug-1', '$slug-2'],
+      };
+
+  group('invariants de dimensionnement du cap (Story 22.8)', () {
+    test('kTourneeEditorialCount reste égal au nombre de clés éditoriales', () {
+      // `kTourneeEditorialCount` est un `const int` écrit à la main parce que
+      // `kTourneeVisibleCap` en dérive et que Dart ne const-fold pas
+      // `List.length`. Ce test est le seul lien entre les deux : ajouter une
+      // carte éditoriale sans incrémenter le compteur rétrécirait le cap d'un
+      // slot et couperait une section en silence.
+      expect(kTourneeEditorialCount, kTourneeEditorialKeys.length);
+      expect(
+        kTourneeEditorialKeys,
+        containsAll([kTourneeActusKey, kTourneeGrilleKey, kTourneeBonnesKey]),
+      );
+    });
+
+    test('le cap laisse la place à l\'éditorial + un plafond de favoris', () {
+      // Inégalité que la valeur de `kTourneeVisibleCap` encode. Le test
+      // « plafond de favoris + suggestions » plus bas la vérifie de bout en
+      // bout ; celui-ci l'énonce sur les constantes seules, donc il localise la
+      // panne sur la bonne ligne si quelqu'un dé-dérive le cap.
+      expect(
+        kTourneeVisibleCap - kTourneeSuggestQuota,
+        greaterThanOrEqualTo(kTourneeEditorialCount + kFavoriteCap),
+      );
+    });
+  });
+
   group('éditorial + Grille dans la liste unifiée', () {
     test(
       'ordre normal par défaut (compte non personnalisé) : Actus en tête '
@@ -414,8 +459,8 @@ void main() {
       },
     );
 
-    test('cap 13 : 8 thèmes + Actus + Grille + Bonnes tiennent (rien coupé)',
-        () async {
+    test('sous le cap : 8 thèmes + Actus + Grille + Bonnes tiennent '
+        '(rien coupé)', () async {
       stubDigest();
       stubFeed(
         themeIds: {
@@ -451,7 +496,9 @@ void main() {
       final state = await settle(container);
 
       // Actus en tête (compte non personnalisé), puis 8 thèmes, puis Bonnes.
-      // + Grille = 11 items ≤ cap 13 → tout tient.
+      // + Grille = 11 items ≤ cap → tout tient. Le cas *au plafond* de favoris
+      // (le seul où le cap mord sur l'éditorial) est couvert par le test
+      // « plafond de favoris + suggestions » juste en dessous.
       expect(state.sections.map(sectionKey).toList(), [
         kTourneeActusKey,
         'theme:society',
@@ -469,7 +516,55 @@ void main() {
         state.sections.map(sectionKey),
         contains(kTourneeBonnesKey),
         reason: '8 thèmes + Actus + Grille + Bonnes = 11 items tiennent sous le '
-            'cap de 13 (Bonnes n\'est plus coupée)',
+            'cap (Bonnes n\'est plus coupée)',
+      );
+    });
+
+    test(
+        'plafond de favoris + suggestions : Actus + Grille + Bonnes survivent '
+        'au rééquilibrage de quota (Story 22.8)', () async {
+      // Exécute en vrai l'inégalité que [kTourneeVisibleCap] encode :
+      // `cap - kTourneeSuggestQuota >= kTourneeEditorialCount + kFavoriteCap`.
+      // Bonnes Nouvelles est la dernière du bloc non-suggéré, donc la première
+      // sacrifiée si le cap est sous-dimensionné — la panne est silencieuse.
+      // (Cap posé à 15 puis corrigé à 16 en cours de Story 22.8.)
+      final favSlugs = [for (var i = 0; i < kFavoriteCap; i++) 'theme$i'];
+      // Assez de suggestions pour saturer le quota : c'est ce qui rend le
+      // rééquilibrage actif et donc le cap mordant.
+      final sugSlugs = [
+        for (var i = 0; i < kTourneeSuggestQuota; i++) 'sug$i',
+      ];
+      stubDigest();
+      when(() => fluxRepo.getTopThemes())
+          .thenAnswer((_) async => suggestedThemes(sugSlugs));
+      stubFeed(themeIds: themeFeedFor([...favSlugs, ...sugSlugs]));
+      final container = await buildContainer(
+        interests: _interestsState(
+          favorites: [for (final s in favSlugs) ThemeFavoriteRef(slug: s)],
+        ),
+        sourcesState: _sourcesState(),
+        catalog: const [],
+        grilleToday: _grilleToday(),
+      );
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+      final keys = state.sections.map(sectionKey).toList();
+
+      expect(
+        keys,
+        contains(kTourneeBonnesKey),
+        reason: 'Bonnes Nouvelles tombe la première si '
+            '`kTourneeVisibleCap - kTourneeSuggestQuota` est trop petit pour '
+            '`kTourneeEditorialCount + kFavoriteCap`',
+      );
+      expect(keys, contains(kTourneeActusKey));
+      expect(state.grilleSlotIndex, isNotNull);
+      // Les favoris ne sont pas sacrifiés non plus : le plafond entier tient.
+      expect(
+        keys.where((k) => k.startsWith('theme:theme')).length,
+        kFavoriteCap,
+        reason: 'aucun favori sous le plafond ne doit être coupé',
       );
     });
 
@@ -603,8 +698,9 @@ void main() {
   });
 
   test(
-      'cap d\'affichage 13 : 7 thèmes + 6 sources + veille (14 candidats) → '
-      'seulement 13 sections, veille (en queue par défaut) coupée', () async {
+      'cap d\'affichage : 7 thèmes + 9 sources + veille (17 candidats) → '
+      'seulement `kTourneeVisibleCap` sections, veille (en queue par défaut) '
+      'coupée', () async {
     // Story 10.2 — les sources doivent être en mode « Essentiel » (clé dans
     // l'ordre) pour entrer dans la Tournée ; on garde l'ordre par défaut
     // (thèmes avant sources) en plaçant les clés thème d'abord.
@@ -623,6 +719,9 @@ void main() {
         'source:d',
         'source:e',
         'source:f',
+        'source:g',
+        'source:h',
+        'source:i',
       ],
     });
     stubFeed(
@@ -642,6 +741,9 @@ void main() {
         'd': ['d1'],
         'e': ['e9'],
         'f': ['f1'],
+        'g': ['g1'],
+        'h': ['h1'],
+        'i': ['i1'],
       },
     );
     final container = await buildContainer(
@@ -664,6 +766,9 @@ void main() {
           SourceFavoriteRef(sourceId: 'd', position: 3),
           SourceFavoriteRef(sourceId: 'e', position: 4),
           SourceFavoriteRef(sourceId: 'f', position: 5),
+          SourceFavoriteRef(sourceId: 'g', position: 6),
+          SourceFavoriteRef(sourceId: 'h', position: 7),
+          SourceFavoriteRef(sourceId: 'i', position: 8),
         ],
       ),
       catalog: [
@@ -673,6 +778,9 @@ void main() {
         source('d'),
         source('e'),
         source('f'),
+        source('g'),
+        source('h'),
+        source('i'),
       ],
       veilleCfg: _veilleCfg(),
     );
@@ -683,35 +791,25 @@ void main() {
 
     expect(
       sections,
-      hasLength(13),
-      reason: 'cap d\'affichage de la Tournée = 13',
+      hasLength(kTourneeVisibleCap),
+      reason: 'cap d\'affichage de la Tournée',
     );
     expect(
       sections.where((s) => s.kind == SectionKind.veille),
       isEmpty,
-      reason: 'ordre par défaut thèmes→sources→veille → veille en 14e, coupée',
+      reason: 'ordre par défaut thèmes→sources→veille → veille en dernier, '
+          'donc coupée par le cap',
     );
-    // Ordre par défaut : 7 thèmes puis 6 sources (a..f) ; veille tombe.
+    // Ordre par défaut : 7 thèmes puis 9 sources (a..i) ; veille tombe.
     expect(sections.map((s) => s.kind).toList(), [
-      SectionKind.theme,
-      SectionKind.theme,
-      SectionKind.theme,
-      SectionKind.theme,
-      SectionKind.theme,
-      SectionKind.theme,
-      SectionKind.theme,
-      SectionKind.source,
-      SectionKind.source,
-      SectionKind.source,
-      SectionKind.source,
-      SectionKind.source,
-      SectionKind.source,
+      for (var i = 0; i < 7; i++) SectionKind.theme,
+      for (var i = 0; i < kTourneeVisibleCap - 7; i++) SectionKind.source,
     ]);
     expect(
       sections
           .where((s) => s.kind == SectionKind.source)
           .map((s) => s.sourceId),
-      ['a', 'b', 'c', 'd', 'e', 'f'],
+      ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'],
     );
   });
 
@@ -756,7 +854,8 @@ void main() {
     'veille en tête d\'ordre : présente dans le cap, un autre item tombe',
     () async {
       // Story 10.2 — sources en mode « Essentiel » (clés dans l'ordre) ; veille
-      // remontée en tête. 14 candidats → cap 13, veille première (source f tombe).
+      // remontée en tête. 17 candidats → cap `kTourneeVisibleCap` (16), veille
+      // première, la dernière source tombe.
       SharedPreferences.setMockInitialValues(<String, Object>{
         'tournee_order_v1': [
           'veille',
@@ -773,6 +872,9 @@ void main() {
           'source:d',
           'source:e',
           'source:f',
+          'source:g',
+          'source:h',
+          'source:i',
         ],
       });
       stubFeed(
@@ -792,6 +894,9 @@ void main() {
           'd': ['d1'],
           'e': ['e9'],
           'f': ['f1'],
+          'g': ['g1'],
+          'h': ['h1'],
+          'i': ['i1'],
         },
       );
       final container = await buildContainer(
@@ -814,6 +919,9 @@ void main() {
             SourceFavoriteRef(sourceId: 'd', position: 3),
             SourceFavoriteRef(sourceId: 'e', position: 4),
             SourceFavoriteRef(sourceId: 'f', position: 5),
+            SourceFavoriteRef(sourceId: 'g', position: 6),
+            SourceFavoriteRef(sourceId: 'h', position: 7),
+            SourceFavoriteRef(sourceId: 'i', position: 8),
           ],
         ),
         catalog: [
@@ -823,6 +931,9 @@ void main() {
           source('d'),
           source('e'),
           source('f'),
+          source('g'),
+          source('h'),
+          source('i'),
         ],
         veilleCfg: _veilleCfg(),
       );
@@ -831,7 +942,7 @@ void main() {
       await settle(container);
       final sections = favoriteSections(container);
 
-      expect(sections, hasLength(13));
+      expect(sections, hasLength(kTourneeVisibleCap));
       expect(
         sections.first.kind,
         SectionKind.veille,
@@ -1042,38 +1153,11 @@ void main() {
   });
 
   group('quota de suggestions sous le cap (Story 22.6)', () {
-    // 13 slugs thématiques favoris = cap plein, sans marge pour les
-    // suggestions reléguées en fin d'un ordre personnalisé.
-    const favSlugs = [
-      'society',
-      'culture',
-      'economy',
-      'politics',
-      'tech',
-      'science',
-      'environment',
-      'health',
-      'sport',
-      'international',
-      'media',
-      'justice',
-      'food',
-    ];
-
-    List<TopTheme> suggested(List<String> slugs) => [
-          for (final slug in slugs)
-            TopTheme(
-              interestSlug: slug,
-              weight: 1.0,
-              articleCount: 4,
-              origin: 'suggested',
-              reason: const SuggestionReason(label: 'Tu suis ce thème'),
-            ),
-        ];
-
-    Map<String, List<String>> feedFor(List<String> slugs) => {
-          for (final slug in slugs) slug: ['$slug-1', '$slug-2'],
-        };
+    // Exactement `kTourneeVisibleCap` slugs thématiques favoris = cap plein,
+    // sans marge pour les suggestions reléguées en fin d'un ordre personnalisé.
+    // Générés depuis la constante (et non listés en dur) pour que le groupe
+    // garde sa prémisse à chaque bump du cap.
+    final favSlugs = [for (var i = 0; i < kTourneeVisibleCap; i++) 'fav$i'];
 
     Future<ProviderContainer> personalized({
       required List<String> suggestedSlugs,
@@ -1085,8 +1169,8 @@ void main() {
         if (hiddenKeys.isNotEmpty) 'tournee_hidden_keys_v1': hiddenKeys,
       });
       when(() => fluxRepo.getTopThemes())
-          .thenAnswer((_) async => suggested(suggestedSlugs));
-      stubFeed(themeIds: {...feedFor(favSlugs), ...feedFor(suggestedSlugs)});
+          .thenAnswer((_) async => suggestedThemes(suggestedSlugs));
+      stubFeed(themeIds: themeFeedFor([...favSlugs, ...suggestedSlugs]));
       final container = await buildContainer(
         interests: _interestsState(
           favorites: [for (final s in favSlugs) ThemeFavoriteRef(slug: s)],
@@ -1099,8 +1183,8 @@ void main() {
       return container;
     }
 
-    test('personnalisé + 13 favoris ⇒ 3 suggestions en queue, favoris intacts',
-        () async {
+    test('personnalisé + cap plein de favoris ⇒ quota de suggestions en queue, '
+        'favoris intacts', () async {
       final container = await personalized(
         suggestedSlugs: const ['sugA', 'sugB', 'sugC', 'sugD'],
         hiddenKeys: const [],
@@ -1109,17 +1193,29 @@ void main() {
       expect(sections, hasLength(kTourneeVisibleCap));
 
       final suggestedVisible = sections.where((s) => s.isSuggested).toList();
-      expect(suggestedVisible, hasLength(3), reason: 'quota garanti sous le cap');
-      // Best-first (daily_rank backend) : les 3 premières, pas sugD.
+      expect(
+        suggestedVisible,
+        hasLength(kTourneeSuggestQuota),
+        reason: 'quota garanti sous le cap',
+      );
+      // Best-first (daily_rank backend) : les premières, pas sugD.
       expect(
         suggestedVisible.map((s) => s.themeSlug).toList(),
         ['sugA', 'sugB', 'sugC'],
       );
-      // Suggestions en queue ; les 10 premiers slots = favoris, ordre manuel
-      // strictement préservé (jamais permuté).
+      // Suggestions en queue ; les `cap - quota` premiers slots = favoris,
+      // ordre manuel strictement préservé (jamais permuté).
       final favVisible = sections.where((s) => !s.isSuggested).toList();
-      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(10));
-      expect(sections.skip(10).every((s) => s.isSuggested), isTrue);
+      expect(
+        favVisible.map((s) => s.themeSlug).toList(),
+        favSlugs.take(kTourneeVisibleCap - kTourneeSuggestQuota),
+      );
+      expect(
+        sections
+            .skip(kTourneeVisibleCap - kTourneeSuggestQuota)
+            .every((s) => s.isSuggested),
+        isTrue,
+      );
     });
 
     test('suggestion cachée non comptée dans le quota', () async {
@@ -1137,7 +1233,10 @@ void main() {
         reason: 'la suggestion cachée sort du quota, pas de re-comptage',
       );
       final favVisible = sections.where((s) => !s.isSuggested).toList();
-      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(11));
+      expect(
+        favVisible.map((s) => s.themeSlug).toList(),
+        favSlugs.take(kTourneeVisibleCap - suggestedVisible.length),
+      );
     });
 
     test('1 seule suggestion dispo ⇒ quota 1', () async {
@@ -1150,19 +1249,21 @@ void main() {
       expect(suggestedVisible, hasLength(1));
       expect(suggestedVisible.first.themeSlug, 'sugA');
       final favVisible = sections.where((s) => !s.isSuggested).toList();
-      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(12));
+      expect(
+        favVisible.map((s) => s.themeSlug).toList(),
+        favSlugs.take(kTourneeVisibleCap - suggestedVisible.length),
+      );
     });
 
     test('non-personnalisé sous le cap ⇒ ordre naturel inchangé', () async {
       // 2 favoris + 2 suggestions tiennent largement sous le cap : pas de
       // rééquilibrage, suggestions à leur position naturelle (après favoris).
       when(() => fluxRepo.getTopThemes())
-          .thenAnswer((_) async => suggested(const ['sugA', 'sugB']));
+          .thenAnswer((_) async => suggestedThemes(const ['sugA', 'sugB']));
       stubFeed(
-        themeIds: {
-          ...feedFor(const ['society', 'culture']),
-          ...feedFor(const ['sugA', 'sugB']),
-        },
+        themeIds: themeFeedFor(
+          const ['society', 'culture', 'sugA', 'sugB'],
+        ),
       );
       final container = await buildContainer(
         interests: _interestsState(

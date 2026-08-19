@@ -94,11 +94,16 @@ const int _kMaxFavoriteSourceSections = kTourneeVisibleCap;
 /// Number of items requested per page for each theme section of the Tournée
 /// (initial load + each "loadMoreTheme" call).
 ///
-/// Maintenu à 10 (décision PO) : le cold-open tire déjà ~10 appels
-/// `personalized=true` en parallèle sur un unique worker uvicorn, doubler la
+/// Maintenu à 10 (décision PO) : le cold-open tire déjà un appel
+/// `personalized=true` **par section** sur un unique worker uvicorn, doubler la
 /// page doublerait cette charge. Le volume est repris côté lazy loading
 /// ([_themeHasMore] + top-up de la page dédiée) plutôt que par une page plus
 /// grosse.
+///
+/// Story 22.8 — ce budget a grossi : `kFavoriteCap` 7 → 10 (thèmes et sources
+/// comptés séparément) porte le pire cas d'environ 19 à environ 25 appels, soit
+/// ~2 tours de plus à [_kPhase2FanoutConcurrency]. Non mesuré dans ce lot ;
+/// c'est le premier endroit à regarder si le temps d'ouverture régresse.
 const int kThemeSectionPageLimit = 10;
 
 /// Borne de concurrence du fan-out Phase 2 (cold-open). Le backend tourne sous

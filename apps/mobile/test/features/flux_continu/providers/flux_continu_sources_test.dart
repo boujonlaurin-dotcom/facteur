@@ -365,76 +365,32 @@ void main() {
 
   test(
       'plusieurs sources favorites respectent l\'ordre par position et le '
-      'cap (parité thèmes = 13)', () async {
+      'cap (parité thèmes = kTourneeVisibleCap)', () async {
+    // `kTourneeVisibleCap + 1` sources favorites : la dernière par position
+    // tombe sous le cap. Généré depuis la constante plutôt qu'écrit en dur,
+    // pour ne pas re-casser au prochain bump (Story 22.8 : 13 → 16).
+    final ids = [
+      for (var i = 0; i < kTourneeVisibleCap + 1; i++)
+        's${i.toString().padLeft(2, '0')}',
+    ];
     stubFeed(
       themeIds: const {},
       sourceIds: {
-        'a': ['a1', 'a2'],
-        'b': ['b1', 'b2'],
-        'c': ['c1', 'c2'],
-        'd': ['d1', 'd2'],
-        'e': ['e1', 'e2'],
-        'f': ['f1', 'f2'],
-        'g': ['g1', 'g2'],
-        'h': ['h1', 'h2'],
-        'i': ['i1', 'i2'],
-        'j': ['j1', 'j2'],
-        'k': ['k1', 'k2'],
-        'l': ['l1', 'l2'],
-        'm': ['m1', 'm2'],
-        'n': ['n1', 'n2'],
+        for (final id in ids) id: ['${id}_1', '${id}_2'],
       },
     );
+    // Inséré à l'envers : le provider doit trier par `position`, pas par ordre
+    // d'insertion (intention d'origine du test). L'inversion complète est une
+    // permutation plus stricte que les échanges 2 à 2 d'origine.
+    final favorites = [
+      for (var i = ids.length - 1; i >= 0; i--)
+        SourceFavoriteRef(sourceId: ids[i], position: i),
+    ];
     final container = await buildContainer(
       interests: _interestsState(),
-      sourcesState: _sourcesState(favorites: [
-        SourceFavoriteRef(sourceId: 'c', position: 2),
-        SourceFavoriteRef(sourceId: 'a', position: 0),
-        SourceFavoriteRef(sourceId: 'b', position: 1),
-        SourceFavoriteRef(sourceId: 'd', position: 3),
-        SourceFavoriteRef(sourceId: 'f', position: 5),
-        SourceFavoriteRef(sourceId: 'e', position: 4),
-        SourceFavoriteRef(sourceId: 'h', position: 7),
-        SourceFavoriteRef(sourceId: 'g', position: 6),
-        SourceFavoriteRef(sourceId: 'j', position: 9),
-        SourceFavoriteRef(sourceId: 'i', position: 8),
-        SourceFavoriteRef(sourceId: 'k', position: 10),
-        SourceFavoriteRef(sourceId: 'l', position: 11),
-        SourceFavoriteRef(sourceId: 'm', position: 12),
-        SourceFavoriteRef(sourceId: 'n', position: 13),
-      ]),
-      catalog: [
-        _source('a'),
-        _source('b'),
-        _source('c'),
-        _source('d'),
-        _source('e'),
-        _source('f'),
-        _source('g'),
-        _source('h'),
-        _source('i'),
-        _source('j'),
-        _source('k'),
-        _source('l'),
-        _source('m'),
-        _source('n'),
-      ],
-      tourneeOrder: const [
-        'source:a',
-        'source:b',
-        'source:c',
-        'source:d',
-        'source:e',
-        'source:f',
-        'source:g',
-        'source:h',
-        'source:i',
-        'source:j',
-        'source:k',
-        'source:l',
-        'source:m',
-        'source:n',
-      ],
+      sourcesState: _sourcesState(favorites: favorites),
+      catalog: [for (final id in ids) _source(id)],
+      tourneeOrder: [for (final id in ids) 'source:$id'],
     );
     addTearDown(container.dispose);
 
@@ -444,11 +400,8 @@ void main() {
         .map((s) => s.sourceId)
         .toList();
 
-    // Triées par position (a..n) puis capées à 13 → a..m.
-    expect(
-      sources,
-      ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm'],
-    );
+    // Triées par position puis capées → les `kTourneeVisibleCap` premières.
+    expect(sources, ids.take(kTourneeVisibleCap).toList());
   });
 
   // ── Cohérence Tournée : dépriorisation / enrichissement des maigres ────────
@@ -584,8 +537,8 @@ void main() {
     });
 
     test(
-        'cap : >13 favoris dont un maigre → le maigre est coupé des sections '
-        'mais présent dans thinFavoriteKeys', () async {
+        'cap : favoris au-delà du cap dont un maigre → le maigre est coupé des '
+        'sections mais présent dans thinFavoriteKeys', () async {
       stubFeed(
         themeIds: {
           'tech': ['tc1', 'tc2'],
@@ -604,6 +557,9 @@ void main() {
           'f': ['f1', 'f2'],
           'g': ['g1', 'g2'],
           'h': ['h1', 'h2'],
+          'i': ['i1', 'i2'],
+          'j': ['j1', 'j2'],
+          'k': ['k1', 'k2'],
         },
       );
       final container = await buildContainer(
@@ -627,6 +583,9 @@ void main() {
             SourceFavoriteRef(sourceId: 'f', position: 5),
             SourceFavoriteRef(sourceId: 'g', position: 6),
             SourceFavoriteRef(sourceId: 'h', position: 7),
+            SourceFavoriteRef(sourceId: 'i', position: 8),
+            SourceFavoriteRef(sourceId: 'j', position: 9),
+            SourceFavoriteRef(sourceId: 'k', position: 10),
           ],
         ),
         catalog: [
@@ -638,6 +597,9 @@ void main() {
           _source('f'),
           _source('g'),
           _source('h'),
+          _source('i'),
+          _source('j'),
+          _source('k'),
         ],
         tourneeOrder: const [
           'source:a',
@@ -648,6 +610,9 @@ void main() {
           'source:f',
           'source:g',
           'source:h',
+          'source:i',
+          'source:j',
+          'source:k',
         ],
       );
       addTearDown(container.dispose);
@@ -657,8 +622,10 @@ void main() {
           .where((s) => s.kind == SectionKind.theme)
           .map((s) => s.themeSlug)
           .toList();
-      // 14 favoris (8 sources + 6 thèmes), cap 13 ⇒ le maigre 'culture'
-      // (dépriorisé en dernier) est coupé, mais reste signalé pour la modal.
+      // 17 favoris (11 sources + 6 thèmes) pour `kTourneeVisibleCap` = 16 ⇒ le
+      // maigre 'culture' (dépriorisé en dernier) est le seul coupé, mais reste
+      // signalé pour la modal. Le lot de sources a été étendu avec la Story 22.8
+      // (cap 13 → 16) pour que le cap morde encore d'exactement une section.
       expect(state.sections.length, kTourneeVisibleCap);
       expect(slugs, isNot(contains('culture')));
       expect(state.thinFavoriteKeys, contains('theme:culture'));
