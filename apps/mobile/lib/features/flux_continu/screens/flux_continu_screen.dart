@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart'
     show
         ValueListenable,
+        debugPrint,
         defaultTargetPlatform,
         setEquals,
         TargetPlatform,
@@ -476,6 +477,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   Timer? _autoGrowTimer;
   int _autoGrowNonce = 0;
   final math.Random _autoGrowRng = math.Random();
+
+  /// Chronomètre armé au montage de l'écran : origine de `hero_paint_ms`, LA
+  /// métrique avant/après du lot cold start (« quand la carte héros hydratée
+  /// est-elle réellement peinte ? »). Log one-shot, planifié en post-frame pour
+  /// mesurer le paint effectif et pas la construction du widget.
+  final Stopwatch _heroPaintSw = Stopwatch()..start();
+  bool _heroPaintLogged = false;
+
+  /// Squelette rendu au build précédent — détecte le flip squelette → contenu
+  /// pour transporter l'offset de scroll du « rusher » (C1). Init `true` : le
+  /// tout premier build est toujours squelette (`_firstPaintDone == false`).
+  bool _wasSkeleton = true;
 
   /// Premier paint : on force le squelette (cartes vides à en-têtes réels) pour
   /// la toute première frame, **même si les données sont déjà prêtes**. À
@@ -1676,6 +1689,42 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     if (pendingSectionKey != null && !isSkeleton && !isPastEdition) {
       _scheduleConsumePendingSection();
     }
+    // B0 — dès que l'état (squelette compris) porte une EssentielSection
+    // hydratée, le squelette rend la **vraie** carte héros interactive à la
+    // place du placeholder statique : le premier contenu réel n'attend plus la
+    // Phase 1 (= `/api/digest/both`, le plus lourd des 3 appels de base).
+    // Scan borné aux builds qui en ont l'usage (squelette à hydrater, ou log
+    // `hero_paint_ms` pas encore émis) — après, chaque rebuild l'économise.
+    final heroSection = (isSkeleton || !_heroPaintLogged)
+        ? data?.sections.whereType<EssentielSection>().firstOrNull
+        : null;
+    final heroHydrated = heroSection?.articles.isNotEmpty ?? false;
+    // `hero_paint_ms` — premier frame qui peint la carte héros **hydratée**
+    // (articles résolus), que ce soit via le squelette (B0) ou le rendu plein.
+    if (!_heroPaintLogged && heroHydrated && !isPastEdition) {
+      _heroPaintLogged = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        debugPrint(
+            '[PERF] fluxContinu.hero_paint_ms=${_heroPaintSw.elapsedMilliseconds}');
+      });
+    }
+    // C1 — flip squelette → contenu : le squelette est désormais scrollable
+    // (rusher qui descend sans trier). On capture son offset au moment du flip
+    // et on le réapplique post-frame sur le scroll view du contenu — sans ça le
+    // remplacement du ListView squelette par le CustomScrollView plein
+    // repartirait en haut de page (positions de scroll non partagées entre
+    // deux scrollables distincts).
+    if (_wasSkeleton && !isSkeleton && _scroll.hasClients && _scroll.offset > 0) {
+      final flipOffset = _scroll.offset;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scroll.hasClients) return;
+        final target = math.min(flipOffset, _scroll.position.maxScrollExtent);
+        if ((_scroll.offset - target).abs() > 1.0) {
+          _scroll.jumpTo(target);
+        }
+      });
+    }
+    _wasSkeleton = isSkeleton;
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
       // Header & footer vivent dans le scaffold de page partagé :
@@ -1689,10 +1738,29 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
             if (isPastEdition)
               _buildPastEdition(context, selection)
             else if (isSkeleton)
-              _FluxContinuSkeleton(sections: data?.sections ?? const [])
+              _FluxContinuSkeleton(
+                sections: data?.sections ?? const [],
+                // B0 — vraie carte héros (triable) dès qu'elle est hydratée.
+                hero: heroHydrated
+                    ? _buildHeroBlock(
+                        context,
+                        heroSection!,
+                        isSerene: data?.isSerene ?? false,
+                      )
+                    : null,
+                // C1 — même contrôleur que `_buildContent` (arbres exclusifs) :
+                // le flip Phase 1 conserve l'offset du rusher.
+                controller: _scroll,
+              )
             else
               state.when(
-                loading: () => const _FluxContinuSkeleton(sections: []),
+                // Même contrôleur que la branche squelette principale (arbres
+                // toujours exclusifs) : parité de comportement si ce chemin
+                // défensif est atteint.
+                loading: () => _FluxContinuSkeleton(
+                  sections: const [],
+                  controller: _scroll,
+                ),
                 error: (e, _) => _ErrorView(
                   error: e,
                   onRetry: () =>
@@ -1959,6 +2027,29 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// Bloc héros « Ton Essentiel » (carte hi-fi interactive, triable), rendu par
+  /// le **squelette** de cold boot (B0). Reproduit exactement ce que
+  /// [_buildSectionSlivers] passe à [SectionBlock] pour l'`EssentielSection` en
+  /// tête de page (index 0, offset global 0) — `SectionBlock` court-circuite
+  /// vers `EssentielHiFiCard` et ignore les callbacks de section classique.
+  /// Sans `_FreeReadEdgeFade` ni GlobalKey de section : le squelette n'a ni
+  /// snap ni sticky, et les clés ne sont synchronisées qu'au premier rendu
+  /// plein (`_syncStickyEntries`).
+  Widget _buildHeroBlock(
+    BuildContext context,
+    EssentielSection section, {
+    required bool isSerene,
+  }) {
+    return SectionBlock(
+      section: section,
+      impressionDayKey: TourneeProgressService.dayKey(DateTime.now()),
+      sectionIndex: 0,
+      globalPositionOffset: 0,
+      isSerene: isSerene,
+      onTapArticle: (a) => _openArticle(context, a, section: section),
     );
   }
 
@@ -2482,22 +2573,39 @@ class _BackToTodayBlock extends StatelessWidget {
 /// de layout quand le contenu réel arrive : la structure est déjà en place, on
 /// ne fait que remplir.
 ///
-/// Volontairement **non scrollable** (NeverScrollableScrollPhysics) et sans la
-/// physics de snap : le squelette est transitoire (≈ 1 round-trip), l'user est
-/// en haut de page, et on ne touche pas au système snap/settle délicat. Reçoit
+/// **Scrollable** depuis le lot cold-start (C1) : le héros hydraté peut être
+/// rendu ici bien avant la Phase 1 (B0), et un « rusher » doit pouvoir
+/// descendre le long des coquilles sans attendre. `ClampingScrollPhysics`
+/// simple — pas de snap : on ne touche pas au système snap/settle délicat, qui
+/// n'arrive qu'avec `_buildContent`. Le [controller] partagé (arbres exclusifs)
+/// permet à l'écran de transporter l'offset au flip Phase 1. Reçoit
 /// les coquilles de sections du provider ([FluxContinuState.sections] avec
 /// `isSkeleton:true`) ; liste vide pendant la brève fenêtre de loading initiale
 /// → on rend un hero + quelques placeholders génériques.
 class _FluxContinuSkeleton extends StatelessWidget {
   final List<FluxSection> sections;
 
-  const _FluxContinuSkeleton({required this.sections});
+  /// B0 — vraie carte héros interactive (fournie par l'écran dès que
+  /// l'EssentielSection de l'état est hydratée). `null` ⇒ placeholder statique
+  /// [_HeroSkeleton] (comportement historique).
+  final Widget? hero;
+
+  /// C1 — contrôleur de scroll partagé avec `_buildContent` (jamais attachés
+  /// en même temps : les deux arbres sont exclusifs dans le Stack de l'écran).
+  final ScrollController? controller;
+
+  const _FluxContinuSkeleton({
+    required this.sections,
+    this.hero,
+    this.controller,
+  });
 
   @override
   Widget build(BuildContext context) {
     final children = <Widget>[
-      // Hero « L'Essentiel du jour » — placeholder pleine largeur en tête.
-      const _HeroSkeleton(),
+      // Hero « L'Essentiel du jour » — vraie carte dès qu'elle est hydratée
+      // (B0), placeholder pleine largeur sinon.
+      hero ?? const _HeroSkeleton(),
     ];
     if (sections.isEmpty) {
       // Fenêtre de loading initiale (pas encore de coquilles) → placeholders
@@ -2546,8 +2654,10 @@ class _FluxContinuSkeleton extends StatelessWidget {
       }
     }
     return ListView(
-      // Le squelette ne défile pas — il est remplacé dès l'arrivée du contenu.
-      physics: const NeverScrollableScrollPhysics(),
+      // C1 — scrollable (clamping, sans snap) : le rusher peut descendre le
+      // long des coquilles pendant que la Phase 1 se prépare.
+      controller: controller,
+      physics: const ClampingScrollPhysics(),
       padding: const EdgeInsets.only(top: 8, bottom: 92),
       children: children,
     );
@@ -2560,6 +2670,22 @@ class _FluxContinuSkeleton extends StatelessWidget {
 /// pas jouable en test (Supabase/Hive/GoRouter) — cf. `firstPreparingSectionIndex`.
 @visibleForTesting
 Widget essentielHeroSkeletonForTest() => const _HeroSkeleton();
+
+/// Exposé aux tests widget (même contrainte que [essentielHeroSkeletonForTest] :
+/// l'écran complet n'est pas montable en test) : contrat B0/C1 du squelette —
+/// il rend le [hero] fourni à la place du placeholder statique, et reste
+/// scrollable (clamping) avec le [controller] partagé.
+@visibleForTesting
+Widget fluxContinuSkeletonForTest({
+  List<FluxSection> sections = const [],
+  Widget? hero,
+  ScrollController? controller,
+}) =>
+    _FluxContinuSkeleton(
+      sections: sections,
+      hero: hero,
+      controller: controller,
+    );
 
 /// Placeholder du hero « Ton Essentiel » pendant le squelette.
 ///
