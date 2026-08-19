@@ -1,13 +1,16 @@
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/providers/feed_provider.dart';
-import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/providers/theme_discovery_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-class _MockFeedRepository extends Mock implements FeedRepository {}
+import 'feed_repository_mock.dart';
+
+// Le fan-out appelle getFeedWithRaw (SWR in-day) : le mock partagé délègue
+// vers getFeed, que ces suites stubbent.
+typedef _MockFeedRepository = MockFeedRepository;
 
 FeedResponse _resp(List<String> ids) {
   return FeedResponse(

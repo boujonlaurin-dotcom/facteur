@@ -41,10 +41,35 @@ class FeedCacheService {
     return FeedCacheService(Hive.box<String>(boxName));
   }
 
+  /// Préfixe des entrées **section de la Tournée** (SWR in-day). Une entrée
+  /// **par section** (jamais un map imbriqué) : le patch « article lu » au
+  /// retour de WebView ne doit jamais décoder l'ensemble du cache sur le thread
+  /// UI — c'est le piège que porte déjà `FluxContinuCacheService`
+  /// (`patchContentConsumed` walk le snapshot entier).
+  /// Clé : `tournee:{userId}:{variant}:{sectionKey}`.
+  /// Valeur : `{"saved_at": ms, "day_key": "AAAA-MM-JJ", "header": {…},
+  /// "data": raw API}` — même principe que les entrées feed (on persiste le
+  /// brut, les modèles feed n'ayant pas de `toJson`), plus l'en-tête d'affichage
+  /// de la section pour pouvoir la rendre sans le catalogue sources.
+  static const String tourneePrefix = 'tournee:';
+
   String _legacyKey(String userId) => 'feed:$userId';
 
   String _key(String userId, FeedCacheVariant variant) =>
       'feed:$userId:${variant.name}';
+
+  String _tourneeUserPrefix(String userId) => '$tourneePrefix$userId:';
+
+  String _tourneeKey(String userId, FeedCacheVariant variant, String section) =>
+      '${_tourneeUserPrefix(userId)}${variant.name}:$section';
+
+  List<String> _tourneeKeysForUser(String userId) {
+    final prefix = _tourneeUserPrefix(userId);
+    return [
+      for (final key in _box.keys)
+        if (key is String && key.startsWith(prefix)) key,
+    ];
+  }
 
   /// Persist a raw feed response (decoded JSON) for [userId].
   ///
@@ -199,19 +224,162 @@ class FeedCacheService {
     return patched;
   }
 
-  /// Remove cache entries for [userId]. Use on logout or user switch.
+  /// Persiste une **section de la Tournée** (SWR in-day) : en-tête d'affichage
+  /// + payload brut, daté par [dayKey] (jour éditorial, pas un TTL glissant :
+  /// la Tournée est une édition du jour).
+  ///
+  /// L'appelant ne doit jamais persister une section **vide** : côté veille,
+  /// `getVeilleFeedItems` avale les DioException et renvoie un feed vide — on
+  /// mémoriserait une panne réseau comme un contenu légitime (fail-closed).
+  Future<void> saveTourneeSection(
+    String userId,
+    String section, {
+    required FeedCacheVariant variant,
+    required String dayKey,
+    required Map<String, dynamic> header,
+    required dynamic rawData,
+  }) async {
+    try {
+      final payload = <String, dynamic>{
+        'saved_at': DateTime.now().millisecondsSinceEpoch,
+        'day_key': dayKey,
+        'header': header,
+        'data': rawData,
+      };
+      await _box.put(
+        _tourneeKey(userId, variant, section),
+        jsonEncode(payload),
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('FeedCacheService.saveTourneeSection failed: $e');
+      }
+    }
+  }
+
+  /// Sections de la Tournée persistées **pour [dayKey]** et [variant], clés par
+  /// `sectionKey`. Les entrées d'un autre jour sont ignorées (et purgées par
+  /// [purgeStaleTourneeSections]) ; une entrée corrompue est évincée.
+  Map<String, CachedTourneeSection> readTourneeSections(
+    String userId, {
+    required FeedCacheVariant variant,
+    required String dayKey,
+  }) {
+    final result = <String, CachedTourneeSection>{};
+    final variantPrefix = '${_tourneeUserPrefix(userId)}${variant.name}:';
+    for (final key in _tourneeKeysForUser(userId)) {
+      if (!key.startsWith(variantPrefix)) continue;
+      final encoded = _box.get(key);
+      if (encoded == null) continue;
+      try {
+        final decoded = jsonDecode(encoded);
+        if (decoded is! Map<String, dynamic>) {
+          _box.delete(key);
+          continue;
+        }
+        if (decoded['day_key'] != dayKey) continue;
+        final header = decoded['header'];
+        final data = decoded['data'];
+        final savedAt = decoded['saved_at'];
+        if (header is! Map<String, dynamic> || data == null) {
+          _box.delete(key);
+          continue;
+        }
+        result[key.substring(variantPrefix.length)] = CachedTourneeSection(
+          savedAt: DateTime.fromMillisecondsSinceEpoch(
+            savedAt is int ? savedAt : 0,
+          ),
+          header: header,
+          data: data,
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('FeedCacheService.readTourneeSections corrupted: $e');
+        }
+        _box.delete(key);
+      }
+    }
+    return result;
+  }
+
+  /// Supprime les sections Tournée de [userId] datées d'un autre jour que
+  /// [dayKey] (édition périmée : jamais réaffichée, autant rendre la place).
+  Future<void> purgeStaleTourneeSections(
+    String userId, {
+    required String dayKey,
+  }) async {
+    final stale = <String>[];
+    for (final key in _tourneeKeysForUser(userId)) {
+      final encoded = _box.get(key);
+      if (encoded == null) continue;
+      try {
+        final decoded = jsonDecode(encoded);
+        if (decoded is! Map<String, dynamic> || decoded['day_key'] != dayKey) {
+          stale.add(key);
+        }
+      } catch (_) {
+        stale.add(key);
+      }
+    }
+    if (stale.isEmpty) return;
+    await _box.deleteAll(stale);
+  }
+
+  /// Propage un statut de lecture dans les sections Tournée persistées.
+  ///
+  /// Pré-filtre sur la **chaîne encodée** (`contains`) avant tout `jsonDecode` :
+  /// même stratégie que l'invalidation content-scoped du backend
+  /// (`app/services/feed_cache.py`) — les ids apparaissent verbatim dans le
+  /// payload, donc une entrée qui ne porte pas l'article n'est jamais décodée.
+  /// Renvoie le nombre d'entrées effectivement patchées.
+  Future<int> patchTourneeContentStatus(
+    String userId,
+    String contentId,
+    ContentStatus status,
+  ) async {
+    var patchedCount = 0;
+    for (final key in _tourneeKeysForUser(userId)) {
+      final encoded = _box.get(key);
+      if (encoded == null || !encoded.contains(contentId)) continue;
+      try {
+        final decoded = jsonDecode(encoded);
+        if (decoded is! Map<String, dynamic>) {
+          await _box.delete(key);
+          continue;
+        }
+        final data = decoded['data'];
+        if (data == null) continue;
+        if (!_patchStatusInData(data, contentId, status.name)) continue;
+        await _box.put(key, jsonEncode(decoded));
+        patchedCount++;
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('FeedCacheService.patchTourneeContentStatus failed: $e');
+        }
+        await _box.delete(key);
+      }
+    }
+    return patchedCount;
+  }
+
+  /// Remove cache entries for [userId] — entrées feed **et** sections Tournée.
+  /// Use on logout or user switch.
   Future<void> clearForUser(String userId, {FeedCacheVariant? variant}) async {
     if (variant != null) {
-      await _box.delete(_key(userId, variant));
-      if (variant == FeedCacheVariant.normal) {
-        await _box.delete(_legacyKey(userId));
-      }
+      final sectionPrefix = '${_tourneeUserPrefix(userId)}${variant.name}:';
+      await _box.deleteAll([
+        _key(userId, variant),
+        if (variant == FeedCacheVariant.normal) _legacyKey(userId),
+        for (final key in _tourneeKeysForUser(userId))
+          if (key.startsWith(sectionPrefix)) key,
+      ]);
       return;
     }
     await _box.deleteAll([
       _key(userId, FeedCacheVariant.normal),
       _key(userId, FeedCacheVariant.serein),
       _legacyKey(userId),
+      ..._tourneeKeysForUser(userId),
     ]);
   }
 
@@ -242,4 +410,24 @@ class CachedFeedRaw {
   const CachedFeedRaw({required this.savedAt, required this.data});
 
   bool get isFresh => FeedCacheService.isFresh(savedAt);
+}
+
+/// Entrée « section de la Tournée » persistée (SWR in-day).
+class CachedTourneeSection {
+  final DateTime savedAt;
+
+  /// En-tête d'affichage de la section (label, accent, logo…), sérialisé par
+  /// le provider depuis la section **réellement rendue**. Permet de reconstruire
+  /// la section sans `userSourcesProvider` / `veilleActiveConfigProvider`, qui
+  /// ne sont pas résolus au boot (lecture `_peekValue`, sans initialisation).
+  final Map<String, dynamic> header;
+
+  /// Payload brut de `GET /api/feed`, prêt pour `FeedRepository.parseFeedData`.
+  final dynamic data;
+
+  const CachedTourneeSection({
+    required this.savedAt,
+    required this.header,
+    required this.data,
+  });
 }

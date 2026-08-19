@@ -3,6 +3,11 @@ import '../../../core/api/api_client.dart';
 import '../models/content_model.dart';
 import '../services/read_sync_service.dart' show CompletionSource;
 
+/// Réponse feed **et** son payload brut (JSON décodé), pour les appelants qui
+/// persistent la réponse : les modèles feed n'ont pas de `toJson`, on remet
+/// donc le brut dans [FeedRepository.parseFeedData] à la relecture.
+typedef FeedRawResult = ({FeedResponse feed, dynamic raw});
+
 class FeedRepository {
   final ApiClient _apiClient;
 

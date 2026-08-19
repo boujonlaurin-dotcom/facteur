@@ -122,15 +122,28 @@ class FluxContinuRepository {
     int limit = 10,
     int offset = 0,
     bool serein = false,
+  }) async =>
+      (await getVeilleFeedItemsWithRaw(
+        limit: limit,
+        offset: offset,
+        serein: serein,
+      ))
+          .feed;
+
+  /// [getVeilleFeedItems] + le payload **normalisé** (forme
+  /// `{items: [...Content json...], pagination: {...}}`, celle qu'attend
+  /// `FeedRepository.parseFeedData`), pour que le SWR in-day persiste la section
+  /// veille comme les autres. `raw` est `null` sur tout chemin dégradé
+  /// (non-200, DioException) : cette méthode **avale** les erreurs réseau et
+  /// renvoie un feed vide, qu'il ne faut jamais mémoriser comme un contenu
+  /// légitime.
+  Future<({FeedResponse feed, dynamic raw})> getVeilleFeedItemsWithRaw({
+    int limit = 10,
+    int offset = 0,
+    bool serein = false,
   }) async {
     final pageNum = (offset ~/ limit) + 1;
-    try {
-      final response = await _apiClient.dio.get<dynamic>(
-        'veille/feed',
-        queryParameters: {'limit': limit, 'offset': offset, 'serein': serein},
-      );
-      if (response.statusCode != 200 || response.data is! Map) {
-        return FeedResponse(
+    FeedResponse emptyFeed() => FeedResponse(
           items: const [],
           pagination: Pagination(
             page: pageNum,
@@ -139,35 +152,42 @@ class FluxContinuRepository {
             hasNext: false,
           ),
         );
+    try {
+      final response = await _apiClient.dio.get<dynamic>(
+        'veille/feed',
+        queryParameters: {'limit': limit, 'offset': offset, 'serein': serein},
+      );
+      if (response.statusCode != 200 || response.data is! Map) {
+        return (feed: emptyFeed(), raw: null);
       }
       final data = response.data as Map<String, dynamic>;
       final rawItems = (data['items'] as List?) ?? const [];
-      final items = rawItems
+      final itemsJson = rawItems
           .whereType<Map<String, dynamic>>()
           .map(_veilleArticleToContentJson)
-          .map(Content.fromJson)
           .toList();
-      return FeedResponse(
-        items: items,
-        pagination: Pagination(
-          page: pageNum,
-          perPage: limit,
-          total: (data['total'] as num?)?.toInt() ?? items.length,
-          hasNext: (data['has_more'] as bool?) ?? false,
+      final items = itemsJson.map(Content.fromJson).toList();
+      final hasNext = (data['has_more'] as bool?) ?? false;
+      final total = (data['total'] as num?)?.toInt() ?? items.length;
+      return (
+        feed: FeedResponse(
+          items: items,
+          pagination: Pagination(
+            page: pageNum,
+            perPage: limit,
+            total: total,
+            hasNext: hasNext,
+          ),
         ),
+        raw: <String, dynamic>{
+          'items': itemsJson,
+          'pagination': {'has_next': hasNext, 'total': total},
+        },
       );
     } on DioException catch (e) {
       // ignore: avoid_print
       print('FluxContinuRepository: getVeilleFeedItems failed: ${e.message}');
-      return FeedResponse(
-        items: const [],
-        pagination: Pagination(
-          page: pageNum,
-          perPage: limit,
-          total: 0,
-          hasNext: false,
-        ),
-      );
+      return (feed: emptyFeed(), raw: null);
     }
   }
 

@@ -421,6 +421,17 @@ class ReadSyncService {
           variant: FeedCacheVariant.serein,
         ),
       );
+      // SWR in-day : les sections Tournée persistées doivent porter le statut
+      // « lu », sinon une réouverture dans la journée rend l'article non lu.
+      // Pré-filtre `contains` côté service ⇒ seules les entrées qui portent
+      // vraiment l'id sont décodées.
+      unawaited(
+        feedCache.patchTourneeContentStatus(
+          userId,
+          contentId,
+          ContentStatus.consumed,
+        ),
+      );
     }
     unawaited(FluxContinuCacheService().patchContentConsumed(contentId));
   }
