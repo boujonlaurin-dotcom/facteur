@@ -55,6 +55,9 @@ class EssentielArticle(BaseModel):
     )
     section_label: str = Field(..., description="Libellé du topic d'origine")
     perspective_count: int = 0
+    # Vérité publique de couverture (média courant inclus).
+    coverage_count: int = 0
+    coverage_sources: list[dict] = Field(default_factory=list)
     # Couverture multi-sources du sujet d'origine — pilote la pastille
     # « N sources » de la carte (seuil mobile : >= 2).
     source_count: int = 0

@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tes cartes",
+      "summary": "Le nombre de rédactions annoncé sur une carte correspond enfin à ce que tu peux vraiment ouvrir : quand la carte dit 7 médias, tu retrouves les 6 autres dans « Comparer les angles ». Jusqu'ici le compteur pouvait annoncer 14 sources pour un seul autre article consultable. Les rédactions dont on ne connaît pas l'orientation comptent désormais elles aussi et restent accessibles : elles sont regroupées en fin de carrousel sous « Autres sources », sans étiquette politique. Et le carrousel n'est plus limité à huit cartes, donc chaque source comptée est bien consultable."
+    },
+    {
       "tag": "Ton Essentiel",
       "summary": "Ta carte du jour se présente plus clairement : elle dit maintenant ce qu'on te demande, choisir les articles que tu liras aujourd'hui. Pendant qu'elle se prépare, tu vois toujours la silhouette de la pile arriver, jamais un titre au-dessus du vide. La pile ne tressaute plus quand tu glisses une carte : la rangée de boutons descend d'un seul mouvement. Une fois le tri fini, les deux actions sont enfin lisibles, en pleine largeur sous ta sélection : « Plus d'articles » quand il en reste à te proposer, et « Trier à nouveau ». Et tes articles gardés se présentent tous de la même façon, sans qu'un premier soit mis en avant plus que les autres."
     },

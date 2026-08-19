@@ -6,10 +6,11 @@ import json
 import os
 import re
 import xml.etree.ElementTree as ET
+from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import certifi
 import httpx
@@ -18,6 +19,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from app.services.search.providers.denylist import is_listicle_host
 from app.services.text_similarity import jaccard_similarity, normalize_title
 
 logger = structlog.get_logger(__name__)
@@ -41,6 +43,19 @@ PERSPECTIVE_DISCRIMINANT_ENTITY_TYPES = frozenset({"PERSON", "ORG", "EVENT"})
 # Feature flag (rollback rapide en cas de régression)
 PERSPECTIVE_FILTER_ENABLED = (
     os.environ.get("PERSPECTIVE_FILTER_ENABLED", "true").lower() == "true"
+)
+
+# Domaines qui redistribuent des liens sans produire eux-mêmes la couverture
+# éditoriale comptée. Google News expose normalement le domaine de l'éditeur
+# via la balise ``<source>`` ; cette liste reste un garde-fou contre les
+# candidats mal résolus et les agrégateurs internes.
+# Le test d'appartenance est doublé d'un test de suffixe (`*.google.com`), donc
+# les sous-domaines connus (news.google.com, old.reddit.com) sont déjà couverts.
+NON_EDITORIAL_AGGREGATOR_DOMAINS: frozenset[str] = frozenset(
+    {
+        "google.com",
+        "reddit.com",
+    }
 )
 
 # --- Matière envoyée à l'Analyse Facteur (analyze_divergences) ---
@@ -215,6 +230,53 @@ class Perspective:
     # restent None faute de row Content (le client traite null comme FR par
     # défaut).
     language: str | None = None
+    # Présent pour les articles internes (pivot/cluster), absent pour Google
+    # News. Il permet de rattacher chaque article du snapshot de couverture au
+    # même sujet sans nouvelle requête de clustering.
+    content_id: str | None = None
+
+
+def normalize_domain(raw: str | None) -> str:
+    """Forme canonique d'un domaine éditorial : minuscules, sans ``www.``.
+
+    La couverture est définie *par domaine* — dédup du snapshot, exclusion du
+    média en cours de lecture, appartenance à `NON_EDITORIAL_AGGREGATOR_DOMAINS`.
+    Ces trois décisions doivent partager exactement la même clé, sinon
+    `coverage_count` et la liste renvoyée divergent d'une unité. Accepte une URL
+    complète comme un domaine nu (le port est écarté).
+    """
+    if not raw:
+        return ""
+    candidate = raw.strip().lower()
+    if not candidate:
+        return ""
+    try:
+        parsed = urlparse(candidate if "://" in candidate else f"https://{candidate}")
+        return (parsed.hostname or "").removeprefix("www.")
+    except ValueError:
+        return candidate.removeprefix("www.")
+
+
+def perspective_to_dict(p: object) -> dict:
+    """Forme sérialisée unique d'une [Perspective].
+
+    Le snapshot persisté par le pipeline éditorial et la réponse live de
+    ``/contents/{id}/perspectives`` doivent porter exactement les mêmes clés :
+    un champ ajouté ici arrive des deux côtés d'un coup. ``getattr`` défensif
+    pour les stubs de test qui n'implémentent qu'une partie du dataclass.
+    """
+    return {
+        "content_id": getattr(p, "content_id", None),
+        "title": p.title,
+        "url": p.url,
+        "source_name": p.source_name,
+        "source_domain": p.source_domain,
+        "bias_stance": p.bias_stance,
+        "published_at": p.published_at,
+        "description": p.description,
+        "reliability_score": getattr(p, "reliability_score", None),
+        "language": getattr(p, "language", None),
+    }
 
 
 STANCE_LABELS = {
@@ -917,45 +979,29 @@ class PerspectiveService:
         from PR #390 holds: header, spectrum bar, and bottom-sheet all
         describe the same merged set (cluster ∪ Google News).
         """
-        from urllib.parse import urlparse
-
-        seen_source_ids: set = set()
+        seen_domains: set[str] = set()
         result: list[Perspective] = []
         for content in contents:
-            source_id = getattr(content, "source_id", None)
-            if source_id is not None:
-                if source_id in seen_source_ids:
-                    continue
-                seen_source_ids.add(source_id)
-
-            domain = ""
-            source_name = ""
             source = getattr(content, "source", None)
-            if source is not None:
-                source_name = getattr(source, "name", "") or ""
-                source_url = getattr(source, "url", "") or ""
-                if isinstance(source_url, str) and source_url:
-                    try:
-                        parsed = urlparse(source_url)
-                        domain = parsed.netloc or ""
-                        if domain.startswith("www."):
-                            domain = domain[4:]
-                    except Exception:
-                        domain = ""
-            # Fallback: extract from article URL.
-            if not domain:
-                url = getattr(content, "url", "") or ""
-                if isinstance(url, str) and url:
-                    try:
-                        parsed = urlparse(url)
-                        domain = parsed.netloc or ""
-                        if domain.startswith("www."):
-                            domain = domain[4:]
-                    except Exception:
-                        domain = ""
+            source_name = (
+                (getattr(source, "name", "") or "") if source is not None else ""
+            )
+            source_url = (
+                (getattr(source, "url", "") or "") if source is not None else ""
+            )
+            # Fallback sur l'URL de l'article quand la ligne Source n'a pas d'URL.
+            domain = normalize_domain(
+                source_url if isinstance(source_url, str) else ""
+            ) or normalize_domain(getattr(content, "url", "") or "")
 
             if not domain and not source_name:
                 continue
+
+            # La couverture publique est définie par domaine, pas par ligne
+            # Source : deux feeds d'un même média ne doivent compter qu'une fois.
+            if not domain or domain in seen_domains:
+                continue
+            seen_domains.add(domain)
 
             bias = self._extract_bias_from_source(source, domain)
             reliability = self._extract_reliability_from_source(source)
@@ -975,9 +1021,166 @@ class PerspectiveService:
                     ),
                     description=getattr(content, "description", None),
                     language=getattr(content, "language", None),
+                    content_id=(
+                        str(content.id) if getattr(content, "id", None) else None
+                    ),
                 )
             )
         return result
+
+    @staticmethod
+    def _is_editorial_content_candidate(content) -> bool:
+        """False pour un agrégateur interne qui ne produit pas l'article."""
+        from app.models.enums import SourceType
+
+        source = getattr(content, "source", None)
+        raw_type = getattr(source, "type", None) if source is not None else None
+        try:
+            if raw_type is not None and SourceType(raw_type) == SourceType.REDDIT:
+                return False
+        except (TypeError, ValueError):
+            pass
+
+        raw_url = getattr(content, "url", "")
+        return not is_listicle_host(raw_url if isinstance(raw_url, str) else "")
+
+    @staticmethod
+    def _is_editorial_perspective_candidate(perspective: Perspective) -> bool:
+        domain = normalize_domain(perspective.source_domain)
+        if not domain or domain in NON_EDITORIAL_AGGREGATOR_DOMAINS:
+            return False
+        if any(domain.endswith(f".{d}") for d in NON_EDITORIAL_AGGREGATOR_DOMAINS):
+            return False
+        return not is_listicle_host(f"https://{domain}")
+
+    def _filter_cluster_contents_for_coverage(
+        self,
+        reference,
+        contents: list,
+    ) -> tuple[list, list[str]]:
+        """Applique le même filtre sujet au pivot et aux articles du cluster.
+
+        Le pivot est toujours conservé. Les autres articles passent par les
+        signaux Jaccard/topics/entités déjà utilisés par la recherche interne.
+        """
+        ordered = [reference]
+        reference_id = getattr(reference, "id", None)
+        ordered.extend(c for c in contents if getattr(c, "id", None) != reference_id)
+        if not PERSPECTIVE_FILTER_ENABLED:
+            kept = [c for c in ordered if self._is_editorial_content_candidate(c)]
+            return kept, []
+
+        reference_title = getattr(reference, "title", "")
+        seed_tokens = normalize_title(
+            reference_title if isinstance(reference_title, str) else ""
+        )
+        raw_topics = getattr(reference, "topics", None)
+        raw_entities = getattr(reference, "entities", None)
+        seed_topics = (
+            {t.lower() for t in raw_topics if isinstance(t, str) and t}
+            if isinstance(raw_topics, (list, tuple))
+            else set()
+        )
+        seed_disc_entities = (
+            set(
+                _parse_entity_names(
+                    list(raw_entities), types=PERSPECTIVE_DISCRIMINANT_ENTITY_TYPES
+                )
+            )
+            if isinstance(raw_entities, (list, tuple))
+            else set()
+        )
+
+        kept: list = []
+        reasons: list[str] = []
+        for candidate in ordered:
+            if not self._is_editorial_content_candidate(candidate):
+                reasons.append("non_editorial")
+                continue
+            if getattr(candidate, "id", None) == reference_id:
+                kept.append(candidate)
+                continue
+            candidate_title = getattr(candidate, "title", "")
+            candidate_topics = getattr(candidate, "topics", None)
+            candidate_entities = getattr(candidate, "entities", None)
+            signals = self._topical_signals(
+                seed_tokens,
+                seed_topics,
+                seed_disc_entities,
+                cand_title=(
+                    candidate_title if isinstance(candidate_title, str) else ""
+                ),
+                cand_topics=(
+                    list(candidate_topics)
+                    if isinstance(candidate_topics, (list, tuple))
+                    else None
+                ),
+                cand_entities=(
+                    list(candidate_entities)
+                    if isinstance(candidate_entities, (list, tuple))
+                    else None
+                ),
+            )
+            is_ok, reason = self._is_topically_coherent(signals)
+            if is_ok:
+                kept.append(candidate)
+            else:
+                reasons.append(reason)
+        return kept, reasons
+
+    async def build_coverage_universe(
+        self,
+        reference,
+        cluster_contents: list,
+        discovered_perspectives: list[Perspective],
+    ) -> list[Perspective]:
+        """Construit la vérité unique pivot + cluster + recherche hybride.
+
+        Tous les candidats sont cohérents avec le pivot, éditoriaux et
+        dédupliqués par domaine. Les biais ``unknown`` sont volontairement
+        conservés : ils comptent dans la couverture et restent consultables.
+        """
+        coherent_contents, cluster_reasons = self._filter_cluster_contents_for_coverage(
+            reference, cluster_contents
+        )
+        cluster_perspectives = await self.build_cluster_perspectives(coherent_contents)
+
+        seed_title = getattr(reference, "title", "")
+        seed_tokens = normalize_title(seed_title if isinstance(seed_title, str) else "")
+        coherent_discovered, external_rejected = self._filter_external_perspectives(
+            seed_tokens, discovered_perspectives
+        )
+
+        merged: list[Perspective] = []
+        seen_domains: set[str] = set()
+        duplicate_domains = 0
+        non_editorial = 0
+        for perspective in [*cluster_perspectives, *coherent_discovered]:
+            if not self._is_editorial_perspective_candidate(perspective):
+                non_editorial += 1
+                continue
+            domain = normalize_domain(perspective.source_domain)
+            if domain in seen_domains:
+                duplicate_domains += 1
+                continue
+            perspective.source_domain = domain
+            seen_domains.add(domain)
+            merged.append(perspective)
+
+        known = sum(1 for p in merged if p.bias_stance != "unknown")
+        logger.info(
+            "perspectives_coverage_universe_built",
+            candidates=(len(cluster_contents) + len(discovered_perspectives)),
+            cluster_rejected_off_topic=len(cluster_reasons),
+            cluster_rejection_reasons=dict(Counter(cluster_reasons)),
+            external_rejected_off_topic=external_rejected,
+            duplicate_domains=duplicate_domains,
+            non_editorial_rejected=non_editorial,
+            known_sources=known,
+            unknown_sources=len(merged) - known,
+            coverage_count=len(merged),
+        )
+        return merged
 
     def _filter_external_perspectives(
         self,

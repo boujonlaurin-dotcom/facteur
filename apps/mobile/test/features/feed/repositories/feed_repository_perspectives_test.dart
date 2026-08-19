@@ -62,6 +62,40 @@ void main() {
   });
 
   group('PerspectivesResponse.fromJson', () {
+    test('coverage_count explicite gagne sur la longueur des alternatives', () {
+      final res = PerspectivesResponse.fromJson(<String, dynamic>{
+        'perspectives': <dynamic>[],
+        'coverage_count': 14,
+        'keywords': <dynamic>[],
+        'bias_distribution': <String, dynamic>{},
+      });
+      expect(res.coverageCount, 14);
+    });
+
+    test('ancien payload : alternatives + média courant', () {
+      final res = PerspectivesResponse.fromJson(<String, dynamic>{
+        'perspectives': <dynamic>[
+          {
+            'title': 'A',
+            'url': 'https://a.example',
+            'source_name': 'A',
+            'source_domain': 'a.example',
+            'bias_stance': 'unknown',
+          },
+          {
+            'title': 'B',
+            'url': 'https://b.example',
+            'source_name': 'B',
+            'source_domain': 'b.example',
+            'bias_stance': 'center',
+          },
+        ],
+        'keywords': <dynamic>[],
+        'bias_distribution': <String, dynamic>{'center': 1},
+      });
+      expect(res.coverageCount, 3);
+    });
+
     test('parse reference_pivot quand fourni', () {
       final res = PerspectivesResponse.fromJson(<String, dynamic>{
         'perspectives': <dynamic>[],

@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,6 +15,7 @@ from app.services.editorial.schemas import (
     MatchedDeepArticle,
     SelectedTopic,
 )
+from app.services.perspective_service import Perspective
 
 # T1 (couverture v4) : l'étape 3B-bis (annotation LLM bias) du pipeline est
 # désactivée — la boucle est commentée dans `editorial.pipeline`, donc plus
@@ -35,6 +37,14 @@ def _make_content_mock(title="Test article", bias_stance="center"):
     c.source = MagicMock()
     c.source.name = "Test Source"
     c.source.bias_stance = bias_stance
+    c.source.url = "https://test-source.example/"
+    c.source.type = None
+    c.source.reliability_score = None
+    c.url = "https://test-source.example/article"
+    c.description = None
+    c.topics = ["politique"]
+    c.entities = []
+    c.language = "fr"
     c.published_at = datetime.now(UTC)
     c.is_paid = False
     return c
@@ -116,6 +126,65 @@ def mock_dependencies():
         mock_perspective.get_perspectives_hybrid = AsyncMock(return_value=([], []))
         mock_perspective.resolve_bias = AsyncMock(return_value="center")
         mock_perspective.analyze_divergences = AsyncMock(return_value=None)
+        mock_perspective._extract_domain.side_effect = lambda url: urlparse(
+            url
+        ).netloc.removeprefix("www.")
+
+        async def _build_coverage_universe(reference, contents, discovered):
+            """Deterministic stand-in for the service's domain-level merge."""
+            merged = []
+            seen_domains = set()
+            for content in contents:
+                source = getattr(content, "source", None)
+                source_url = getattr(source, "url", "") or ""
+                domain = urlparse(source_url).netloc.removeprefix("www.")
+                if not domain:
+                    domain = urlparse(getattr(content, "url", "") or "").netloc
+                    domain = domain.removeprefix("www.")
+                if not domain or domain in seen_domains:
+                    continue
+                seen_domains.add(domain)
+                bias = await mock_perspective.resolve_bias(
+                    domain=domain,
+                    source_name=getattr(source, "name", "") or domain,
+                )
+                merged.append(
+                    Perspective(
+                        title=content.title,
+                        url=content.url,
+                        source_name=getattr(source, "name", "") or domain,
+                        source_domain=domain,
+                        bias_stance=bias,
+                        published_at=(
+                            content.published_at.isoformat()
+                            if content.published_at
+                            else None
+                        ),
+                        description=getattr(content, "description", None),
+                        language=getattr(content, "language", None),
+                        content_id=str(content.id),
+                    )
+                )
+            for perspective in discovered:
+                domain = perspective.source_domain.removeprefix("www.")
+                if not domain or domain in seen_domains:
+                    continue
+                perspective.source_domain = domain
+                seen_domains.add(domain)
+                merged.append(perspective)
+            return merged
+
+        async def _build_cluster_perspectives(contents):
+            if not contents:
+                return []
+            return await _build_coverage_universe(contents[0], contents, [])
+
+        mock_perspective.build_coverage_universe = AsyncMock(
+            side_effect=_build_coverage_universe
+        )
+        mock_perspective.build_cluster_perspectives = AsyncMock(
+            side_effect=_build_cluster_perspectives
+        )
         mock_perspective_cls.return_value = mock_perspective
 
         yield {
@@ -236,6 +305,7 @@ class TestComputeGlobalContext:
                     deep_angle=None,
                 )
             ]
+
             # Sans actu ni deep, le sujet serait droppé par le trim de la
             # pipeline ; on simule la présence d'une actu pour que le trim
             # le conserve et qu'on puisse asserter `deep_angle is None`.
@@ -430,16 +500,19 @@ class TestSubjectTrimAndRenumber:
         # Le test mesure la boucle drop+renumber sur la frontière "target".
         # On épingle target=5/buffer=2 (config legacy) pour découpler la garantie
         # du défaut courant (qui a évolué à 10/4 en mai 2026).
-        with patch.dict(
-            "os.environ",
-            {
-                "EDITORIAL_TARGET_SUBJECT_COUNT": "5",
-                "EDITORIAL_SUBJECT_BUFFER": "2",
-            },
-            clear=False,
-        ), patch(
-            "app.services.editorial.pipeline.ImportanceDetector"
-        ) as mock_detector_cls:
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "EDITORIAL_TARGET_SUBJECT_COUNT": "5",
+                    "EDITORIAL_SUBJECT_BUFFER": "2",
+                },
+                clear=False,
+            ),
+            patch(
+                "app.services.editorial.pipeline.ImportanceDetector"
+            ) as mock_detector_cls,
+        ):
             mock_detector = MagicMock()
             mock_detector.build_topic_clusters.return_value = clusters
             mock_detector_cls.return_value = mock_detector
@@ -589,16 +662,15 @@ class _StubPerspective:
 
 
 class TestPerspectiveCountAlignment:
-    """Regression coverage for the 3-counter alignment fix.
+    """Regression coverage for the coverage-universe alignment fix.
 
     The pipeline must:
-      1. Include the cluster's own sources in ``perspective_count`` so the
-         header reflects the carousel coverage (not just Google News).
+      1. Include the pivot in ``coverage_count`` and expose every other domain
+         as a reader alternative.
       2. De-duplicate Google News domains already present in the cluster —
          no double-counting.
-      3. Filter out ``unknown`` bias before computing ``perspective_count``
-         so ``sum(bias_distribution.values()) == perspective_count`` (header
-         vs spectrum bar invariant from PR #390).
+      3. Retain ``unknown`` sources in coverage while excluding them from the
+         political distribution.
       4. Persist the cluster's most-recent content id as
          ``representative_content_id`` so the mobile bottom sheet re-fetches
          on the same pivot.
@@ -702,16 +774,20 @@ class TestPerspectiveCountAlignment:
         assert result is not None
         subject = result.subjects[0]
 
-        # 1 cluster source (center) + 3 new GNews known (left, center, right)
-        # = 4 known. GNews duplicate on cluster.fr must be filtered out.
-        assert subject.perspective_count == 4
+        # Pivot + 5 distinct alternatives (3 known, 2 unknown). The duplicate
+        # cluster.fr result is removed and the unknown outlets remain counted.
+        assert subject.coverage_count == 6
+        assert len(subject.coverage_articles) == 6
+        assert len(subject.coverage_sources) == 6
+        assert subject.perspective_count == 3
         assert subject.bias_distribution is not None
-        # Invariant preserved.
+        # Political visuals describe known alternatives only.
         assert sum(subject.bias_distribution.values()) == subject.perspective_count
-        # Breakdown: 1 left, 2 center (cluster + GNews), 1 right.
+        # Breakdown: pivot excluded, then 1 left, 1 center, 1 right.
         assert subject.bias_distribution["left"] == 1
-        assert subject.bias_distribution["center"] == 2
+        assert subject.bias_distribution["center"] == 1
         assert subject.bias_distribution["right"] == 1
+        assert len(subject.perspective_articles) == 3
 
         # Pivot = most recent content of the cluster.
         assert subject.representative_content_id == newer.id
@@ -729,7 +805,9 @@ class TestPerspectiveCountAlignment:
         content = _make_content_mock(title="article")
         content.published_at = datetime(2026, 4, 12, tzinfo=UTC)
         content.source_id = source_id
-        content.source.url = "https://www.cluster.fr/"
+        # Source.url absent : le pivot doit retomber sur Content.url pour que
+        # l'invariant N-1 reste vrai.
+        content.source.url = ""
         content.url = "https://www.cluster.fr/a"
 
         cluster_id_str = str(uuid4())
@@ -801,6 +879,7 @@ class TestPerspectiveCountAlignment:
         subject = await self._run_with_few_perspectives(mock_dependencies)
 
         # 2 perspectives connues, sous le seuil par défaut → LLM non appelé.
+        assert subject.coverage_count == 3
         assert subject.perspective_count == 2
         mock_dependencies["perspective"].analyze_divergences.assert_not_awaited()
         # divergence_level toujours rempli par le fallback déterministe.
@@ -817,6 +896,7 @@ class TestPerspectiveCountAlignment:
             subject = await self._run_with_few_perspectives(mock_dependencies)
 
         assert subject.perspective_count == 2
+        assert subject.coverage_count == 3
         mock_dependencies["perspective"].analyze_divergences.assert_awaited()
 
     @pytest.mark.asyncio
@@ -916,8 +996,10 @@ class TestPerspectiveCountAlignment:
         assert result is not None
         subject = result.subjects[0]
 
-        # Safety net: count reflects the 2 cluster outlets, not 0.
-        assert subject.perspective_count == 2
+        # Coverage includes both outlets; the legacy counter contains the one
+        # alternative to the currently selected pivot.
+        assert subject.coverage_count == 2
+        assert subject.perspective_count == 1
         # No known bias → distribution all zero (spectrum bar hidden mobile-side).
         assert subject.bias_distribution == {
             "left": 0,
@@ -931,10 +1013,12 @@ class TestPerspectiveCountAlignment:
         # /contents/{id}/perspectives can return them instead of bailing
         # to the live path.
         assert subject.perspective_articles is not None
-        assert len(subject.perspective_articles) == 2
-        # Footer logos — one per outlet, matching the count.
+        assert len(subject.perspective_articles) == 1
+        assert len(subject.coverage_articles) == 2
+        # Legacy preview excludes the pivot; the coverage snapshot does not.
         assert subject.perspective_sources is not None
-        assert len(subject.perspective_sources) == 2
+        assert len(subject.perspective_sources) == 1
+        assert len(subject.coverage_sources) == 2
 
 
 # ============================================================================
@@ -1230,15 +1314,11 @@ class TestLLMBiasAnnotationStep:
         v1 = _make_content_mock("A")
         v2 = _make_content_mock("B")
         v3 = _make_content_mock("C (best)")
-        cluster = _make_cluster_mock(
-            str(uuid4()), "C (best)", contents=[v1, v2, v3]
-        )
+        cluster = _make_cluster_mock(str(uuid4()), "C (best)", contents=[v1, v2, v3])
 
         # Cache contient déjà toutes les annotations attendues (v1, v2 ; v3 self-ref).
         cached = {v1.id: {"target_spans": []}, v2.id: {"target_spans": []}}
-        mock_llm_service, mock_title_service = self._mock_llm_bias_module(
-            cached=cached
-        )
+        mock_llm_service, mock_title_service = self._mock_llm_bias_module(cached=cached)
 
         session_cm = AsyncMock()
         session_cm.__aenter__.return_value = AsyncMock()
@@ -1271,9 +1351,7 @@ class TestLLMBiasAnnotationStep:
         v1 = _make_content_mock("A")
         v2 = _make_content_mock("B")
         v3 = _make_content_mock("C (best)")
-        cluster = _make_cluster_mock(
-            str(uuid4()), "C (best)", contents=[v1, v2, v3]
-        )
+        cluster = _make_cluster_mock(str(uuid4()), "C (best)", contents=[v1, v2, v3])
 
         # PR 3 filtre strict : signature qui ne match pas → get_llm_annotations
         # retourne {} → on doit re-déclencher le LLM pour les 2 variants non self-ref.
@@ -1357,6 +1435,7 @@ class TestPersistContentClusterIds:
     @pytest.mark.asyncio
     async def test_writes_cluster_id_for_each_content(self, db_session):
         from datetime import UTC, datetime
+
         from sqlalchemy import select as sa_select
 
         from app.models.content import Content
@@ -1422,6 +1501,7 @@ class TestPersistContentClusterIds:
     @pytest.mark.asyncio
     async def test_idempotent_when_pairs_unchanged(self, db_session):
         from datetime import UTC, datetime
+
         from sqlalchemy import select as sa_select
 
         from app.models.content import Content

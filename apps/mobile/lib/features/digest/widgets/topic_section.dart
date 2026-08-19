@@ -606,11 +606,12 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     String? timeAgo,
     DigestItem singleton,
   ) {
-    // Use perspectiveSources if available, fallback to article sources.
+    // Use the complete coverage snapshot when available, fallback to legacy
+    // perspective sources and finally to the rendered article sources.
     final List<({String? id, String name, String? logoUrl})> allSources;
-    if (topic.perspectiveSources.isNotEmpty) {
+    if (topic.effectiveCoverageSources.isNotEmpty) {
       final seen = <String>{};
-      allSources = topic.perspectiveSources
+      allSources = topic.effectiveCoverageSources
           .where((s) => seen.add(s.name))
           .map((s) => (id: s.id, name: s.name, logoUrl: s.logoUrl))
           .toList();
@@ -790,8 +791,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   biasDistribution: topic.biasDistribution,
                   divergenceLevel: topic.divergenceLevel,
                   onCompare: _handleCompare,
-                  perspectiveCount: topic.perspectiveCount,
-                  perspectiveSources: topic.perspectiveSources,
+                  perspectiveCount: topic.coverageCount,
+                  perspectiveSources: topic.effectiveCoverageSources,
                   excludeSourceId: visibleArticle.source?.id,
                   excludeSourceName: visibleArticle.source?.name,
                 ),
@@ -898,6 +899,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   reliabilityScore: p.reliabilityScore,
                 ))
             .toList(),
+        coverageCount: response.coverageCount,
         biasDistribution: response.biasDistribution,
         keywords: response.keywords,
         sourceBiasStance: response.sourceBiasStance,
@@ -924,8 +926,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final labelColor =
         isDark ? const Color(0x80FFFFFF) : const Color(0x802C1E10);
     final dotColor = isDark ? const Color(0x33FFFFFF) : const Color(0x332C1E10);
-    final isSingleton = topic.articles.length == 1;
-
     // Editorial mode: rank + badge + theme chip
     if (widget.editorialMode) {
       final mainBadge =
@@ -1031,23 +1031,20 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             ],
           ),
 
-          // Row 2: Badges — skip for singletons
-          if (!isSingleton &&
-              (topic.isTrending ||
-                  (topic.isUne && topic.sourceCount >= 2))) ...[
+          // Row 2: le sujet peut rendre une seule carte tout en étant couvert
+          // par plusieurs médias consultables dans le reader.
+          if (topic.coverageCount >= 2) ...[
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
               children: [
-                if (topic.isTrending)
-                  _buildBadge(
-                    colors,
-                    isDark,
-                    icon: PhosphorIcons.trendUp(PhosphorIconsStyle.bold),
-                    label: 'Couvert par ${topic.sourceCount} sources',
-                  ),
-                if (topic.isUne && topic.sourceCount >= 2)
-                  ALaUneBadge(sourceCount: topic.sourceCount),
+                _buildBadge(
+                  colors,
+                  isDark,
+                  icon: PhosphorIcons.trendUp(PhosphorIconsStyle.bold),
+                  label: 'Couvert par ${topic.coverageCount} sources',
+                ),
+                if (topic.isUne) ALaUneBadge(sourceCount: topic.coverageCount),
               ],
             ),
           ],

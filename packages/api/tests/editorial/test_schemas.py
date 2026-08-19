@@ -173,14 +173,22 @@ class TestEditorialGlobalContext:
         )
         data = ctx.model_dump(mode="json")
         restored = EditorialGlobalContext.model_validate(data)
-        assert restored.subjects[0].actu_article.title == ctx.subjects[0].actu_article.title
+        assert (
+            restored.subjects[0].actu_article.title
+            == ctx.subjects[0].actu_article.title
+        )
 
 
 class TestEditorialPipelineResult:
     def test_construct_valid(self):
         result = EditorialPipelineResult(
             subjects=[_make_subject()],
-            metadata={"actu_hits": 3, "deep_hits": 2, "total_subjects": 3, "matching_ms": 42.5},
+            metadata={
+                "actu_hits": 3,
+                "deep_hits": 2,
+                "total_subjects": 3,
+                "matching_ms": 42.5,
+            },
         )
         assert result.metadata["actu_hits"] == 3
         assert len(result.subjects) == 1
@@ -241,6 +249,9 @@ class TestEditorialSubjectPerspectiveFields:
 
     def test_defaults_without_perspective_fields(self):
         subject = _make_subject()
+        assert subject.coverage_count == 0
+        assert subject.coverage_articles is None
+        assert subject.coverage_sources is None
         assert subject.perspective_count == 0
         assert subject.bias_distribution is None
         assert subject.bias_highlights is None
@@ -248,11 +259,25 @@ class TestEditorialSubjectPerspectiveFields:
 
     def test_with_perspective_fields(self):
         subject = _make_subject(
+            coverage_count=8,
+            coverage_articles=[
+                {"content_id": str(uuid4()), "source_domain": "pivot.fr"}
+            ],
+            coverage_sources=[{"name": "Pivot", "domain": "pivot.fr"}],
             perspective_count=7,
-            bias_distribution={"left": 2, "center-left": 1, "center": 2, "center-right": 1, "right": 1},
+            bias_distribution={
+                "left": 2,
+                "center-left": 1,
+                "center": 2,
+                "center-right": 1,
+                "right": 1,
+            },
             bias_highlights="Couverture équilibrée",
             divergence_analysis="Les médias divergent sur l'impact économique.",
         )
+        assert subject.coverage_count == 8
+        assert subject.coverage_articles[0]["source_domain"] == "pivot.fr"
+        assert subject.coverage_sources[0]["name"] == "Pivot"
         assert subject.perspective_count == 7
         assert subject.bias_distribution["left"] == 2
         assert subject.bias_highlights == "Couverture équilibrée"
@@ -260,13 +285,25 @@ class TestEditorialSubjectPerspectiveFields:
 
     def test_json_roundtrip_with_perspective_fields(self):
         subject = _make_subject(
+            coverage_count=6,
+            coverage_articles=[{"source_domain": "pivot.fr"}],
+            coverage_sources=[{"name": "Pivot", "domain": "pivot.fr"}],
             perspective_count=5,
-            bias_distribution={"left": 1, "center-left": 0, "center": 3, "center-right": 0, "right": 1},
+            bias_distribution={
+                "left": 1,
+                "center-left": 0,
+                "center": 3,
+                "center-right": 0,
+                "right": 1,
+            },
             bias_highlights="Couverture équilibrée",
             divergence_analysis="Analyse des divergences.",
         )
         data = subject.model_dump(mode="json")
         restored = EditorialSubject.model_validate(data)
+        assert restored.coverage_count == 6
+        assert restored.coverage_articles == subject.coverage_articles
+        assert restored.coverage_sources == subject.coverage_sources
         assert restored.perspective_count == 5
         assert restored.bias_distribution == subject.bias_distribution
         assert restored.bias_highlights == "Couverture équilibrée"
@@ -282,6 +319,9 @@ class TestEditorialSubjectPerspectiveFields:
             "deep_angle": "Analysis",
         }
         subject = EditorialSubject.model_validate(old_json)
+        assert subject.coverage_count == 0
+        assert subject.coverage_articles is None
+        assert subject.coverage_sources is None
         assert subject.perspective_count == 0
         assert subject.bias_distribution is None
         assert subject.bias_highlights is None
@@ -346,6 +386,8 @@ class TestDigestTopicBackwardCompat:
             "articles": [],
         }
         topic = DigestTopic.model_validate(old_topic)
+        assert topic.coverage_count == 0
+        assert topic.coverage_sources == []
         assert topic.perspective_count == 0
         assert topic.bias_distribution is None
         assert topic.bias_highlights is None
@@ -357,13 +399,26 @@ class TestDigestTopicBackwardCompat:
             "label": "New topic",
             "rank": 1,
             "reason": "Selected",
+            "coverage_count": 9,
+            "coverage_sources": [
+                {"name": "Pivot", "domain": "pivot.fr"},
+                {"name": "Other", "domain": "other.fr"},
+            ],
             "perspective_count": 8,
-            "bias_distribution": {"left": 2, "center-left": 1, "center": 3, "center-right": 1, "right": 1},
+            "bias_distribution": {
+                "left": 2,
+                "center-left": 1,
+                "center": 3,
+                "center-right": 1,
+                "right": 1,
+            },
             "bias_highlights": "Couverture équilibrée",
             "divergence_analysis": "Les médias divergent.",
             "articles": [],
         }
         topic = DigestTopic.model_validate(new_topic)
+        assert topic.coverage_count == 9
+        assert len(topic.coverage_sources) == 2
         assert topic.perspective_count == 8
         assert topic.bias_distribution["left"] == 2
         assert topic.divergence_analysis == "Les médias divergent."

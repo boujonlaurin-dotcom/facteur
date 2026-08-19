@@ -107,6 +107,10 @@ class DigestTopic with _$DigestTopic {
     @JsonKey(name: 'intro_text') String? introText,
     @JsonKey(name: 'transition_text') String? transitionText,
     @JsonKey(name: 'perspective_count') @Default(0) int perspectiveCount,
+    @JsonKey(name: 'coverage_count') @Default(0) int coverageCountValue,
+    @JsonKey(name: 'coverage_sources')
+    @Default([])
+    List<SourceMini> coverageSources,
     @JsonKey(name: 'bias_distribution') Map<String, int>? biasDistribution,
     @JsonKey(name: 'bias_highlights') String? biasHighlights,
     @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
@@ -119,13 +123,14 @@ class DigestTopic with _$DigestTopic {
   bool get isCovered =>
       articles.any((a) => a.isRead || a.isSaved || a.isDismissed);
 
-  /// Nombre de sources à afficher sur la carte : le plus grand entre le
-  /// compteur de ranking [sourceCount] (clustering en RAM au digest, plancher
-  /// à 2, jamais réactualisé) et [perspectiveCount] (cluster + Google News
-  /// persisté, = ce que montre le reader). `max` ne régresse jamais sous
-  /// l'affichage actuel. Bug « couverture carte » (voir bug doc).
+  /// Vérité publique de couverture, média courant inclus. Un cache antérieur
+  /// à `coverage_count` retombe exclusivement sur alternatives + pivot ; le
+  /// signal de ranking [sourceCount] ne pilote plus aucune copy visible.
   int get coverageCount =>
-      sourceCount > perspectiveCount ? sourceCount : perspectiveCount;
+      coverageCountValue > 0 ? coverageCountValue : perspectiveCount + 1;
+
+  List<SourceMini> get effectiveCoverageSources =>
+      coverageSources.isNotEmpty ? coverageSources : perspectiveSources;
 
   factory DigestTopic.fromJson(Map<String, dynamic> json) =>
       _$DigestTopicFromJson(json);

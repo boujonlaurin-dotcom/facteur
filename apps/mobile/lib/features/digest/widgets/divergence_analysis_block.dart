@@ -188,7 +188,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                         .withOpacity(0.5),
                   ),
                 ),
-                // CTA — pill discrète "Voir les N perspectives [logo×3]".
+                // CTA — total de médias, pivot inclus, puis logos preview.
                 // Style volontairement effacé : couleur tertiaire, bord
                 // léger, taille compacte. Le focus visuel reste sur la
                 // barre de biais ; le bouton complète sans s'imposer.
@@ -216,7 +216,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              'Voir les ${widget.perspectiveCount} perspectives',
+                              'Voir les ${widget.perspectiveCount} médias au total',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w500,
@@ -296,7 +296,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
   }
 
   /// Inline colored line for the divergence level, replacing the former
-  /// `DivergenceChip` pill. Format: "[icon] {label} · N sources".
+  /// `DivergenceChip` pill. Format: "[icon] {label} · N médias au total".
   Widget _buildDivergenceLine(FacteurColors colors) {
     final (IconData icon, String label, Color color) =
         switch (widget.divergenceLevel!) {
@@ -313,7 +313,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
         ),
     };
     final sources = widget.perspectiveCount > 0
-        ? ' · ${widget.perspectiveCount} sources'
+        ? ' · ${widget.perspectiveCount} médias au total'
         : '';
     return Row(
       children: [

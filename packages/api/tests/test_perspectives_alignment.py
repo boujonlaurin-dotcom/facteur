@@ -15,7 +15,10 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.models.daily_digest import DailyDigest
-from app.routers.contents import _load_stored_perspectives_for_representative
+from app.routers.contents import (
+    _load_stored_perspectives_for_representative,
+    _snapshot_alternatives_for_domain,
+)
 
 
 def _make_digest(subjects: list[dict]) -> DailyDigest:
@@ -37,6 +40,7 @@ def _make_subject(
     perspective_count: int = 5,
     *,
     omit_snapshot: bool = False,
+    coverage_ids: list[UUID] | None = None,
 ) -> dict:
     """Build a subject dict matching the pipeline persistence shape."""
     snapshot = [
@@ -51,7 +55,7 @@ def _make_subject(
         }
         for i in range(perspective_count)
     ]
-    return {
+    subject = {
         "topic_id": "topic-1",
         "representative_content_id": str(representative_id),
         "actu_article": {"content_id": str(actu_id)},
@@ -67,6 +71,22 @@ def _make_subject(
         },
         "perspective_count": perspective_count,
     }
+    if coverage_ids is not None:
+        subject["coverage_count"] = len(coverage_ids)
+        subject["coverage_articles"] = [
+            {
+                "content_id": str(content_id),
+                "title": f"Coverage {index}",
+                "url": f"https://coverage-{index}.example/story",
+                "source_name": f"Coverage {index}",
+                "source_domain": f"coverage-{index}.example",
+                "bias_stance": "unknown" if index else "center",
+                "published_at": None,
+                "description": None,
+            }
+            for index, content_id in enumerate(coverage_ids)
+        ]
+    return subject
 
 
 def _mock_db_returning(digest: DailyDigest) -> AsyncMock:
@@ -94,10 +114,11 @@ async def test_fast_path_matches_representative():
     )
 
     assert result is not None
-    perspectives, bias, divergence_level = result
-    assert len(perspectives) == 5
-    assert bias["center"] == 5
-    assert divergence_level is None
+    assert len(result.articles) == 5
+    assert result.coverage_count == 6
+    assert result.includes_pivot is False
+    assert result.bias_distribution["center"] == 5
+    assert result.divergence_level is None
 
 
 @pytest.mark.asyncio
@@ -113,7 +134,7 @@ async def test_fast_path_matches_actu():
         db=db, content_id=actu, user_id=digest.user_id
     )
     assert result is not None
-    assert len(result[0]) == 5
+    assert len(result.articles) == 5
 
 
 @pytest.mark.asyncio
@@ -130,7 +151,7 @@ async def test_fast_path_matches_extra_actu():
         db=db, content_id=extra, user_id=digest.user_id
     )
     assert result is not None
-    assert len(result[0]) == 4
+    assert len(result.articles) == 4
 
 
 @pytest.mark.asyncio
@@ -149,9 +170,8 @@ async def test_fast_path_matches_deep_article():
         db=db, content_id=deep, user_id=digest.user_id
     )
     assert result is not None
-    perspectives, bias, _ = result
-    assert len(perspectives) == 5
-    assert bias["center"] == 5
+    assert len(result.articles) == 5
+    assert result.bias_distribution["center"] == 5
 
 
 @pytest.mark.asyncio
@@ -173,11 +193,61 @@ async def test_fast_path_all_five_ids_return_same_snapshot():
             db=db, content_id=cid, user_id=digest.user_id
         )
         assert result is not None, f"content_id {cid} should hit fast path"
-        snapshots.append(result[0])
+        snapshots.append(result.articles)
 
     # Toutes les listes doivent être identiques (même nombre, mêmes urls).
     urls = [tuple(p["url"] for p in s) for s in snapshots]
     assert len(set(urls)) == 1, "All matched IDs must return the same snapshot"
+
+
+@pytest.mark.asyncio
+async def test_complete_coverage_snapshot_matches_every_member_id():
+    """Every internal article in a coverage universe resolves to the same N."""
+    representative = uuid4()
+    actu = uuid4()
+    extras = [uuid4(), uuid4()]
+    deep = uuid4()
+    coverage_ids = [representative, actu, *extras, deep]
+    subject = _make_subject(
+        representative,
+        actu,
+        extras,
+        deep,
+        perspective_count=1,
+        coverage_ids=coverage_ids,
+    )
+    digest = _make_digest([subject])
+
+    for content_id in coverage_ids:
+        result = await _load_stored_perspectives_for_representative(
+            db=_mock_db_returning(digest),
+            content_id=content_id,
+            user_id=digest.user_id,
+        )
+        assert result is not None
+        assert result.coverage_count == 5
+        assert result.includes_pivot is True
+        assert len(result.articles) == 5
+
+
+def test_each_of_fourteen_domains_gets_exactly_thirteen_alternatives():
+    coverage = [
+        {
+            "source_domain": f"media-{index}.example",
+            "url": f"https://media-{index}.example/story",
+            "bias_stance": "center" if index == 0 else "unknown",
+        }
+        for index in range(14)
+    ]
+
+    for index in range(14):
+        current = f"https://www.media-{index}.example/another-article"
+        alternatives = _snapshot_alternatives_for_domain(coverage, current)
+        assert len(alternatives) == 13
+        assert all(
+            article["source_domain"] != f"media-{index}.example"
+            for article in alternatives
+        )
 
 
 @pytest.mark.asyncio
@@ -199,8 +269,7 @@ async def test_fast_path_returns_empty_when_snapshot_missing():
     )
 
     assert result is not None, "must NOT fall back to live path"
-    perspectives, _, _ = result
-    assert perspectives == []
+    assert result.articles == []
 
 
 @pytest.mark.asyncio

@@ -1425,6 +1425,10 @@ mixin _$DigestTopic {
   String? get transitionText => throw _privateConstructorUsedError;
   @JsonKey(name: 'perspective_count')
   int get perspectiveCount => throw _privateConstructorUsedError;
+  @JsonKey(name: 'coverage_count')
+  int get coverageCountValue => throw _privateConstructorUsedError;
+  @JsonKey(name: 'coverage_sources')
+  List<SourceMini> get coverageSources => throw _privateConstructorUsedError;
   @JsonKey(name: 'bias_distribution')
   Map<String, int>? get biasDistribution => throw _privateConstructorUsedError;
   @JsonKey(name: 'bias_highlights')
@@ -1465,6 +1469,8 @@ abstract class $DigestTopicCopyWith<$Res> {
       @JsonKey(name: 'intro_text') String? introText,
       @JsonKey(name: 'transition_text') String? transitionText,
       @JsonKey(name: 'perspective_count') int perspectiveCount,
+      @JsonKey(name: 'coverage_count') int coverageCountValue,
+      @JsonKey(name: 'coverage_sources') List<SourceMini> coverageSources,
       @JsonKey(name: 'bias_distribution') Map<String, int>? biasDistribution,
       @JsonKey(name: 'bias_highlights') String? biasHighlights,
       @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
@@ -1501,6 +1507,8 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
     Object? introText = freezed,
     Object? transitionText = freezed,
     Object? perspectiveCount = null,
+    Object? coverageCountValue = null,
+    Object? coverageSources = null,
     Object? biasDistribution = freezed,
     Object? biasHighlights = freezed,
     Object? divergenceAnalysis = freezed,
@@ -1565,6 +1573,14 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
           ? _value.perspectiveCount
           : perspectiveCount // ignore: cast_nullable_to_non_nullable
               as int,
+      coverageCountValue: null == coverageCountValue
+          ? _value.coverageCountValue
+          : coverageCountValue // ignore: cast_nullable_to_non_nullable
+              as int,
+      coverageSources: null == coverageSources
+          ? _value.coverageSources
+          : coverageSources // ignore: cast_nullable_to_non_nullable
+              as List<SourceMini>,
       biasDistribution: freezed == biasDistribution
           ? _value.biasDistribution
           : biasDistribution // ignore: cast_nullable_to_non_nullable
@@ -1616,6 +1632,8 @@ abstract class _$$DigestTopicImplCopyWith<$Res>
       @JsonKey(name: 'intro_text') String? introText,
       @JsonKey(name: 'transition_text') String? transitionText,
       @JsonKey(name: 'perspective_count') int perspectiveCount,
+      @JsonKey(name: 'coverage_count') int coverageCountValue,
+      @JsonKey(name: 'coverage_sources') List<SourceMini> coverageSources,
       @JsonKey(name: 'bias_distribution') Map<String, int>? biasDistribution,
       @JsonKey(name: 'bias_highlights') String? biasHighlights,
       @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
@@ -1650,6 +1668,8 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
     Object? introText = freezed,
     Object? transitionText = freezed,
     Object? perspectiveCount = null,
+    Object? coverageCountValue = null,
+    Object? coverageSources = null,
     Object? biasDistribution = freezed,
     Object? biasHighlights = freezed,
     Object? divergenceAnalysis = freezed,
@@ -1714,6 +1734,14 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
           ? _value.perspectiveCount
           : perspectiveCount // ignore: cast_nullable_to_non_nullable
               as int,
+      coverageCountValue: null == coverageCountValue
+          ? _value.coverageCountValue
+          : coverageCountValue // ignore: cast_nullable_to_non_nullable
+              as int,
+      coverageSources: null == coverageSources
+          ? _value._coverageSources
+          : coverageSources // ignore: cast_nullable_to_non_nullable
+              as List<SourceMini>,
       biasDistribution: freezed == biasDistribution
           ? _value._biasDistribution
           : biasDistribution // ignore: cast_nullable_to_non_nullable
@@ -1760,6 +1788,9 @@ class _$DigestTopicImpl extends _DigestTopic {
       @JsonKey(name: 'intro_text') this.introText,
       @JsonKey(name: 'transition_text') this.transitionText,
       @JsonKey(name: 'perspective_count') this.perspectiveCount = 0,
+      @JsonKey(name: 'coverage_count') this.coverageCountValue = 0,
+      @JsonKey(name: 'coverage_sources')
+      final List<SourceMini> coverageSources = const [],
       @JsonKey(name: 'bias_distribution')
       final Map<String, int>? biasDistribution,
       @JsonKey(name: 'bias_highlights') this.biasHighlights,
@@ -1770,6 +1801,7 @@ class _$DigestTopicImpl extends _DigestTopic {
       @JsonKey(name: 'representative_content_id') this.representativeContentId})
       : _subjects = subjects,
         _articles = articles,
+        _coverageSources = coverageSources,
         _biasDistribution = biasDistribution,
         _perspectiveSources = perspectiveSources,
         super._();
@@ -1829,6 +1861,18 @@ class _$DigestTopicImpl extends _DigestTopic {
   @override
   @JsonKey(name: 'perspective_count')
   final int perspectiveCount;
+  @override
+  @JsonKey(name: 'coverage_count')
+  final int coverageCountValue;
+  final List<SourceMini> _coverageSources;
+  @override
+  @JsonKey(name: 'coverage_sources')
+  List<SourceMini> get coverageSources {
+    if (_coverageSources is EqualUnmodifiableListView) return _coverageSources;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_coverageSources);
+  }
+
   final Map<String, int>? _biasDistribution;
   @override
   @JsonKey(name: 'bias_distribution')
@@ -1865,7 +1909,7 @@ class _$DigestTopicImpl extends _DigestTopic {
 
   @override
   String toString() {
-    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, sourceCount: $sourceCount, theme: $theme, topicScore: $topicScore, subjects: $subjects, articles: $articles, introText: $introText, transitionText: $transitionText, perspectiveCount: $perspectiveCount, biasDistribution: $biasDistribution, biasHighlights: $biasHighlights, divergenceAnalysis: $divergenceAnalysis, perspectiveSources: $perspectiveSources, divergenceLevel: $divergenceLevel, representativeContentId: $representativeContentId)';
+    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, sourceCount: $sourceCount, theme: $theme, topicScore: $topicScore, subjects: $subjects, articles: $articles, introText: $introText, transitionText: $transitionText, perspectiveCount: $perspectiveCount, coverageCountValue: $coverageCountValue, coverageSources: $coverageSources, biasDistribution: $biasDistribution, biasHighlights: $biasHighlights, divergenceAnalysis: $divergenceAnalysis, perspectiveSources: $perspectiveSources, divergenceLevel: $divergenceLevel, representativeContentId: $representativeContentId)';
   }
 
   @override
@@ -1893,6 +1937,10 @@ class _$DigestTopicImpl extends _DigestTopic {
                 other.transitionText == transitionText) &&
             (identical(other.perspectiveCount, perspectiveCount) ||
                 other.perspectiveCount == perspectiveCount) &&
+            (identical(other.coverageCountValue, coverageCountValue) ||
+                other.coverageCountValue == coverageCountValue) &&
+            const DeepCollectionEquality()
+                .equals(other._coverageSources, _coverageSources) &&
             const DeepCollectionEquality()
                 .equals(other._biasDistribution, _biasDistribution) &&
             (identical(other.biasHighlights, biasHighlights) ||
@@ -1926,6 +1974,8 @@ class _$DigestTopicImpl extends _DigestTopic {
         introText,
         transitionText,
         perspectiveCount,
+        coverageCountValue,
+        const DeepCollectionEquality().hash(_coverageSources),
         const DeepCollectionEquality().hash(_biasDistribution),
         biasHighlights,
         divergenceAnalysis,
@@ -1964,6 +2014,8 @@ abstract class _DigestTopic extends DigestTopic {
       @JsonKey(name: 'intro_text') final String? introText,
       @JsonKey(name: 'transition_text') final String? transitionText,
       @JsonKey(name: 'perspective_count') final int perspectiveCount,
+      @JsonKey(name: 'coverage_count') final int coverageCountValue,
+      @JsonKey(name: 'coverage_sources') final List<SourceMini> coverageSources,
       @JsonKey(name: 'bias_distribution')
       final Map<String, int>? biasDistribution,
       @JsonKey(name: 'bias_highlights') final String? biasHighlights,
@@ -2014,6 +2066,12 @@ abstract class _DigestTopic extends DigestTopic {
   @override
   @JsonKey(name: 'perspective_count')
   int get perspectiveCount;
+  @override
+  @JsonKey(name: 'coverage_count')
+  int get coverageCountValue;
+  @override
+  @JsonKey(name: 'coverage_sources')
+  List<SourceMini> get coverageSources;
   @override
   @JsonKey(name: 'bias_distribution')
   Map<String, int>? get biasDistribution;

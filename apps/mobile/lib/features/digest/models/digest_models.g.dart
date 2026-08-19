@@ -150,6 +150,11 @@ _$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
       introText: json['intro_text'] as String?,
       transitionText: json['transition_text'] as String?,
       perspectiveCount: (json['perspective_count'] as num?)?.toInt() ?? 0,
+      coverageCountValue: (json['coverage_count'] as num?)?.toInt() ?? 0,
+      coverageSources: (json['coverage_sources'] as List<dynamic>?)
+              ?.map((e) => SourceMini.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
       biasDistribution:
           (json['bias_distribution'] as Map<String, dynamic>?)?.map(
         (k, e) => MapEntry(k, (e as num).toInt()),
@@ -180,6 +185,8 @@ Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
       'intro_text': instance.introText,
       'transition_text': instance.transitionText,
       'perspective_count': instance.perspectiveCount,
+      'coverage_count': instance.coverageCountValue,
+      'coverage_sources': instance.coverageSources,
       'bias_distribution': instance.biasDistribution,
       'bias_highlights': instance.biasHighlights,
       'divergence_analysis': instance.divergenceAnalysis,

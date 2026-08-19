@@ -1066,6 +1066,9 @@ class DeepRecommendation {
 /// Response from perspectives API
 class PerspectivesResponse {
   final List<PerspectiveData> perspectives;
+
+  /// Nombre total de médias couvrant le sujet, média lu inclus.
+  final int coverageCount;
   final List<String> keywords;
   final Map<String, int> biasDistribution;
   final String sourceBiasStance;
@@ -1094,6 +1097,7 @@ class PerspectivesResponse {
     required this.perspectives,
     required this.keywords,
     required this.biasDistribution,
+    this.coverageCount = 0,
     this.sourceBiasStance = 'unknown',
     this.comparisonQuality = 'low',
     this.shouldDisplay = false,
@@ -1129,6 +1133,9 @@ class PerspectivesResponse {
 
     return PerspectivesResponse(
       perspectives: perspectivesList,
+      coverageCount:
+          (json['coverage_count'] as num?)?.toInt() ??
+          perspectivesList.length + 1,
       keywords: keywordsList,
       biasDistribution: biasMap,
       sourceBiasStance: (json['source_bias_stance'] as String?) ?? 'unknown',

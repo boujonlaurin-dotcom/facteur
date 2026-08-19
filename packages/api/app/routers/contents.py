@@ -1,5 +1,6 @@
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
@@ -24,6 +25,7 @@ from app.schemas.content import (
 from app.services.collection_service import CollectionService
 from app.services.content_service import ContentService
 from app.services.feed_cache import FEED_CACHE
+from app.services.perspective_service import normalize_domain, perspective_to_dict
 from app.services.title_annotation_service import (
     ClusterAnnotations,
     TitleAnnotationService,
@@ -519,41 +521,24 @@ def _empty_timings() -> dict[str, int]:
     )
 
 
-def _perspective_to_dict(p: object) -> dict:
-    return {
-        "title": p.title,
-        "url": p.url,
-        "source_name": p.source_name,
-        "source_domain": p.source_domain,
-        "bias_stance": p.bias_stance,
-        "published_at": p.published_at,
-        "description": p.description,
-        "reliability_score": getattr(p, "reliability_score", None),
-        "language": getattr(p, "language", None),
-    }
-
-
-def _normalize_url_for_match(raw: str | None) -> str:
-    """Normalize a URL for equality matching across sources.
-
-    Strips scheme, www. prefix, trailing slash, and lowercases the host. The
-    path is kept verbatim (after rstrip "/") so two URLs differing only in
-    scheme/www/trailing-slash collapse to the same key — sufficient to detect
-    the reference article inside a perspectives list without an exact match.
-    """
-    if not raw:
+def _snapshot_article_domain(article: dict) -> str:
+    if not isinstance(article, dict):
         return ""
-    from urllib.parse import urlparse
+    return normalize_domain(article.get("source_domain") or article.get("url"))
 
-    try:
-        u = urlparse(raw.strip())
-        host = (u.netloc or "").lower()
-        if host.startswith("www."):
-            host = host[4:]
-        path = (u.path or "").rstrip("/")
-        return f"{host}{path}"
-    except Exception:
-        return raw.strip().lower()
+
+def _snapshot_alternatives_for_domain(
+    coverage_articles: list[dict], current_domain_or_url: str | None
+) -> list[dict]:
+    """Return every coverage outlet except the domain currently being read."""
+    current_domain = normalize_domain(current_domain_or_url)
+    if not current_domain:
+        return list(coverage_articles)
+    return [
+        article
+        for article in coverage_articles
+        if _snapshot_article_domain(article) != current_domain
+    ]
 
 
 def _recompute_bias_distribution(perspectives: list[dict]) -> dict[str, int]:
@@ -626,6 +611,7 @@ async def _load_cluster_articles_for_representative(
         for subject in items.get("subjects", []):
             actu = subject.get("actu_article")
             extras = subject.get("extra_actu_articles", []) or []
+            coverage_articles = subject.get("coverage_articles") or []
             subject_ids: set[str] = set()
             if actu and actu.get("content_id"):
                 subject_ids.add(actu["content_id"])
@@ -635,17 +621,22 @@ async def _load_cluster_articles_for_representative(
             rep = subject.get("representative_content_id")
             if rep:
                 subject_ids.add(rep)
+            coverage_ids = {
+                str(article.get("content_id"))
+                for article in coverage_articles
+                if isinstance(article, dict) and article.get("content_id")
+            }
+            subject_ids.update(coverage_ids)
             # The subject owns this content_id either because it's its
             # representative, or because it's one of the carousel articles.
             if target_str in subject_ids:
-                # Skip representative from the perspective pool if it's not
-                # also in actu/extras — keep only what the user actually
-                # sees in the carousel, so the cluster reflects the visible
-                # coverage.
-                match_ids = {
+                # Le snapshot récent porte tous les content_id internes ; les
+                # anciens digests retombent sur actu/extras/représentatif.
+                match_ids = coverage_ids or {
                     i
                     for i in subject_ids
                     if i == (actu.get("content_id") if actu else None)
+                    or i == rep
                     or any(i == e.get("content_id") for e in extras)
                 }
                 break
@@ -656,9 +647,7 @@ async def _load_cluster_articles_for_representative(
         return []
 
     try:
-        # Exclude the reference article itself — it must not show up as one
-        # of its own "alternative perspectives" in the bottom-sheet.
-        uuids = [UUID(i) for i in match_ids if i != target_str]
+        uuids = [UUID(i) for i in match_ids]
     except (ValueError, TypeError):
         logger.warning(
             "perspectives_cluster_invalid_uuid",
@@ -679,11 +668,20 @@ async def _load_cluster_articles_for_representative(
     return list(content_result.scalars().all())
 
 
+@dataclass(frozen=True)
+class _StoredCoverageSnapshot:
+    articles: list[dict]
+    bias_distribution: dict[str, int]
+    divergence_level: str | None
+    coverage_count: int
+    includes_pivot: bool
+
+
 async def _load_stored_perspectives_for_representative(
     db: AsyncSession,
     content_id: UUID,
     user_id: UUID,
-) -> tuple[list[dict], dict[str, int], str | None] | None:
+) -> _StoredCoverageSnapshot | None:
     """Return the perspective_articles list the pipeline persisted on the
     digest subject containing ``content_id``, plus its bias_distribution.
 
@@ -736,12 +734,36 @@ async def _load_stored_perspectives_for_representative(
             # si un jour ils le sont, ajouter ici.
             if deep.get("content_id"):
                 ids.add(deep["content_id"])
+            coverage_articles = subject.get("coverage_articles")
+            if isinstance(coverage_articles, list):
+                ids.update(
+                    str(article.get("content_id"))
+                    for article in coverage_articles
+                    if isinstance(article, dict) and article.get("content_id")
+                )
             if target_str in ids:
-                stored = subject.get("perspective_articles")
+                includes_pivot = coverage_articles is not None
+                stored = (
+                    coverage_articles
+                    if includes_pivot
+                    else subject.get("perspective_articles")
+                )
                 bias = subject.get("bias_distribution") or {}
                 divergence_level = subject.get("divergence_level")
                 if stored is not None:
-                    return list(stored), dict(bias), divergence_level
+                    fallback_count = int(subject.get("perspective_count", 0) or 0) + 1
+                    coverage_count = int(
+                        subject.get("coverage_count")
+                        if subject.get("coverage_count") is not None
+                        else fallback_count
+                    )
+                    return _StoredCoverageSnapshot(
+                        articles=list(stored),
+                        bias_distribution=dict(bias),
+                        divergence_level=divergence_level,
+                        coverage_count=coverage_count,
+                        includes_pivot=includes_pivot,
+                    )
                 # Subject trouvé dans un digest récent mais snapshot absent
                 # (legacy digest, ou bug pipeline). Pour préserver l'invariant
                 # "content_id du digest → toujours stored, jamais live",
@@ -753,7 +775,13 @@ async def _load_stored_perspectives_for_representative(
                     digest_id=str(digest.id),
                     subject_topic_id=subject.get("topic_id"),
                 )
-                return [], dict(bias), divergence_level
+                return _StoredCoverageSnapshot(
+                    articles=[],
+                    bias_distribution=dict(bias),
+                    divergence_level=divergence_level,
+                    coverage_count=int(subject.get("perspective_count", 0) or 0) + 1,
+                    includes_pivot=False,
+                )
     return None
 
 
@@ -875,20 +903,11 @@ async def _refresh_perspectives_cache_background(
             service = PerspectiveService(db=db)
 
             phase = time.perf_counter()
-            cluster_perspectives: list = []
-            cluster_domains: set[str] = set()
             cluster_contents = await _load_cluster_articles_for_representative(
                 db=db,
                 content_id=UUID(content_id),
                 user_id=UUID(user_id),
             )
-            if cluster_contents:
-                cluster_perspectives = await service.build_cluster_perspectives(
-                    cluster_contents
-                )
-                cluster_domains = {
-                    p.source_domain for p in cluster_perspectives if p.source_domain
-                }
             timings["cluster_internal_db"] = round((time.perf_counter() - phase) * 1000)
 
             phase = time.perf_counter()
@@ -898,26 +917,20 @@ async def _refresh_perspectives_cache_background(
             )
             timings["google_news"] = round((time.perf_counter() - phase) * 1000)
 
-            new_gnews = [
-                p
-                for p in gnews_perspectives
-                if p.source_domain and p.source_domain not in cluster_domains
-            ]
-            ref_url_key_live = _normalize_url_for_match(content.url)
-            merged = [
-                p
-                for p in (cluster_perspectives + new_gnews)
-                if not ref_url_key_live
-                or _normalize_url_for_match(getattr(p, "url", None)) != ref_url_key_live
-            ]
-            known_perspectives = [p for p in merged if p.bias_stance != "unknown"]
-            perspectives = (
-                cluster_perspectives
-                if not known_perspectives and cluster_perspectives
-                else known_perspectives
+            coverage_universe = await service.build_coverage_universe(
+                content,
+                [content, *cluster_contents],
+                gnews_perspectives,
             )
+            current_domain = normalize_domain(source_domain or content.url)
+            perspectives = [
+                p
+                for p in coverage_universe
+                if normalize_domain(p.source_domain) != current_domain
+            ]
+            coverage_count = len(coverage_universe)
 
-            perspectives_dicts_pre = [_perspective_to_dict(p) for p in perspectives]
+            perspectives_dicts_pre = [perspective_to_dict(p) for p in perspectives]
             bias_distribution = _recompute_bias_distribution(perspectives_dicts_pre)
             has_entities = bool(
                 _parse_entity_names(content.entities, types={"PERSON", "ORG"})
@@ -947,6 +960,7 @@ async def _refresh_perspectives_cache_background(
                 "keywords": keywords,
                 "source_bias_stance": source_bias_stance,
                 "perspectives": perspectives_dicts,
+                "coverage_count": coverage_count,
                 "bias_distribution": bias_distribution,
                 "comparison_quality": comparison_quality,
                 "should_display": should_display,
@@ -966,6 +980,8 @@ async def _refresh_perspectives_cache_background(
                 "perspectives_background_refresh_complete",
                 content_id=content_id,
                 count=len(perspectives),
+                coverage_count=coverage_count,
+                invariant_ok=(coverage_count == len(perspectives) + 1),
                 bias_groups=bias_groups,
                 timings_ms=timings,
             )
@@ -1373,6 +1389,10 @@ async def get_perspectives(
     timings["cache"] = round((time.perf_counter() - phase) * 1000)
     if cached_response is not None:
         logger.info("perspectives_cache_hit", content_id=cache_key)
+        cached_response.setdefault(
+            "coverage_count",
+            len(cached_response.get("perspectives") or []) + 1,
+        )
         response.headers["X-Bias-Annotation-Source"] = _perspectives_source_cache.get(
             cache_key, "spacy"
         )
@@ -1451,24 +1471,17 @@ async def get_perspectives(
         )
 
     if stored is not None:
-        stored_perspectives, stored_bias, stored_divergence_level = stored
-        # Strip the reference article from the persisted snapshot — the
-        # pipeline doesn't pre-filter it, and the UI must not show the
-        # currently-open article as one of its alternative perspectives.
-        ref_url_key = _normalize_url_for_match(content.url)
-        if ref_url_key:
-            filtered = [
-                p
-                for p in stored_perspectives
-                if _normalize_url_for_match(
-                    p.get("url") if isinstance(p, dict) else None
-                )
-                != ref_url_key
-            ]
-            if len(filtered) != len(stored_perspectives):
-                stored_perspectives = filtered
-                stored_bias = _recompute_bias_distribution(stored_perspectives)
+        stored_perspectives = list(stored.articles)
+        stored_divergence_level = stored.divergence_level
+        # Retirer tout le domaine actuellement lu, pas seulement son URL. Le
+        # snapshot est dédupliqué par domaine : chaque article membre obtient
+        # ainsi exactement N-1 alternatives et le même total N.
+        stored_perspectives = _snapshot_alternatives_for_domain(
+            stored_perspectives, source_domain or content.url
+        )
+        stored_bias = _recompute_bias_distribution(stored_perspectives)
         count = len(stored_perspectives)
+        coverage_count = stored.coverage_count
         has_entities = bool(
             _parse_entity_names(content.entities, types={"PERSON", "ORG"})
         )
@@ -1504,6 +1517,7 @@ async def get_perspectives(
             "keywords": [],
             "source_bias_stance": source_bias_stance,
             "perspectives": stored_perspectives,
+            "coverage_count": coverage_count,
             "bias_distribution": stored_bias,
             "comparison_quality": comparison_quality,
             "should_display": should_display,
@@ -1522,6 +1536,9 @@ async def get_perspectives(
             content_id=cache_key,
             path="stored_snapshot",
             count=count,
+            coverage_count=coverage_count,
+            expected_alternatives=max(0, coverage_count - 1),
+            invariant_ok=(count == max(0, coverage_count - 1)),
             bias_groups=bias_groups,
             bias_sum=sum(stored_bias.values()),
         )
@@ -1530,8 +1547,7 @@ async def get_perspectives(
     # Live path (non-digest content_id, or stored snapshot missing).
     # Mirrors the editorial pipeline: include cluster's own sources so the
     # count converges back to the digest header on the next regeneration.
-    cluster_perspectives: list = []
-    cluster_domains: set[str] = set()
+    cluster_contents: list = []
     try:
         phase = time.perf_counter()
         cluster_contents = await _load_cluster_articles_for_representative(
@@ -1539,13 +1555,6 @@ async def get_perspectives(
             content_id=content_id,
             user_id=UUID(current_user_id),
         )
-        if cluster_contents:
-            cluster_perspectives = await service.build_cluster_perspectives(
-                cluster_contents
-            )
-            cluster_domains = {
-                p.source_domain for p in cluster_perspectives if p.source_domain
-            }
         timings["cluster_internal_db"] = round((time.perf_counter() - phase) * 1000)
     except Exception as e:
         logger.warning(
@@ -1556,46 +1565,30 @@ async def get_perspectives(
 
     internal_perspectives = await service.search_internal_perspectives(content)
     keywords = service.build_entity_query(content.entities, content.title)
-    quick_internal = [
+    coverage_universe = await service.build_coverage_universe(
+        content,
+        [content, *cluster_contents],
+        internal_perspectives,
+    )
+    current_domain = normalize_domain(source_domain or content.url)
+    perspectives = [
         p
-        for p in internal_perspectives
-        if p.source_domain
-        and p.source_domain not in cluster_domains
-        and p.source_domain != source_domain
+        for p in coverage_universe
+        if normalize_domain(p.source_domain) != current_domain
     ]
-
-    # Single source of truth for the 3 UI counters — mirror pipeline.py.
-    # Safety filter: drop any perspective whose URL matches the reference
-    # article (cluster query already filters by id, this guards against
-    # Google News surfacing the same canonical URL).
-    ref_url_key_live = _normalize_url_for_match(content.url)
-    merged = [
-        p
-        for p in (cluster_perspectives + quick_internal)
-        if not ref_url_key_live
-        or _normalize_url_for_match(getattr(p, "url", None)) != ref_url_key_live
-    ]
-    known_perspectives = [p for p in merged if p.bias_stance != "unknown"]
-
-    # Safety net (parity avec pipeline.py:494-510) : si aucune perspective
-    # n'a un bias connu, on retombe sur les sources du cluster pour ne pas
-    # sous-compter la couverture. La bias_distribution reste all-zero et
-    # la spectrum bar UI doit déjà gérer ce cas.
-    safety_net_triggered = False
-    if not known_perspectives and cluster_perspectives:
-        perspectives = cluster_perspectives
-        safety_net_triggered = True
-    else:
-        perspectives = known_perspectives
+    coverage_count = len(coverage_universe)
 
     logger.info(
         "perspectives_composition",
         content_id=cache_key,
         path="live_partial",
-        cluster_sources_count=len(cluster_perspectives),
-        internal_added=len(quick_internal),
-        known_bias=len(known_perspectives),
-        safety_net_triggered=safety_net_triggered,
+        cluster_candidates=len(cluster_contents),
+        internal_candidates=len(internal_perspectives),
+        coverage_count=coverage_count,
+        alternatives=len(perspectives),
+        known_bias=sum(1 for p in perspectives if p.bias_stance != "unknown"),
+        unknown_bias=sum(1 for p in perspectives if p.bias_stance == "unknown"),
+        invariant_ok=(coverage_count == len(perspectives) + 1),
     )
 
     # Calculate bias distribution (without "unknown")
@@ -1637,7 +1630,7 @@ async def get_perspectives(
     if cached_row:
         cached_analysis = cached_row.analysis_text
 
-    perspectives_dicts = [_perspective_to_dict(p) for p in perspectives]
+    perspectives_dicts = [perspective_to_dict(p) for p in perspectives]
     phase = time.perf_counter()
     reference_pivot, bias_source = await _attach_highlight_spans(
         db, content, perspectives_dicts
@@ -1651,6 +1644,7 @@ async def get_perspectives(
         "keywords": keywords,
         "source_bias_stance": source_bias_stance,
         "perspectives": perspectives_dicts,
+        "coverage_count": coverage_count,
         "bias_distribution": bias_distribution,
         "comparison_quality": comparison_quality,
         "should_display": should_display,

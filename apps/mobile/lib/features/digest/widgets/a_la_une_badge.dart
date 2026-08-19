@@ -3,7 +3,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 /// Badge « À LA UNE · N sources » réservé au sujet rang 1 multi-sources.
 ///
-/// Affiché uniquement quand l'API expose `is_une=true` ET `source_count >= 2`
+/// Affiché uniquement quand l'API expose `is_une=true` ET `coverage_count >= 2`
 /// (cf. logique côté `editorial/curation.py` : ≥2 sources convergentes pour
 /// décerner le badge À la Une — sinon le rang 1 est rendu comme un sujet
 /// ordinaire).

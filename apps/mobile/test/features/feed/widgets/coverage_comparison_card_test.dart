@@ -114,6 +114,44 @@ void main() {
     expect(find.text('GAUCHE'), findsOneWidget);
   });
 
+  testWidgets(
+      'biais unknown : ni point politique ni ?, mais métadonnées gardées', (
+    tester,
+  ) async {
+    final threeHoursAgo =
+        DateTime.now().subtract(const Duration(hours: 3)).toIso8601String();
+    await tester.pumpWidget(
+      _app(
+        _host(
+          _persp(
+            name: 'Source inconnue',
+            bias: 'unknown',
+            reliability: 'high',
+            publishedAt: threeHoursAgo,
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('Source inconnue'), findsOneWidget);
+    expect(find.text('?'), findsNothing);
+    expect(
+      find.byIcon(PhosphorIcons.checkCircle(PhosphorIconsStyle.fill)),
+      findsOneWidget,
+    );
+    expect(find.byIcon(clock), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Container &&
+            widget.constraints?.minWidth == 7 &&
+            widget.constraints?.minHeight == 7,
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('temps relatif rendu quand publishedAt présent', (tester) async {
     // Date relative à maintenant → "3 h" en fr_short (court, déterministe).
     final threeHoursAgo =
