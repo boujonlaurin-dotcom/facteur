@@ -896,7 +896,8 @@ void main() {
           ),
         ).thenAnswer(
           (_) async =>
-              _feedResponseWithIds(const ['a1', 'a2'], page: 1, hasNext: false),
+              _feedResponseWithIds(const ['a1', 'a2', 'a3'], page: 1,
+                  hasNext: false),
         );
 
         final container = makeContainer(
@@ -1261,7 +1262,10 @@ void main() {
         // untrimmed these are deduped OUT of the downstream section.
         final container = makeFitContainer(
           essentielIds: const ['e1', 'e2', 'e3', 'e4'],
-          themeFeedIds: const ['e3', 'e4', 'x1', 'x2'],
+          // x1..x3 : le thème garde 3 survivants uniques = le plancher
+          // d'affichage, donc ni backfill ni masquage ne brouillent ce que ce
+          // test observe (la seule dédup héros → section aval).
+          themeFeedIds: const ['e3', 'e4', 'x1', 'x2', 'x3'],
           usableHeight: 500,
         );
         addTearDown(container.dispose);
@@ -1274,7 +1278,7 @@ void main() {
 
         // (b) hero kept all 4 ⇒ dedup strips e3/e4 from the theme section.
         final theme = state.sections.whereType<FeedThemeSection>().single;
-        expect(theme.items.map((c) => c.id), ['x1', 'x2']);
+        expect(theme.items.map((c) => c.id), ['x1', 'x2', 'x3']);
       },
     );
 
@@ -1285,7 +1289,10 @@ void main() {
         SharedPreferences.setMockInitialValues(<String, Object>{});
         final container = makeFitContainer(
           essentielIds: const ['e1', 'e2', 'e3', 'e4'],
-          themeFeedIds: const ['e3', 'e4', 'x1', 'x2'],
+          // x1..x3 : le thème garde 3 survivants uniques = le plancher
+          // d'affichage, donc ni backfill ni masquage ne brouillent ce que ce
+          // test observe (la seule dédup héros → section aval).
+          themeFeedIds: const ['e3', 'e4', 'x1', 'x2', 'x3', 'x4', 'x5'],
           // usableHeight null ⇒ cap calculé sur kReferenceUsableHeight (640).
         );
         addTearDown(container.dispose);
@@ -1296,9 +1303,11 @@ void main() {
         expect(hero.articles.map((a) => a.contentId), ['e1', 'e2', 'e3', 'e4']);
         // Hero kept all 4 ⇒ dedup strips e3/e4 from the theme section.
         final theme = state.sections.whereType<FeedThemeSection>().single;
-        expect(theme.items.map((c) => c.id), ['x1', 'x2']);
-        // 2 items dispo, cap référence (Normal) ⇒ 2 (et non le nominal brut 3).
-        expect(theme.coreVisibleCount, 2);
+        expect(theme.items.map((c) => c.id), ['x1', 'x2', 'x3', 'x4', 'x5']);
+        // 5 items dispo : le cap ne vient donc pas d'une pénurie d'articles.
+        // Normal sur la référence 640 ⇒ 3 (cf. le test de mesure aberrante),
+        // pas le nominal mode-aveugle.
+        expect(theme.coreVisibleCount, 3);
       },
     );
 
@@ -1516,12 +1525,24 @@ void main() {
 
         // Le squelette ne porte AUCUN contenu (ni périmé ni frais).
         expect(renderedContentIds(firstData.sections), isEmpty);
-        // …mais il a la STRUCTURE dérivée des prefs : une coquille thème 'tech'.
-        final techShell = firstData.sections
+        // B2 (lot cold start) — le squelette initial n'initialise plus les
+        // providers de favoris « en douce » (`_peekValue`) : la STRUCTURE
+        // (coquille thème 'tech') n'apparaît plus dès la 1ʳᵉ peinture mais au
+        // seed de la Phase 1 — coquille vide d'abord, remplie par le fan-out.
+        final firstWithTech = captured
+            .whereType<AsyncData<FluxContinuState>>()
+            .map((s) => s.value)
+            .firstWhere(
+              (s) => s.sections
+                  .whereType<FeedThemeSection>()
+                  .any((sec) => sec.themeSlug == 'tech'),
+            );
+        final techShell = firstWithTech.sections
             .whereType<FeedThemeSection>()
             .where((s) => s.themeSlug == 'tech');
         expect(techShell, hasLength(1));
-        expect(techShell.single.items, isEmpty);
+        expect(techShell.single.items, isEmpty,
+            reason: 'coquille seedée avant le fan-out, jamais de contenu direct');
 
         // État final = vrai contenu, plus squelette.
         expect(finalState.isSkeleton, isFalse);

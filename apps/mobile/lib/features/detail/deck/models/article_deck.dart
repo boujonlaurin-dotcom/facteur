@@ -22,8 +22,9 @@ class ArticleDeckPayload {
     required this.initialIndex,
     required this.sectionKey,
     required this.sectionLabel,
-    this.showPositionIndicator = true,
+    this.nextSectionDeck,
     this.onArticleSettled,
+    this.onSectionAdvanced,
   });
 
   /// Articles de la section, dans l'ordre de lecture, dédupliqués par id.
@@ -38,12 +39,14 @@ class ArticleDeckPayload {
   /// Libellé lisible de la section — affiché dans l'affordance de retour.
   final String sectionLabel;
 
-  /// Rend la barre de progression du header segmentée (1 segment par article).
+  /// Deck de la **section suivante** de la Tournée, résolu à la demande
+  /// (Story 34.2), ou `null` quand il n'y a pas de suite.
   ///
-  /// `false` sur les surfaces à liste **ouverte** (Flâner) : un « 3/8 » y
-  /// mentirait, le feed n'a pas de fin connue. Le swipe y fonctionne quand même,
-  /// simplement sans promettre un nombre d'articles restants.
-  final bool showPositionIndicator;
+  /// Paresseux et récursif : le deck rendu porte lui-même son propre
+  /// `nextSectionDeck`, de sorte que la tournée entière s'enchaîne sans jamais
+  /// construire d'avance plus d'une section. `null` partout où la liste est
+  /// ouverte ou hors tournée (Flâner, pages section dédiées).
+  final ArticleDeckPayload? Function()? nextSectionDeck;
 
   /// Notifie la surface d'origine de l'article **validé** courant, à chaque
   /// changement de page.
@@ -59,9 +62,20 @@ class ArticleDeckPayload {
   /// deep link : l'`extra` perdu, le deck l'est aussi.
   final void Function(Content article)? onArticleSettled;
 
-  /// Un deck d'un seul article ne se navigue pas : la route rend alors le
-  /// reader nu, sans `PageView` (zéro changement pour les appelants existants).
-  bool get isNavigable => articles.length > 1;
+  /// Notifie la surface d'origine du passage à la section suivante.
+  ///
+  /// Même rôle que [onArticleSettled], d'un cran au-dessus : quitter le deck
+  /// après avoir déroulé cinq sections doit ramener sur la Tournée **à la
+  /// cinquième**, pas à celle d'où l'on était parti. La chaîne entière porte la
+  /// même fonction (cf. `tourneeArticleDeck`), donc l'appelant reçoit chaque
+  /// étape, quelle que soit sa profondeur.
+  final void Function(ArticleDeckPayload next)? onSectionAdvanced;
+
+  /// Un deck d'un seul article **sans suite** ne se navigue pas : la route rend
+  /// alors le reader nu, sans `PageView` (zéro changement pour les appelants
+  /// existants). Avec une section suivante, il reste un deck : c'est elle qui
+  /// porte la navigation.
+  bool get isNavigable => articles.length > 1 || nextSectionDeck != null;
 
   Content get initialArticle => articles[initialIndex];
 }
@@ -77,7 +91,6 @@ class ArticleDeckSlot {
     required this.index,
     required this.length,
     required this.isActive,
-    this.showSegments = false,
     this.webViewLock,
   });
 
@@ -87,13 +100,26 @@ class ArticleDeckSlot {
   /// Page réellement au premier plan (page validée du `PageView`).
   final bool isActive;
 
-  /// Barre de progression segmentée dans le header.
-  final bool showSegments;
-
   /// Levé par le reader quand la WebView du site prend la main : le deck gèle
   /// alors le swipe horizontal, qui appartient à la page distante.
   final ValueNotifier<bool>? webViewLock;
 }
+
+/// Articles réellement enchaînables d'une section, dans l'ordre de lecture.
+///
+/// C'est la liste **complète** de la section, pas son aperçu (`coreVisibleCount`).
+List<Content> sectionArticles(FluxSection section) => switch (section) {
+      EssentielSection(articles: final list) =>
+        list.map((a) => a.toPreviewContent()).toList(growable: false),
+      DigestTopicSection(topics: final list) => list
+          .where((t) => t.articles.isNotEmpty)
+          .map((t) => pickTopicLead(t).toPreviewContent())
+          .toList(growable: false),
+      FeedThemeSection(items: final list) => list,
+      CarouselSection(data: final data) => data.items,
+      // Le rappel d'alertes ne rend aucun article : rien à enchaîner.
+      AlertsSection() => const <Content>[],
+    };
 
 /// Construit le deck d'une section de la Tournée autour de [tappedContentId].
 ///
@@ -104,21 +130,8 @@ ArticleDeckPayload? articleDeckFromSection(
   FluxSection section,
   String tappedContentId,
 ) {
-  final items = switch (section) {
-    EssentielSection(articles: final list) =>
-      list.map((a) => a.toPreviewContent()).toList(growable: false),
-    DigestTopicSection(topics: final list) => list
-        .where((t) => t.articles.isNotEmpty)
-        .map((t) => pickTopicLead(t).toPreviewContent())
-        .toList(growable: false),
-    FeedThemeSection(items: final list) => list,
-    CarouselSection(data: final data) => data.items,
-    // Le rappel d'alertes ne rend aucun article : rien à enchaîner.
-    AlertsSection() => const <Content>[],
-  };
-
   return articleDeckFromContents(
-    items,
+    sectionArticles(section),
     tappedContentId,
     sectionKey: sectionKey(section),
     sectionLabel: section.label,
@@ -133,19 +146,11 @@ ArticleDeckPayload? articleDeckFromContents(
   String tappedContentId, {
   required String sectionKey,
   required String sectionLabel,
-  bool showPositionIndicator = true,
   void Function(Content article)? onArticleSettled,
 }) {
   if (tappedContentId.isEmpty) return null;
 
-  final seen = <String>{};
-  final deduped = <Content>[];
-  for (final article in articles) {
-    if (article.id.isEmpty) continue;
-    if (!seen.add(article.id)) continue;
-    deduped.add(article);
-  }
-
+  final deduped = _dedupById(articles);
   if (deduped.length < 2) return null;
   final index = deduped.indexWhere((a) => a.id == tappedContentId);
   if (index == -1) return null;
@@ -155,7 +160,101 @@ ArticleDeckPayload? articleDeckFromContents(
     initialIndex: index,
     sectionKey: sectionKey,
     sectionLabel: sectionLabel,
-    showPositionIndicator: showPositionIndicator,
     onArticleSettled: onArticleSettled,
   );
+}
+
+/// Deck d'une section de la Tournée **chaîné aux sections suivantes**
+/// (Story 34.2) : arrivé au bout de sa section, le deck sait proposer la
+/// suivante, et ainsi de suite jusqu'à la fin de la tournée.
+///
+/// [sections] est le snapshot **ordonné** rendu à l'écran ; le chaînage suit cet
+/// ordre exact. Le deck de la section suivante n'est construit qu'au moment où
+/// on l'atteint (fonction paresseuse), donc lire un seul article ne coûte jamais
+/// la mise à plat de toute la tournée.
+///
+/// Retombe sur [articleDeckFromSection] si la section n'appartient pas au
+/// snapshot (vue lettre, agrégat hebdo) : il n'y a alors pas d'ordre de tournée
+/// où chercher une suite.
+ArticleDeckPayload? tourneeArticleDeck(
+  List<FluxSection> sections,
+  FluxSection section,
+  String tappedContentId, {
+  void Function(ArticleDeckPayload next)? onSectionAdvanced,
+}) {
+  if (tappedContentId.isEmpty) return null;
+  var index = sections.indexWhere((s) => identical(s, section));
+  if (index == -1) {
+    final key = sectionKey(section);
+    index = sections.indexWhere((s) => sectionKey(s) == key);
+  }
+  if (index == -1) return articleDeckFromSection(section, tappedContentId);
+  return _tourneeDeckAt(
+    sections,
+    index,
+    tappedContentId,
+    onSectionAdvanced: onSectionAdvanced,
+  );
+}
+
+/// Deck de la section d'index [index], positionné sur [tappedContentId] (vide =
+/// premier article de la section, cas d'une section atteinte par enchaînement).
+ArticleDeckPayload? _tourneeDeckAt(
+  List<FluxSection> sections,
+  int index,
+  String tappedContentId, {
+  void Function(ArticleDeckPayload next)? onSectionAdvanced,
+}) {
+  final section = sections[index];
+  final articles = _dedupById(sectionArticles(section));
+  if (articles.isEmpty) return null;
+
+  final start = tappedContentId.isEmpty
+      ? 0
+      : articles.indexWhere((a) => a.id == tappedContentId);
+  if (start == -1) return null;
+
+  final nextIndex = _nextArticleSectionIndex(sections, index);
+  // Ni voisin, ni suite : ce n'est pas un deck, la route rendra le reader nu.
+  if (articles.length < 2 && nextIndex == null) return null;
+
+  return ArticleDeckPayload(
+    articles: articles,
+    initialIndex: start,
+    sectionKey: sectionKey(section),
+    sectionLabel: section.label,
+    nextSectionDeck: nextIndex == null
+        ? null
+        // La chaîne transporte la même notification d'étape jusqu'au bout : la
+        // Tournée sait donc toujours à quelle section la lecture s'est arrêtée.
+        : () => _tourneeDeckAt(
+              sections,
+              nextIndex,
+              '',
+              onSectionAdvanced: onSectionAdvanced,
+            ),
+    onSectionAdvanced: onSectionAdvanced,
+  );
+}
+
+/// Index de la première section **après** [from] qui rend au moins un article.
+///
+/// Les sections sans article (rappel d'alertes, bloc vide) sont sautées : elles
+/// ne peuvent pas être une étape de lecture.
+int? _nextArticleSectionIndex(List<FluxSection> sections, int from) {
+  for (var i = from + 1; i < sections.length; i++) {
+    if (sectionArticles(sections[i]).any((a) => a.id.isNotEmpty)) return i;
+  }
+  return null;
+}
+
+List<Content> _dedupById(List<Content> articles) {
+  final seen = <String>{};
+  final deduped = <Content>[];
+  for (final article in articles) {
+    if (article.id.isEmpty) continue;
+    if (!seen.add(article.id)) continue;
+    deduped.add(article);
+  }
+  return deduped;
 }

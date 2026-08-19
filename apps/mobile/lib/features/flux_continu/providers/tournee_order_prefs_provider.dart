@@ -38,19 +38,29 @@ const _kTourneeCustomizedKey = 'tournee_customized_v1';
 /// (Actus, Bonnes, Grille) — pas la carte hi-fi Essentiel du haut, rendue à
 /// part.
 ///
-/// **Ce n'est pas un knob libre : c'est une quantité dérivée.** Le
-/// rééquilibrage de `_orderedTourneeKeys` réserve [kTourneeSuggestQuota] slots
-/// en queue du cap aux suggestions, donc il ne reste que `cap - quota` slots
-/// aux favoris **et** à l'éditorial. Pour qu'un compte au plafond de favoris
-/// garde ses cartes éditoriales, il faut
-/// `cap - quota >= kTourneeEditorialCount + kFavoriteCap` — d'où l'égalité
-/// ci-dessous, qui est la forme *tendue* de cette inégalité.
+/// **Ce n'est pas un knob libre : c'est une quantité dérivée.** Le cap réserve
+/// [kTourneeSuggestQuota] slots de *marge* aux suggestions « Choisie pour vous »
+/// au-dessus de `kTourneeEditorialCount + kFavoriteCap`, pour qu'un compte qui
+/// n'est pas au plafond de favoris voie quand même des suggestions. Depuis le
+/// bug « blocs favoris absents » (#1098) cette marge n'est plus une *réserve
+/// mordante* : les suggestions ne se servent plus qu'en fin, sur les slots
+/// laissés libres par les favoris et l'éditorial (cf. `_orderedTourneeKeys`), et
+/// un bloc placé par l'utilisateur n'est **jamais** évincé à leur profit. La
+/// marge borne juste le nombre de suggestions affichables ; elle ne coupe plus
+/// rien.
+///
+/// Pour qu'un compte au plafond de favoris garde ses cartes éditoriales, il faut
+/// `cap >= kTourneeEditorialCount + kFavoriteCap`. L'égalité ci-dessous ajoute la
+/// marge de suggestions au-dessus de ce minimum.
 ///
 /// Écrire la formule plutôt que sa valeur n'est pas cosmétique : la Story 22.8
-/// avait d'abord posé 15 (en oubliant la réserve de quota), ce qui coupait
-/// **Bonnes Nouvelles** — dernière du bloc non-suggéré, donc première
-/// sacrifiée — en silence. Verrouillé par le test « plafond de favoris +
-/// suggestions » (`flux_continu_tournee_order_test.dart`).
+/// avait d'abord posé 15 (en oubliant la marge de suggestions), ce qui coupait
+/// **Bonnes Nouvelles** — dernière du bloc éditorial, donc première sacrifiée —
+/// en silence. Verrouillé par le test « plafond de favoris + suggestions »
+/// (`flux_continu_tournee_order_test.dart`).
+///
+/// Story 22.8 — la cible passe à [kFavoriteCap] favoris visibles : `kFavoriteCap`
+/// monte à 10, et le cap suit par la formule.
 ///
 /// Limite connue et **inchangée** : [kFavoriteCap] est un plafond *par nature*
 /// (thèmes et sources comptés séparément), donc un compte qui cumule les deux
@@ -59,34 +69,48 @@ const _kTourneeCustomizedKey = 'tournee_customized_v1';
 const int kTourneeVisibleCap =
     kTourneeSuggestQuota + kTourneeEditorialCount + kFavoriteCap;
 
-/// Quota de sections « Choisie pour vous » garanti **sous le cap** (Story 22.6).
-/// Un ordre personnalisé relègue les suggestions en fin de liste où le cap les
-/// coupait ; `_orderedTourneeKeys` réserve jusqu'à ce nombre de slots en queue
-/// du cap aux premières suggestions disponibles, sans permuter les favoris. Le
-/// quota effectif est `min(kTourneeSuggestQuota, suggestions visibles)`.
+/// Marge de slots laissée aux suggestions « Choisie pour vous » au-dessus du
+/// minimum favoris + éditorial. **N'est plus une réserve mordante** (#1098) :
+/// les suggestions prennent seulement les slots libres, sans jamais évincer un
+/// favori — cette constante borne juste combien de suggestions peuvent tenir
+/// sous [kTourneeVisibleCap].
 const int kTourneeSuggestQuota = 3;
 
-/// Seuils de cohérence d'affichage des sections favorites (thème/source) après
-/// la dédup inter-sections. Une section **maigre** (≤ [kThinSectionMaxItems]
-/// survivants) est dépriorisée sous les **riches** (≥ [kRichSectionMinItems])
-/// quand au moins [kThinDemotionRichThreshold] sections riches existent — pour
-/// que le contenu dense remonte au-dessus du pli. Ajustables.
-const int kThinSectionMaxItems = 1; // ≤1 article après dédup = « maigre »
-const int kRichSectionMinItems = 2; // ≥2 articles = « riche »
-const int kThinDemotionRichThreshold = 5; // dépriorise si ≥5 sections riches
+/// Compromis d'affichage des blocs de la Tournée (V1 — base de test PO).
+///
+/// Deux régimes **distincts**, à ne jamais confondre : la pénurie masque, la
+/// pauvreté déclasse. Un bloc n'est jamais retiré parce qu'il est *moins bon* —
+/// seulement parce qu'il n'a rien à montrer.
+///
+/// * **Masquage** — un bloc qui n'a pas [kSectionMinItems] articles à afficher,
+///   *après* réinjection de ceux que la dédup inter-sections lui a pris (cf.
+///   `_backfillThinSections`), sort du flux : pas de bloc à moitié vide qui
+///   pollue l'écran. Il reste listé dans « Mes favoris », signalé « Pas assez
+///   d'articles » (cf. [FluxContinuState.starvedFavoriteKeys]) — masqué pour la
+///   journée n'est pas retiré des favoris.
+/// * **Déclassement** — un bloc qui a de quoi s'afficher mais dont la curation
+///   du jour est pauvre (score de bloc < [kPoorBlockScoreRatio] × la médiane des
+///   blocs favoris du jour) reste affiché : il descend simplement sous les
+///   autres favoris, tout en gardant sa priorité sur les sections « Choisie pour
+///   vous ». Un choix de l'utilisateur passe toujours avant une suggestion.
+///
+/// Le déclassement ne s'applique qu'à partir de [kPoorDemotionMinBlocks] blocs
+/// favoris scorés : sous ce seuil la médiane ne veut rien dire, et déclasser
+/// 1 bloc sur 2 n'aurait aucun sens.
+const int kSectionMinItems = 3;
+const double kPoorBlockScoreRatio = 0.5;
+const int kPoorDemotionMinBlocks = 3;
 
 /// Kill-switch du tri des blocs par score (`section_score_order.dart`, PR-4).
 ///
 /// À `true` (défaut) : l'ordre des blocs est trié par la somme des 3 meilleurs
-/// scores de leurs articles, gelé une fois par journée tournée. La
-/// dépriorisation binaire ci-dessus est alors désactivée — le tri la remplace
-/// et la subsume (un bloc à 1 article coule structurellement).
+/// scores de leurs articles, gelé une fois par journée tournée. Le
+/// **déclassement qualité** ([kPoorBlockScoreRatio]) est gelé au même instant,
+/// à partir des mêmes scores, et persisté dans la même entrée de prefs.
 ///
-/// À `false` : aucun ordre trié ni persisté, et la dépriorisation binaire
-/// ([kThinDemotionRichThreshold]) reprend à l'identique. Les deux filets ne
-/// sont pas retirés d'un coup : `kThinDemotionRichThreshold` et son paramètre
-/// `demote` partiront au cycle suivant, une fois le tri observé en prod (la CI
-/// ne lance pas `flutter test`).
+/// À `false` : aucun ordre trié ni persisté — donc aucun déclassement non plus
+/// (rien n'est gelé). Le **masquage** ([kSectionMinItems]), lui, ne dépend
+/// d'aucun score : il reste actif dans les deux cas.
 ///
 /// Le kill-switch désarme le **tri**, pas la **mesure** : `blockScores` reste
 /// calculé et `block_score` reste renseigné sur `article_impression` (PR-1).

@@ -165,12 +165,45 @@ class TourneeProgressService {
     }
   }
 
-  Future<void> setScoreOrderToday(List<String> keys, {DateTime? now}) async {
+  /// Blocs jugés **pauvres** (curation du jour) au moment du gel, ou `null` aux
+  /// mêmes conditions que [loadScoreOrderForToday]. Stocké dans la même entrée :
+  /// le déclassement est gelé avec l'ordre, à partir des mêmes scores, donc il
+  /// ne peut pas en diverger. Entrée écrite avant ce champ ⇒ `poor` absent ⇒
+  /// ensemble vide (aucun déclassement), pas d'invalidation du jour.
+  Future<Set<String>?> loadPoorKeysForToday({DateTime? now}) async {
+    try {
+      final prefs = await _prefs();
+      final raw = prefs.getString(kTourneeScoreOrderKey);
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      if (decoded['day'] != dayKey(now ?? DateTime.now())) return null;
+      final poor = decoded['poor'];
+      if (poor is! List) return const <String>{};
+      return <String>{
+        for (final k in poor)
+          if (k is String) k,
+      };
+    } catch (e) {
+      debugPrint('TourneeProgress: loadPoorKeysForToday failed: $e');
+      return null;
+    }
+  }
+
+  Future<void> setScoreOrderToday(
+    List<String> keys, {
+    Set<String> poorKeys = const {},
+    DateTime? now,
+  }) async {
     try {
       final prefs = await _prefs();
       await prefs.setString(
         kTourneeScoreOrderKey,
-        jsonEncode({'day': dayKey(now ?? DateTime.now()), 'keys': keys}),
+        jsonEncode({
+          'day': dayKey(now ?? DateTime.now()),
+          'keys': keys,
+          'poor': poorKeys.toList(),
+        }),
       );
     } catch (e) {
       debugPrint('TourneeProgress: setScoreOrderToday failed: $e');

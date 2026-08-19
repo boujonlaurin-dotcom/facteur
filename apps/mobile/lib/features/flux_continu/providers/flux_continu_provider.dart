@@ -119,6 +119,12 @@ const int _kPhase2FanoutConcurrency = 3;
 /// Court : au-delà on rend la Tournée sans elles plutôt que de la retarder.
 const Duration _kSourceCatalogWait = Duration(seconds: 2);
 
+/// B1 — tête d'avance accordée à `/api/essentiel` (vague 1, seul sur le réseau)
+/// avant le départ de la vague 2 (digest/both + top-thèmes + kick des providers
+/// de coquilles). La vague 2 part à `min(essentiel résolu, ce délai)` : borné,
+/// un essentiel pendu ne retarde jamais la Phase 1 de plus de 600 ms.
+const Duration _kHeroHeadStart = Duration(milliseconds: 600);
+
 /// Usable scroll height (px) of the Flux Continu viewport, threaded from
 /// [FluxContinuScreen] (the only place that can measure it post-layout):
 /// ```
@@ -191,13 +197,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   bool _closingPersistQueued = false;
   bool _essentielViewedMarked = false;
 
-  /// `sectionKey` des sections favorites (thème/source/veille) dont le fetch du
-  /// fan-out a **résolu** ce cycle (réponse arrivée, vide ou non). La
-  /// classification maigre/riche ([_classifyFavoriteSections]) n'inspecte que ces
+  /// `sectionKey` des sections dont le fetch du fan-out a **résolu** ce cycle
+  /// (réponse arrivée, vide ou non) — favorites comme suggérées.
+  /// [_classifyFavoriteSections] et [_dropStarvedSections] n'inspectent que ces
   /// clés : une coquille seedée non encore résolue (0 item au boot) ne doit pas
-  /// être classée maigre → faux positif de dépriorisation/CTA. Réinitialisé au
-  /// reseed complet ([_buildStateFromPayload]), augmenté au fil du fan-out et des
-  /// refetch partiels.
+  /// être jugée en pénurie → elle serait masquée puis rendue à l'arrivée de sa
+  /// réponse, soit un clignotement à chaque recomposition du fan-out.
+  /// Réinitialisé au reseed complet ([_buildStateFromPayload]), augmenté au fil
+  /// du fan-out et des refetch partiels.
   final Set<String> _resolvedSectionKeys = <String>{};
 
   /// PR-4 — ordre des blocs par score **gelé pour la journée tournée**
@@ -212,6 +219,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// partiels, load-more).
   String? _scoreOrderDayKey;
   List<String>? _scoreOrderKeys;
+
+  /// Blocs favoris jugés **pauvres** (curation du jour), gelés au même instant
+  /// et depuis les mêmes scores que [_scoreOrderKeys] — donc stables toute la
+  /// journée et cohérents avec l'ordre. Sans ce gel, un « Voir +10 » sur un bloc
+  /// déclassé le ferait remonter sous les doigts de l'utilisateur.
+  Set<String> _poorBlockKeys = const {};
 
   /// Armé à la complétion du fan-out, consommé par le [_compose] qui suit
   /// immédiatement : c'est lui qui gèle l'ordre, à partir des scores qu'il a
@@ -239,10 +252,28 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// theme sections (cheap) instead of the full tournée.
   List<FavoriteRef> _lastFavorites = const [];
 
+  /// Chronomètre du bootstrap pour la grammaire `[PERF]` : armé à l'entrée de
+  /// [build], relâché dans son `finally` — toutes les métriques du boot
+  /// (`gate_ms` → `fanout_done_ms`) partagent donc la même origine. `null` hors
+  /// bootstrap ⇒ les chemins refresh / refetch partiels ne loggent rien.
+  Stopwatch? _bootSw;
+
+  /// Ligne `[PERF] fluxContinu.<metric>=<ms depuis l'entrée de build>[suffix]`.
+  /// No-op hors bootstrap (cf. [_bootSw]).
+  void _perfBoot(String metric, [String suffix = '']) {
+    final sw = _bootSw;
+    if (sw == null) return;
+    debugPrint('[PERF] fluxContinu.$metric=${sw.elapsedMilliseconds}$suffix');
+  }
+
   @override
   Future<FluxContinuState> build() async {
     _bootstrapping = true;
+    _bootSw = Stopwatch()..start();
     _disposed = false;
+    // B2 — les listeners différés d'un build précédent ont été fermés par le
+    // rebuild : on ré-arme l'enregistrement (cf. [_kickDeferredBootProviders]).
+    _deferredListenersRegistered = false;
     ref.onDispose(() => _disposed = true);
     _digestRepo = ref.read(digestRepositoryProvider);
     _feedRepo = ref.read(feedRepositoryProvider);
@@ -284,37 +315,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
-    // React to favorite reorders / additions / removals without rebuilding
-    // the digest (the digest doesn't depend on favorites).
-    ref.listen<AsyncValue<UserInterestsState>>(userInterestsProvider, (
-      prev,
-      next,
-    ) {
-      if (_bootstrapping) return;
-      final nextFavorites = next.valueOrNull?.favorites;
-      if (nextFavorites == null) return;
-      final picked = _pickExplicitFavorites(nextFavorites);
-      if (_favoriteListsEqual(_lastFavorites, picked)) return;
-      if (!state.hasValue) return;
-      unawaited(_refetchThemesOnly(picked));
-    });
-
-    // PR « Sources dans la Tournée » — réagit à l'ajout/retrait/réordre d'une
-    // source favorite en ne refetchant QUE les sections source (le digest et
-    // les thèmes ne dépendent pas des sources favorites).
-    ref.listen<AsyncValue<UserSourcesState>>(userSourcesStateProvider, (
-      prev,
-      next,
-    ) {
-      if (_bootstrapping) return;
-      final nextFavorites = next.valueOrNull?.favorites;
-      if (nextFavorites == null) return;
-      final picked = _pickFavoriteSources(nextFavorites);
-      if (_sourceFavoritesEqual(_lastSourceFavorites, picked)) return;
-      if (!state.hasValue) return;
-      unawaited(_refetchSourcesOnly(picked));
-    });
-
     // Story 10.2 — `tournee_order_v1` fait autorité pour le **mode** des sources :
     // une source y figure ⇒ mode « Essentiel ». Deux cas à distinguer ici :
     //  - l'ensemble des clés `source:` de l'ordre change (une source entre ou
@@ -345,43 +345,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       if (_bootstrapping) return;
       if (!state.hasValue) return;
       if (setEquals(_themeKeysOf(prev), _themeKeysOf(next))) return;
-      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
-    });
-
-    // La Grille est un slot autonome dans la liste cappée : sa présence dépend
-    // uniquement de `today != null`, pas des sections déjà fetchées.
-    ref.listen<AsyncValue<GrilleState>>(grilleProvider, (prev, next) {
-      if (_bootstrapping) return;
-      if (!state.hasValue) return;
-      final wasPresent = prev?.valueOrNull?.today != null;
-      final isPresent = next.valueOrNull?.today != null;
-      if (wasPresent == isPresent) return;
-      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
-    });
-
-    // Story 22.5 — `themesFollowedProvider` est lazy : ce listen le déclenche
-    // dès l'init du notifier et recompose à sa résolution (et à tout changement
-    // du count après follow/unfollow) pour re-stamper `followedSourceCount`
-    // ([_stampFollowedCounts]) → le CTA « Tout lire »/« Ajouter » se corrige
-    // sans attendre un refetch complet.
-    ref.listen<AsyncValue<List<FollowedTheme>>>(themesFollowedProvider, (
-      prev,
-      next,
-    ) {
-      if (_bootstrapping) return;
-      if (!state.hasValue) return;
-      if (next.valueOrNull == null) return;
-      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
-    });
-
-    // `alertsProvider` est lazy comme `themesFollowedProvider` : ce listen le
-    // déclenche à l'init du notifier et recompose à sa résolution (et à chaque
-    // pose/retrait de cloche) — sinon le rappel « Tes alertes » n'apparaîtrait
-    // qu'au prochain refetch complet de la Tournée.
-    ref.listen<AsyncValue<AlertsState>>(alertsProvider, (prev, next) {
-      if (_bootstrapping) return;
-      if (!state.hasValue) return;
-      if (next.valueOrNull == null) return;
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
@@ -424,17 +387,27 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // avec un JWT frais. Le squelette/cache est déjà peint, donc cette attente
     // gate la DATA, pas les pixels.
     await _awaitInitialRefresh();
+    _perfBoot('gate_ms');
 
-    // Réconciliation du placement Essentiel/Flâner (source de vérité DB) —
-    // non-bloquante : elle ne doit pas retarder la DATA (l'awaiter ajouterait
-    // 2 RTT à tous les cold boots). Son résultat est chaîné explicitement, sans
-    // dépendre des listeners prefs (cf. [_reconcilePlacementThenSync]).
-    unawaited(_reconcilePlacementThenSync());
+    // B1/B2 — chemin warm (vrai contenu déjà peint depuis le snapshot) : rien
+    // ne concurrence le héros, on arme tout de suite la vague 3 (listeners
+    // réseau différés + réconciliation de placement), post-gate donc JWT frais.
+    // Sur le chemin froid, elle n'est armée qu'après l'émission de la Phase 1
+    // (cf. [_buildStateFromPayload]).
+    if (snapshotUsable) {
+      _kickDeferredBootProviders();
+    }
 
     try {
       return await _fetchAll();
     } finally {
       _bootstrapping = false;
+      _bootSw = null;
+      // Filet de sécurité (chemin d'erreur / Phase 1 jamais émise) : les
+      // listeners réseau doivent TOUJOURS finir enregistrés — sans eux, plus
+      // aucune réaction aux favoris/grille/alertes jusqu'au prochain build.
+      // No-op dans le cas nominal (déjà armés à la Phase 1 ou au chemin warm).
+      _kickDeferredBootProviders();
     }
   }
 
@@ -451,6 +424,152 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // Refresh raté/expiré ou auth indisponible (tests) — le filet 401 prend
       // le relais ; AuthStateNotifier gère lui-même le chemin signout sur un
       // refresh token mort.
+    }
+  }
+
+  /// B2 — vague 3 armée (listeners réseau + réconciliation). Ré-armé à chaque
+  /// [build] : un rebuild ferme les subscriptions du build précédent.
+  bool _deferredListenersRegistered = false;
+
+  /// B2 vague 3 — enregistre les `ref.listen` **réseau** différés (favoris
+  /// thème/sujet, favoris source, grille, thèmes suivis, alertes) et lance la
+  /// réconciliation de placement Essentiel/Flâner.
+  ///
+  /// Pourquoi différé : `ref.listen` **initialise** le provider écouté — posés
+  /// en tête de [build] comme avant, ces 5 listens faisaient partir leurs
+  /// fetchs en concurrence directe de `/api/essentiel` sur le pool Dio et
+  /// l'unique worker uvicorn (D2). Un `ref.listen` tardif (post-await dans
+  /// build) est légal en Riverpod 2.6 ; pendant la fenêtre restante de
+  /// bootstrap, leurs corps restent muets (`_bootstrapping`), comme avant.
+  ///
+  /// Appelé (le flag rend l'appel idempotent) :
+  ///  - chemin froid : juste après l'émission de la Phase 1 ;
+  ///  - chemin warm : juste après le gate JWT (le snapshot est déjà peint) ;
+  ///  - filet : dans le `finally` de [build] (chemin d'erreur).
+  void _kickDeferredBootProviders() {
+    if (_disposed || _deferredListenersRegistered) return;
+    _deferredListenersRegistered = true;
+
+    // React to favorite reorders / additions / removals without rebuilding
+    // the digest (the digest doesn't depend on favorites).
+    ref.listen<AsyncValue<UserInterestsState>>(userInterestsProvider, (
+      prev,
+      next,
+    ) {
+      if (_bootstrapping) return;
+      final nextFavorites = next.valueOrNull?.favorites;
+      if (nextFavorites == null) return;
+      final picked = _pickExplicitFavorites(nextFavorites);
+      if (_favoriteListsEqual(_lastFavorites, picked)) return;
+      if (!state.hasValue) return;
+      unawaited(_refetchThemesOnly(picked));
+    });
+
+    // PR « Sources dans la Tournée » — réagit à l'ajout/retrait/réordre d'une
+    // source favorite en ne refetchant QUE les sections source (le digest et
+    // les thèmes ne dépendent pas des sources favorites).
+    ref.listen<AsyncValue<UserSourcesState>>(userSourcesStateProvider, (
+      prev,
+      next,
+    ) {
+      if (_bootstrapping) return;
+      final nextFavorites = next.valueOrNull?.favorites;
+      if (nextFavorites == null) return;
+      final picked = _pickFavoriteSources(nextFavorites);
+      if (_sourceFavoritesEqual(_lastSourceFavorites, picked)) return;
+      if (!state.hasValue) return;
+      unawaited(_refetchSourcesOnly(picked));
+    });
+
+    // La Grille est un slot autonome dans la liste cappée : sa présence dépend
+    // uniquement de `today != null`, pas des sections déjà fetchées.
+    ref.listen<AsyncValue<GrilleState>>(grilleProvider, (prev, next) {
+      if (_bootstrapping) return;
+      if (!state.hasValue) return;
+      final wasPresent = prev?.valueOrNull?.today != null;
+      final isPresent = next.valueOrNull?.today != null;
+      if (wasPresent == isPresent) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // Story 22.5 — `themesFollowedProvider` est lazy : ce listen le déclenche
+    // (désormais en vague 3, plus en tête de build) et recompose à sa
+    // résolution (et à tout changement du count après follow/unfollow) pour
+    // re-stamper `followedSourceCount` ([_stampFollowedCounts]) → le CTA
+    // « Tout lire »/« Ajouter » se corrige sans attendre un refetch complet.
+    ref.listen<AsyncValue<List<FollowedTheme>>>(themesFollowedProvider, (
+      prev,
+      next,
+    ) {
+      if (_bootstrapping) return;
+      if (!state.hasValue) return;
+      if (next.valueOrNull == null) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // `alertsProvider` est lazy comme `themesFollowedProvider` : ce listen le
+    // déclenche (vague 3) et recompose à sa résolution (et à chaque
+    // pose/retrait de cloche) — sinon le rappel « Tes alertes » n'apparaîtrait
+    // qu'au prochain refetch complet de la Tournée.
+    ref.listen<AsyncValue<AlertsState>>(alertsProvider, (prev, next) {
+      if (_bootstrapping) return;
+      if (!state.hasValue) return;
+      if (next.valueOrNull == null) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // Réconciliation du placement Essentiel/Flâner (source de vérité DB) —
+    // non-bloquante : elle ne doit pas retarder la DATA (l'awaiter ajouterait
+    // 2 RTT à tous les cold boots). Déplacée de l'avant-`_fetchAll` vers la
+    // vague 3 : ses 2 GETs ne concurrencent plus le héros ni la Phase 1. Son
+    // résultat est chaîné explicitement, sans dépendre des listeners prefs
+    // (cf. [_reconcilePlacementThenSync]).
+    unawaited(_reconcilePlacementThenSync());
+  }
+
+  /// B2 — valeur résolue de [provider], **sans l'initialiser pendant le
+  /// bootstrap** : les sites de composition squelette/compose lisaient ces
+  /// providers lazy via `ref.read`, ce qui les initialisait « en douce » et
+  /// faisait partir leurs fetchs en concurrence de `/api/essentiel` (D2).
+  /// La suppression est bornée à la fenêtre de bootstrap : hors bootstrap,
+  /// `ref.read` normal (sémantique historique — un futur appelant pré-vague 3
+  /// ne dégraderait pas en silence). Pendant le bootstrap, un provider pas
+  /// encore vivant rend `null` — dégrade exactement comme le cold start
+  /// historique (valeur absente).
+  T? _peekValue<T>(ProviderBase<AsyncValue<T>> provider) {
+    if (!_bootstrapping) return ref.read(provider).valueOrNull;
+    return ref.exists(provider) ? ref.read(provider).valueOrNull : null;
+  }
+
+  /// B1 vague 2 — force l'init des providers dont dépend le **seed des
+  /// coquilles** de la Tournée (favoris thème/sujet, favoris source, catalogue
+  /// source, config veille). Lancés après l'avance du héros : leurs fetchs
+  /// voyagent pendant que digest/top-thèmes sont en vol.
+  void _kickShellPrereqs() {
+    ref.read(userInterestsProvider);
+    ref.read(userSourcesStateProvider);
+    ref.read(userSourcesProvider);
+    ref.read(veilleActiveConfigProvider);
+  }
+
+  /// Attente **bornée** (miroir de [_kSourceCatalogWait]) de la résolution des
+  /// providers seedant les coquilles, avant [_pickFavorites] /
+  /// [_pickFavoriteSources]. Corrige au passage la course silencieuse
+  /// historique : `_pickFavorites` lisait un provider pas encore résolu et
+  /// seedait 0 coquille pour tout le cycle. Erreurs/timeout avalés : on seede
+  /// alors en dégradé, comme avant.
+  Future<void> _awaitShellPrereqs() async {
+    // Erreurs avalées **par future** : un prérequis en échec rapide (ex. veille
+    // 404) ne doit pas court-circuiter l'attente des deux autres.
+    try {
+      await Future.wait<void>([
+        ref.read(userInterestsProvider.future),
+        ref.read(userSourcesStateProvider.future),
+        ref.read(veilleActiveConfigProvider.future),
+      ].map((f) => f.then<void>((_) {}, onError: (_) {})))
+          .timeout(_kSourceCatalogWait);
+    } catch (e) {
+      debugPrint('FluxContinu: shell prereqs unresolved: $e');
     }
   }
 
@@ -502,15 +621,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   Future<FluxContinuState> _fetchAll() async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
 
-    final digestFuture = _safe<DualDigestResponse>(
-      () => _digestRepo.fetchBothDigests(),
-      'fetchBothDigests',
-    );
-    final topThemesFuture = _safe<List<TopTheme>>(
-      () => _fluxRepo.getTopThemes(),
-      'getTopThemes',
-      fallback: const <TopTheme>[],
-    );
+    // B1 vague 1 — le « paquet prioritaire » `/api/essentiel` part SEUL : rien
+    // d'autre ne le concurrence sur le pool Dio ni sur l'unique worker uvicorn.
     final essentielFuture = _safe<EssentielFetchResult>(
       // Passe le mode explicitement : `isSerene` est posé en synchrone avant
       // l'`invalidateSelf` du listener serein, donc à jour ici — pas de
@@ -529,6 +641,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         carousel: null,
       ),
     );
+    _perfBoot('essentiel_dispatch_ms');
 
     // Le héros ne dépend QUE de `/api/essentiel`, mais attendait jusqu'ici le
     // `Future.wait` complet — donc la plus lente des trois, en pratique
@@ -543,6 +656,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // et un état non-squelette ici l'aurait désarmé, figeant la page haute.
     unawaited(
       essentielFuture.then((early) {
+        _perfBoot('essentiel_resolved_ms');
         if (_disposed || early == null || early.articles.isEmpty) return;
         if (!(state.valueOrNull?.isSkeleton ?? false)) return;
         _essentielCarousel = early.carousel;
@@ -551,8 +665,36 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           newSinceMorning: early.newSinceMorning,
         );
         state = AsyncData(_composeSkeleton(isSerene));
+        _perfBoot('hero_emit_ms');
       }),
     );
+
+    // B1 vague 2 — gatée sur min(essentiel résolu, [_kHeroHeadStart]) : le
+    // héros garde une tête d'avance, mais un essentiel pendu ne coûte jamais
+    // plus de 600 ms au reste de la Phase 1 (le gate est borné, pas otage du
+    // timeout 8 s de l'essentiel). La tête d'avance ne protège qu'un héros
+    // **pas encore peint** : hors squelette monté (revalidation SWR in-day,
+    // pull-to-refresh — l'early-emit ci-dessus y est un no-op), elle ne serait
+    // que du délai mort chargé au spinner → la vague 2 part immédiatement.
+    if (state.valueOrNull?.isSkeleton ?? true) {
+      await Future.any<Object?>([
+        essentielFuture,
+        Future<void>.delayed(_kHeroHeadStart),
+      ]);
+    }
+    final digestFuture = _safe<DualDigestResponse>(
+      () => _digestRepo.fetchBothDigests(),
+      'fetchBothDigests',
+    );
+    final topThemesFuture = _safe<List<TopTheme>>(
+      () => _fluxRepo.getTopThemes(),
+      'getTopThemes',
+      fallback: const <TopTheme>[],
+    );
+    // Prérequis du seed des coquilles : leurs fetchs voyagent pendant que
+    // digest/top-thèmes sont en vol (attente bornée dans
+    // [_buildStateFromPayload] via [_awaitShellPrereqs]).
+    _kickShellPrereqs();
 
     final results = await Future.wait([
       digestFuture,
@@ -660,6 +802,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // si seul l'un des deux a réussi.
     _quote = dual?.serein?.quote ?? dual?.normal?.quote;
 
+    // B1 — chemin réseau uniquement (jamais le chemin cache in-day, qui doit
+    // peindre le snapshot sans délai) : attente bornée des providers seedant
+    // les coquilles, kickés en vague 2. Dans le cas nominal ils se sont résolus
+    // pendant le vol de digest/both → attente ≈ 0 ms.
+    if (fetchThemes) {
+      await _awaitShellPrereqs();
+    }
+
     final picked = _pickFavorites(topThemes);
     final favorites = picked.refs;
     _lastFavorites = favorites;
@@ -718,7 +868,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // round-trip de base.
     if (emitProgressive) {
       state = AsyncData(_compose(isSerene));
+      _perfBoot('phase1_ms');
     }
+
+    // B2 vague 3 — le haut de page réel est émis : on peut maintenant armer
+    // les listeners réseau différés + la réconciliation de placement sans
+    // concurrencer le héros ni la Phase 1. Idempotent (no-op sur les refetch
+    // SWR/pull-to-refresh où la vague 3 est déjà armée).
+    _kickDeferredBootProviders();
 
     // Bug « Sources favorites absentes » (race 2) : le catalogue
     // `userSourcesProvider` est **lazy** — s'il n'est pas encore résolu, chaque
@@ -796,7 +953,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// vides). Marque `isSkeleton: true`.
   FluxContinuState _composeSkeleton(bool isSerene) {
     final tournee = ref.read(tourneeOrderPrefsProvider);
-    final grilleAvailable = ref.read(grilleProvider).valueOrNull?.today != null;
+    final grilleAvailable = _peekValue(grilleProvider)?.today != null;
     final sectionByKey = _tourneeSectionByKey();
     final orderedKeys = _orderedTourneeKeys(
       isSerene: isSerene,
@@ -838,7 +995,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// même label/accent que le rendu réel, `items` vide, `hasMore: false`. Le
   /// fan-out remplace ensuite chaque coquille en place (cf. [_upsertByKey]).
   List<FeedThemeSection> _shellThemeSections(List<FavoriteRef> refs) {
-    final interestsState = ref.read(userInterestsProvider).valueOrNull;
+    final interestsState = _peekValue(userInterestsProvider);
     final sections = <FeedThemeSection>[];
     for (final favRef in refs) {
       final FeedThemeSection? shell = switch (favRef) {
@@ -872,7 +1029,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   FeedThemeSection? _skeletonVeilleSection() {
-    final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
+    final activeCfg = _peekValue(veilleActiveConfigProvider);
     if (activeCfg == null) return null;
     return FeedThemeSection(
       kind: SectionKind.veille,
@@ -919,7 +1076,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   List<FeedThemeSection> _shellSourceSections(List<SourceFavoriteRef> favs) {
     if (favs.isEmpty) return const [];
     final catalog =
-        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider) ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
     final sections = <FeedThemeSection>[];
     for (final fav in favs) {
@@ -951,7 +1108,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<TopTheme> usableSuggestions,
   ) {
     final catalog =
-        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider) ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
     final sections = <FeedThemeSection>[];
     for (final s in usableSuggestions) {
@@ -993,14 +1150,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   FluxContinuState _compose(bool isSerene) {
     final tournee = ref.read(tourneeOrderPrefsProvider);
-    final grilleAvailable = ref.read(grilleProvider).valueOrNull?.today != null;
+    final grilleAvailable = _peekValue(grilleProvider)?.today != null;
     final sectionByKey = _tourneeSectionByKey();
 
     // Cohérence Tournée — classification maigre/riche **et** scores de bloc, sur
     // l'ordre par défaut **non cappé** (la maigreur comme le score ne se
     // connaissent qu'après dédup, cf. plan). `thinKeys` sert au backfill et à la
     // modal favoris ; `blockScores` sert à l'ordre (gelé) et à la mesure.
-    final (:thinKeys, :richCount, :blockScores) = _classifyFavoriteSections(
+    final (:thinKeys, :blockScores) = _classifyFavoriteSections(
       isSerene: isSerene,
       tournee: tournee,
       sectionByKey: sectionByKey,
@@ -1014,11 +1171,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       _freezeScoreOrderOnNextCompose = false;
       _freezeScoreOrder(blockScores);
     }
-    // PR-4 — le tri par score remplace la dépriorisation binaire et la subsume
-    // (un bloc à 1 article coule structurellement). Le kill-switch restaure
-    // l'ancienne partition à l'identique.
-    final demote =
-        !kTourneeScoreSortEnabled && richCount >= kThinDemotionRichThreshold;
 
     final orderedKeys = _orderedTourneeKeys(
       isSerene: isSerene,
@@ -1027,8 +1179,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       grilleAvailable: grilleAvailable,
       hiddenKeys: tournee.hiddenKeys,
       order: tournee.order,
-      thinKeys: thinKeys,
-      demote: demote,
+      // Déclassement qualité — gelé avec l'ordre du jour, donc vide tant que le
+      // 1ᵉʳ fan-out n'a pas abouti (aucun bloc ne bouge pendant le remplissage).
+      poorKeys: _poorBlockKeys,
       // Ordre **gelé pour la journée** (null tant que le 1ᵉʳ fan-out du jour
       // n'a pas abouti) : zéro saut de bloc pendant le remplissage progressif.
       scoreOrder: _scoreOrderKeys,
@@ -1042,7 +1195,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Cloches « source rare » ayant du neuf non lu. Elles seules justifient le
     // rappel : une cloche silencieuse n'a rien à annoncer.
     final alerted =
-        ref.read(alertsProvider).valueOrNull?.withNewContent ??
+        _peekValue(alertsProvider)?.withNewContent ??
             const <AlertItem>[];
 
     final rawOrdered = <FluxSection>[
@@ -1071,11 +1224,19 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       _filterSections(rawOrdered),
       removedByKey: removedByKey,
     );
+    // Masquage (règle PO V1) : un bloc sous le plancher [kSectionMinItems]
+    // **après** backfill n'a rien à montrer → il sort du flux, et sa clé part à
+    // la modal pour que l'utilisateur sache pourquoi (jamais de disparition
+    // silencieuse, cf. `bug-essentiel-blocs-favoris-absents.md`).
+    final starvedKeys = <String>{};
     final finalSections = _capSectionsToFit(
-      _backfillThinSections(
-        _dropEmptySuggested(deduped),
-        thinKeys,
-        removedByKey,
+      _dropStarvedSections(
+        _backfillThinSections(
+          _dropEmptySuggested(deduped),
+          thinKeys,
+          removedByKey,
+        ),
+        starvedKeys,
       ),
       usableHeight,
     );
@@ -1096,22 +1257,26 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // Toutes les clés maigres (affichées ou hors cap) → la modal sait
       // lesquelles signaler.
       thinFavoriteKeys: thinKeys,
+      // Blocs retirés du flux faute d'articles → la modal l'explique au lieu de
+      // laisser l'utilisateur devant une section absente sans raison.
+      starvedFavoriteKeys: Set.unmodifiable(starvedKeys),
       // PR-1 — dénominateur du CTR par bloc : le screen le repasse au
       // `SectionBlock` qui le porte jusqu'à l'event `article_impression`.
       blockScores: Map.unmodifiable(blockScores),
     );
   }
 
-  /// Classifie les sections **favorites** (thème/source validés) en maigres
-  /// (≤ [kThinSectionMaxItems] survivants post-dédup) / riches (≥
-  /// [kRichSectionMinItems]) sur l'ordre par défaut **non cappé**. Exclut
-  /// veille / éditorial / suggérées / Grille. N'inspecte que les sections au
-  /// fetch résolu ([_resolvedSectionKeys]) → pas de faux positif sur des
+  /// Repère les sections **choisies** (thème/source/veille) qui n'atteignent pas
+  /// le plancher d'affichage [kSectionMinItems] une fois la dédup inter-sections
+  /// passée, sur l'ordre par défaut **non cappé** : ce sont les blocs à renflouer
+  /// ([_backfillThinSections]) avant que le masquage ([_dropStarvedSections]) ne
+  /// tranche. Exclut éditorial / suggérées / Grille. N'inspecte que les sections
+  /// au fetch résolu ([_resolvedSectionKeys]) → pas de faux positif sur des
   /// coquilles de boot.
   ///
   /// PR-4 — la même passe calcule les **scores de bloc** (`blockScores`, cf.
   /// `section_score_order.dart`), sur une portée volontairement **plus large**
-  /// que la classification maigre/riche : toute `FeedThemeSection` résolue y
+  /// que le repérage des blocs sous plancher : toute `FeedThemeSection` résolue y
   /// entre, veille et « Choisie pour vous » comprises (une veille pauvre coule
   /// désormais elle aussi, décision PO). La map est en ordre d'affichage
   /// (insertion = parcours de `deduped`) : ses clés servent telles quelles de
@@ -1119,20 +1284,23 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   ///
   /// Aucune circularité : cette passe appelle [_orderedTourneeKeys] **sans**
   /// `scoreOrder` (ordre par défaut, non cappé) — les scores ne dépendent donc
-  /// pas de leur propre résultat. Corollaire assumé : la dédup inter-sections
-  /// arbitre ici les doublons dans l'ordre **par défaut**, donc un article
-  /// partagé peut être attribué à une autre section que dans le rendu trié. Le
-  /// score reste déterministe et c'est le comportement d'avant PR-4 ; l'inverse
-  /// (dédupliquer dans l'ordre trié) rendrait les scores fonction d'eux-mêmes.
-  ({Set<String> thinKeys, int richCount, Map<String, double> blockScores})
+  /// pas de leur propre résultat. La dédup inter-sections arbitre ici les
+  /// doublons dans l'ordre **par défaut**, mais elle ne pèse plus sur le score :
+  /// un article partagé compte pour **chacune** des sections qui l'a servi (cf.
+  /// `scorable` plus bas), donc l'attribution d'un doublon ne déplace plus le
+  /// classement.
+  ({Set<String> thinKeys, Map<String, double> blockScores})
       _classifyFavoriteSections({
     required bool isSerene,
     required TourneeOrderState tournee,
     required Map<String, FluxSection> sectionByKey,
   }) {
+    // Veille incluse : elle est un bloc de la Tournée comme un autre, donc elle
+    // profite du backfill avant d'être jugée en pénurie (le CTA « Ajouter des
+    // sources » que porte `underfilled` reste, lui, réservé aux thèmes, cf.
+    // `section_block.dart`).
     final favKeys = <String>{
-      for (final s in _themes)
-        if (s.kind == SectionKind.theme) sectionKey(s),
+      for (final s in _themes) sectionKey(s),
       for (final s in _sources) sectionKey(s),
     };
     final eligible = {
@@ -1146,7 +1314,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (eligible.isEmpty && _resolvedSectionKeys.isEmpty) {
       return (
         thinKeys: const <String>{},
-        richCount: 0,
         blockScores: const <String, double>{},
       );
     }
@@ -1159,6 +1326,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       hiddenKeys: tournee.hiddenKeys,
       order: tournee.order,
       cap: null, // passe non cappée : la maigreur se mesure sur tout l'ordre
+      // Pas de `poorKeys` ici : la passe de classification produit les scores
+      // dont le déclassement est dérivé — l'y appliquer serait circulaire.
     );
     final rawOrdered = <FluxSection>[
       if (_essentiel != null) _essentiel!,
@@ -1166,14 +1335,34 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         if (key != kTourneeGrilleKey && sectionByKey[key] != null)
           sectionByKey[key]!,
     ];
-    final deduped = _dedupeSectionsInOrder(_filterSections(rawOrdered));
+    // Bug « blocs favoris absents de l'Essentiel » — on capture ici aussi les
+    // articles strippés par la dédup inter-sections : ils comptent dans le
+    // **score** du bloc (cf. plus bas), pas dans sa maigreur.
+    final removedByKey = <String, List<Content>>{};
+    final deduped = _dedupeSectionsInOrder(
+      _filterSections(rawOrdered),
+      removedByKey: removedByKey,
+    );
 
     final thinKeys = <String>{};
     final blockScores = <String, double>{};
-    var richCount = 0;
     for (final s in deduped) {
       if (s is! FeedThemeSection) continue;
       final k = sectionKey(s);
+      // Le score juge la **qualité du bloc**, pas ce que la dédup lui a laissé :
+      // on score sur les articles que le backend a réellement servis pour ce
+      // bloc, retirés compris. Sans ça, un thème dont les meilleurs articles
+      // sont montés dans le héros (ou dans les Actus du jour) — donc précisément
+      // un thème très pertinent ce matin-là — se retrouvait vidé par
+      // [_dedupeSectionsInOrder], scorait ~0 et coulait en bas de Tournée, voire
+      // hors du cap. C'est le cas rapporté : « j'avais des articles tech/climat
+      // dans ma pile de tri et je n'ai pas vu ces sections ».
+      //
+      // La maigreur (`thinKeys`), elle, continue de se mesurer sur les
+      // survivants : elle décrit ce qui sera **affiché** et pilote le backfill.
+      final scorable = removedByKey[k] == null
+          ? s.items
+          : <Content>[...s.items, ...removedByKey[k]!];
       // Score de bloc : toute section résolue portant au moins un article scoré.
       // Une section dont **aucun** article n'a de `recommendationReason` (bloc
       // éditorial, veille sans scoring, coquille de boot) reste hors de la map
@@ -1184,30 +1373,100 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // `block_score` à `null` sur `article_impression` (PR-1) — donc
       // aveuglerait l'instrument même qui sert à juger le tri.
       if (_resolvedSectionKeys.contains(k) &&
-          s.items.any((c) => c.recommendationReason != null)) {
-        blockScores[k] = blockScore(s.items);
+          scorable.any((c) => c.recommendationReason != null)) {
+        blockScores[k] = blockScore(scorable);
       }
       if (!eligible.contains(k)) continue;
-      final n = s.items.length;
-      if (n <= kThinSectionMaxItems) {
-        thinKeys.add(k);
-      } else if (n >= kRichSectionMinItems) {
-        richCount++;
-      }
+      // « Maigre » = sous le plancher d'affichage : c'est exactement l'ensemble
+      // des blocs qu'il faut tenter de renflouer avant de décider un masquage.
+      if (s.items.length < kSectionMinItems) thinKeys.add(k);
     }
     return (
       thinKeys: thinKeys,
-      richCount: richCount,
       blockScores: blockScores,
     );
   }
 
+  /// Blocs favoris dont la **curation du jour** est pauvre : score de bloc sous
+  /// [kPoorBlockScoreRatio] × la médiane des blocs favoris scorés.
+  ///
+  /// Médiane plutôt que moyenne (insensible au bloc vedette qui écraserait tout)
+  /// et seuil **relatif** plutôt qu'absolu : `blockScore` est une somme de scores
+  /// backend, dont l'échelle varie d'un utilisateur et d'un jour à l'autre. Le
+  /// jour où tout est bon, personne n'est déclassé — c'est l'effet voulu, le
+  /// déclassement dit « ce bloc est en retrait *aujourd'hui* », pas « ce bloc est
+  /// mauvais ».
+  ///
+  /// Ne juge que les blocs **choisis** (thème/source/veille) : une suggestion
+  /// n'a pas à peser sur la médiane, elle passe déjà après eux.
+  Set<String> _poorFavoriteKeys(Map<String, double> blockScores) {
+    final favKeys = <String>{
+      for (final s in _themes) sectionKey(s),
+      for (final s in _sources) sectionKey(s),
+    };
+    final scored = <String, double>{
+      for (final e in blockScores.entries)
+        if (favKeys.contains(e.key)) e.key: e.value,
+    };
+    if (scored.length < kPoorDemotionMinBlocks) return const {};
+
+    final values = scored.values.toList()..sort();
+    final mid = values.length ~/ 2;
+    final median = values.length.isOdd
+        ? values[mid]
+        : (values[mid - 1] + values[mid]) / 2;
+    // Médiane nulle : tous les blocs sont à 0 (aucun article scoré ce jour-là).
+    // Rien à départager — déclasser la moitié du flux au hasard serait pire.
+    if (median <= 0) return const {};
+
+    final threshold = median * kPoorBlockScoreRatio;
+    return {
+      for (final e in scored.entries)
+        if (e.value < threshold) e.key,
+    };
+  }
+
+  /// Retire du flux les blocs qui n'atteignent pas le plancher d'affichage
+  /// [kSectionMinItems] — après backfill, donc en dernier recours — et collecte
+  /// leurs clés dans [starvedKeys] pour la modal « Mes favoris ».
+  ///
+  /// Deux garde-fous contre le clignotement pendant le fan-out (10-15
+  /// recompositions) : on ne juge que les sections dont le fetch a **résolu**
+  /// ([_resolvedSectionKeys]) et jamais une coquille de squelette
+  /// (`isPlaceholder`) — sinon chaque bloc disparaîtrait puis réapparaîtrait à
+  /// l'arrivée de sa réponse.
+  List<FluxSection> _dropStarvedSections(
+    List<FluxSection> sections,
+    Set<String> starvedKeys,
+  ) {
+    final kept = <FluxSection>[];
+    for (final s in sections) {
+      if (s is! FeedThemeSection || s.isPlaceholder) {
+        kept.add(s);
+        continue;
+      }
+      final k = sectionKey(s);
+      if (!_resolvedSectionKeys.contains(k) ||
+          s.items.length >= kSectionMinItems) {
+        kept.add(s);
+        continue;
+      }
+      starvedKeys.add(k);
+    }
+    return kept;
+  }
+
   /// Réinjecte dans chaque section favorite **maigre affichée** (clé ∈
   /// [thinKeys]) des articles strippés par la dédup ([removedByKey]) jusqu'à
-  /// [kRichSectionMinItems], et marque la section `underfilled` (pilote le CTA
+  /// [kSectionMinItems], et marque la section `underfilled` (pilote le CTA
   /// thème « Ajouter plus de sources »). Doublons inter-sections assumés (PO) ;
-  /// dédup intra-section préservée. Une source maigre sans retirés garde son
-  /// filet d'empty-state existant.
+  /// dédup intra-section préservée.
+  ///
+  /// C'est la **dernière chance** d'un bloc avant [_dropStarvedSections] : le
+  /// backfill vise donc le plancher d'affichage, pas un palier intermédiaire.
+  /// Un thème dont le héros a pris les meilleurs articles les récupère ici et
+  /// reste affiché — c'est précisément le cas qui faisait disparaître Technologie
+  /// et Environnement.
   List<FluxSection> _backfillThinSections(
     List<FluxSection> sections,
     Set<String> thinKeys,
@@ -1230,7 +1489,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final seen = {for (final c in s.items) c.id};
     final additions = <Content>[];
     for (final c in removed) {
-      if (s.items.length + additions.length >= kRichSectionMinItems) break;
+      if (s.items.length + additions.length >= kSectionMinItems) break;
       if (seen.add(c.id)) additions.add(c);
     }
     // `underfilled` toujours vrai (section maigre affichée) → CTA thème même si
@@ -1256,7 +1515,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// Les sujets custom (`themeSlug == null`) et thèmes absents du provider
   /// gardent 0.
   List<FluxSection> _stampFollowedCounts(List<FluxSection> sections) {
-    final themes = ref.read(themesFollowedProvider).valueOrNull;
+    final themes = _peekValue(themesFollowedProvider);
     if (themes == null || themes.isEmpty) return sections;
     final bySlug = {for (final t in themes) t.slug: t.followedSourcesCount};
     return [
@@ -1808,18 +2067,22 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (!kTourneeScoreSortEnabled) {
       _scoreOrderDayKey = null;
       _scoreOrderKeys = null;
+      _poorBlockKeys = const {};
       return;
     }
     final today = TourneeProgressService.dayKey(DateTime.now());
     if (_scoreOrderDayKey == today) return;
     _scoreOrderDayKey = null;
     _scoreOrderKeys = null;
-    final loaded = await ref
-        .read(tourneeProgressServiceProvider)
-        .loadScoreOrderForToday();
+    _poorBlockKeys = const {};
+    final service = ref.read(tourneeProgressServiceProvider);
+    final loaded = await service.loadScoreOrderForToday();
     if (loaded != null && loaded.isNotEmpty) {
       _scoreOrderDayKey = today;
       _scoreOrderKeys = loaded;
+      // Déclassement gelé le même jour, dans la même entrée : il ne survit
+      // jamais à l'ordre auquel il appartient.
+      _poorBlockKeys = await service.loadPoorKeysForToday() ?? const {};
     }
   }
 
@@ -1853,10 +2116,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ];
     // Que des sections-source suggérées → rien à trier.
     if (frozen.isEmpty) return;
+    // Le déclassement qualité est gelé **ici**, depuis les mêmes scores que
+    // l'ordre : les deux ne peuvent donc pas diverger, et un « Voir +10 » plus
+    // tard dans la journée ne fait pas remonter un bloc déclassé.
+    final poor = _poorFavoriteKeys(scores);
     _scoreOrderDayKey = today;
     _scoreOrderKeys = frozen;
+    _poorBlockKeys = poor;
     unawaited(
-      ref.read(tourneeProgressServiceProvider).setScoreOrderToday(frozen),
+      ref
+          .read(tourneeProgressServiceProvider)
+          .setScoreOrderToday(frozen, poorKeys: poor),
     );
   }
 
@@ -2064,7 +2334,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<TopTheme> topFallback,
   ) {
     final favorites =
-        ref.read(userInterestsProvider).valueOrNull?.favorites ?? const [];
+        _peekValue(userInterestsProvider)?.favorites ?? const [];
 
     // Story 23.4 — la veille a un **slot dédié hors cap** : on la sépare des
     // favoris thème/sujet (cap = [_kMaxFavoriteSections]) puis on l'ajoute en
@@ -2082,7 +2352,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
     // Toujours rendre la veille quand une config est active, même si le favori
     // n'est pas (encore) dans la liste (favori orphelin / self-heal en cours).
-    final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
+    final activeCfg = _peekValue(veilleActiveConfigProvider);
     if (veilleRef == null && activeCfg != null) {
       veilleRef = VeilleFavoriteRef(id: activeCfg.id);
     }
@@ -2138,7 +2408,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     UserInterestsState? interestsState,
   }) {
     final interests =
-        interestsState ?? ref.read(userInterestsProvider).valueOrNull;
+        interestsState ?? _peekValue(userInterestsProvider);
     return switch (favRef) {
       ThemeFavoriteRef(:final slug) => _buildThemeSection(
           feed: feed,
@@ -2232,7 +2502,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// dérivé du `theme_label` de la `VeilleConfig` active (résolu via
   /// `veilleActiveConfigProvider`). Story 23.2 PR-4.
   FeedThemeSection? _buildVeilleSection(FeedResponse? feed) {
-    final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
+    final activeCfg = _peekValue(veilleActiveConfigProvider);
     // Story 23.4 — section veille **toujours visible** quand une config est
     // active, même avec 0/1 article (état vide rendu par SectionBlock). On ne
     // la coupe plus sur un seuil min d'items ; `null` seulement sans config.
@@ -2270,7 +2540,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<SourceFavoriteRef>? favorites,
   ]) {
     final favs = favorites ??
-        ref.read(userSourcesStateProvider).valueOrNull?.favorites ??
+        _peekValue(userSourcesStateProvider)?.favorites ??
         const <SourceFavoriteRef>[];
     // Story 10.2 — appartenance exclusive : une source n'est rendue dans la
     // Tournée que si elle est en mode « Essentiel » (sa clé `source:<id>` est
@@ -2415,9 +2685,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required List<TopTheme> suggestions,
     required bool isSerene,
   }) async {
-    final interestsState = ref.read(userInterestsProvider).valueOrNull;
+    final interestsState = _peekValue(userInterestsProvider);
     final catalog =
-        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider) ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
 
     // Sources favorites résolues au catalogue (un favori absent du catalogue
@@ -2455,10 +2725,60 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       emit();
     }
 
-    final tasks = <Future<void> Function()>[
-      // Thèmes / sujets / veille (ordre favoris = tête de Tournée).
-      for (final favRef in favorites)
-        () => sectionTask(
+    // B3 — l'ordre de FETCH suit l'ordre de RENDU, plus l'ordre des favoris.
+    // Les coquilles seedées rendent `sectionByKey` complet, donc
+    // `_orderedTourneeKeys` (mêmes entrées que l'affichage : ordre manuel
+    // sticky, biais « thème le plus suivi », ordre par score gelé du jour,
+    // quota suggestions, cap) donne la position réelle de chaque section — les
+    // sections au-dessus de la ligne de flottaison se résolvent en premier.
+    final tournee = ref.read(tourneeOrderPrefsProvider);
+    final renderedKeys = _orderedTourneeKeys(
+      isSerene: isSerene,
+      customized: tournee.customized,
+      sectionByKey: _tourneeSectionByKey(),
+      grilleAvailable: false,
+      hiddenKeys: tournee.hiddenKeys,
+      order: tournee.order,
+      scoreOrder: _scoreOrderKeys,
+    );
+    final renderPos = <String, int>{
+      for (var i = 0; i < renderedKeys.length; i++) renderedKeys[i]: i,
+    };
+
+    // B3 — suggestions réellement fetchées : celles du cap affiché, **+1 de
+    // réserve** (ordre backend daily_rank) pour préserver la promesse de
+    // `dismissSuggestion` — la suivante doit pouvoir remonter déjà remplie. Les
+    // autres étaient fetchées puis jamais affichées (hors cap). Leurs coquilles
+    // sont retirées : invisibles de toute façon (`_dropEmptySuggested`), mais
+    // elles occuperaient un slot du quota suggestions avec une section vide.
+    var suggestionReserveLeft = 1;
+    final fetchedSuggestions = <TopTheme>[];
+    for (final s in usableSuggestions) {
+      if (renderPos.containsKey(_suggestionKey(s))) {
+        fetchedSuggestions.add(s);
+      } else if (suggestionReserveLeft-- > 0) {
+        fetchedSuggestions.add(s);
+      }
+    }
+    final droppedCount = usableSuggestions.length - fetchedSuggestions.length;
+    if (droppedCount > 0) {
+      final fetchedKeys = <String>{
+        for (final s in fetchedSuggestions) _suggestionKey(s),
+      };
+      _suggested = [
+        for (final s in _suggested)
+          if (fetchedKeys.contains(sectionKey(s))) s,
+      ];
+    }
+
+    final entries = <({String key, Future<void> Function() task})>[];
+    // Thèmes / sujets / veille — tous fetchés quel que soit leur rang
+    // (thin-classification, block scores, modale favoris en dépendent).
+    for (final favRef in favorites) {
+      final key = _favRefSectionKey(favRef);
+      entries.add((
+        key: key,
+        task: () => sectionTask(
               () => _fetchOneTheme(favRef, isSerene),
               (feed) => _buildFavoriteThemeSection(
                 favRef,
@@ -2470,20 +2790,30 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               // d'origine (ordre préservé) au lieu d'append (sinon doublon
               // coquille + contenu).
               (section) => _themes = _upsertByKey(_themes, section),
-              resolvedKey: _favRefSectionKey(favRef),
+              resolvedKey: key,
             ),
-      // Sources favorites.
-      for (final src in resolvedSources)
-        () => sectionTask(
+      ));
+    }
+    // Sources favorites.
+    for (final src in resolvedSources) {
+      final key = tourneeSourceKey(src.id);
+      entries.add((
+        key: key,
+        task: () => sectionTask(
               () => _fetchOneSource(src.id, isSerene),
               (feed) => _buildSourceSection(feed: feed, source: src),
               (section) => _sources = _upsertByKey(_sources, section),
-              resolvedKey: tourneeSourceKey(src.id),
+              resolvedKey: key,
             ),
-      // Suggérées « Choisie pour vous » (hors classification maigre/riche, mais
-      // marquées résolues sans effet — clé suggérée non favorite).
-      for (final s in usableSuggestions)
-        () => sectionTask(
+      ));
+    }
+    // Suggérées « Choisie pour vous » (hors classification maigre/riche, mais
+    // marquées résolues sans effet — clé suggérée non favorite).
+    for (final s in fetchedSuggestions) {
+      final key = _suggestionKey(s);
+      entries.add((
+        key: key,
+        task: () => sectionTask(
               () => (s.kind == 'source' && s.sourceId != null)
                   ? _fetchOneSource(s.sourceId!, isSerene)
                   : _fetchOneTheme(
@@ -2495,13 +2825,24 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               // position (Issue #1) au lieu d'append (sinon doublon coquille +
               // contenu, et la coquille « poperait »).
               (section) => _suggested = _upsertByKey(_suggested, section),
-              resolvedKey: _suggestionKey(s),
-              onEmpty: () =>
-                  _suggested = _removeByKey(_suggested, _suggestionKey(s)),
+              resolvedKey: key,
+              onEmpty: () => _suggested = _removeByKey(_suggested, key),
             ),
-    ];
+      ));
+    }
+    // Tri unique par rang de rendu. Les clés hors de l'ordre affiché (favoris
+    // masqués / au-delà du cap, réserve suggestion) prennent un rang de queue
+    // dérivé de leur index d'origine (ordre relatif préservé, elles restent
+    // fetchées) — sans dépendre de la stabilité de `List.sort` (non garantie).
+    final rank = <String, int>{
+      for (var i = 0; i < entries.length; i++)
+        entries[i].key: renderPos[entries[i].key] ?? renderedKeys.length + i,
+    };
+    entries.sort((a, b) => rank[a.key]!.compareTo(rank[b.key]!));
+    final tasks = [for (final e in entries) e.task];
 
     await _runWithConcurrency(tasks, _kPhase2FanoutConcurrency);
+    _perfBoot('fanout_done_ms', ' tasks=${tasks.length} dropped=$droppedCount');
     // PR-4 — tout est stabilisé : le compose ci-dessous est le seul du jour à
     // (re)calculer l'ordre par score, et il l'applique dans la foulée.
     _freezeScoreOrderOnNextCompose = true;
@@ -2685,13 +3026,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required bool grilleAvailable,
     required Set<String> hiddenKeys,
     required List<String> order,
-    // Cohérence Tournée : clés favorites maigres + bascule de dépriorisation.
-    // Quand [demote], les favoris maigres sont stable-partitionnés **après** les
-    // riches dans le bloc favori (ordre relatif préservé) → le contenu dense
-    // remonte au-dessus du pli. N'affecte que l'ordre **par défaut** : un ordre
-    // personnalisé (`customized`) reste sticky via `applyOrder`.
-    Set<String> thinKeys = const {},
-    bool demote = false,
+    // Blocs favoris à **déclasser** (curation pauvre du jour, cf.
+    // [_poorFavoriteKeys]) : ils descendent sous les autres favoris sans jamais
+    // passer sous une « Choisie pour vous ». Gelé à la journée comme
+    // [scoreOrder] ⇒ vide pendant le fan-out.
+    Set<String> poorKeys = const {},
     // PR-4 — ordre des blocs par score, **gelé pour la journée** (cf.
     // [_freezeScoreOrderIfNeeded]). Appliqué après l'ordre manuel (`applyOrder`,
     // qui reste la base et départage à score égal) et avant l'épingle Grille.
@@ -2717,19 +3056,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // personnalisé (`customized`) est respecté tel quel par `applyOrder`.
     final orderedThemeKeys =
         customized ? themeKeys : _biasThemeKeysByMostFollowed(themeKeys);
-    var favoriteKeys = [...orderedThemeKeys, ...sourceKeys, ...veilleKeys];
-    // Dépriorisation : partition **stable** riches-d'abord / maigres-ensuite du
-    // bloc favori. La veille (jamais dans `thinKeys` — exclue de la
-    // classification) reste dans le groupe « non maigre ». Ordre relatif
-    // conservé dans chaque groupe.
-    if (demote && thinKeys.isNotEmpty) {
-      favoriteKeys = [
-        for (final k in favoriteKeys)
-          if (!thinKeys.contains(k)) k,
-        for (final k in favoriteKeys)
-          if (thinKeys.contains(k)) k,
-      ];
-    }
+    final favoriteKeys = [...orderedThemeKeys, ...sourceKeys, ...veilleKeys];
     // Story 22.3 — clés des sections « Choisie pour vous », best-first par
     // daily_rank (`_suggested` arrive déjà trié du backend). Insérées APRÈS les
     // validées (jamais devant) et dédupliquées contre elles : un compte
@@ -2743,6 +3070,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             !favoriteKeySet.contains(sectionKey(section)))
           sectionKey(section),
     ];
+    final suggestedKeySet = suggestedKeys.toSet();
     // Ordre par défaut unifié (normal & serein). Pour les comptes **non
     // personnalisés** (tous les nouveaux utilisateurs), on démarre la Tournée
     // par les Actus du jour — la section éditoriale cœur du rituel — puis les
@@ -2777,9 +3105,35 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // exactement la sémantique de `mergeVisibleReorder`, réutilisée par
     // [applyScoreOrder] (`applyOrder` les aurait poussées en queue → coupées
     // par le cap).
+    //
+    // Bug « l'ordre des favoris ne se reflète pas dans la Tournée » : un bloc
+    // que l'utilisateur a lui-même placé (clé présente dans `order`, l'ordre
+    // qu'il compose dans « Mes favoris ») n'est plus déplacé par le tri du jour.
+    // Son rang est un **choix**, pas une estimation — et comme l'ordre est gelé
+    // à la journée, un réordre fait le soir ne se voyait pas avant le lendemain.
+    // Le tri garde tout son rôle sur les blocs que l'utilisateur n'a PAS placés
+    // (« Choisie pour vous », favori tout juste ajouté) : ils sont classés entre
+    // eux, dans les slots que les blocs placés laissent libres.
     if (scoreOrder != null) {
-      ordered = applyScoreOrder(ordered, scoreOrder);
+      final placedByUser = order.toSet();
+      ordered = applyScoreOrder(ordered, [
+        for (final key in scoreOrder)
+          if (!placedByUser.contains(key)) key,
+      ]);
     }
+
+    // Déclassement qualité (règle PO V1) — un bloc choisi dont la curation du
+    // jour est pauvre ne disparaît pas : il descend simplement sous les autres
+    // blocs choisis. Appliqué **après** l'ordre manuel et le tri du jour, sur
+    // les seuls slots occupés par des blocs choisis ou suggérés : les cartes
+    // éditoriales (Actus, Bonnes) gardent leur position absolue, comme sous
+    // [applyScoreOrder].
+    ordered = _demotePoorBlocks(
+      ordered,
+      poorKeys: poorKeys,
+      favoriteKeys: favoriteKeySet,
+      suggestedKeys: suggestedKeySet,
+    );
 
     // Épingle la Grille immédiatement après les Actus du jour (ou en tête si
     // les Actus sont masqués/absents). C'est le seul point qui fixe la position
@@ -2790,37 +3144,89 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       ordered.insert(actusIndex >= 0 ? actusIndex + 1 : 0, kTourneeGrilleKey);
     }
 
-    if (cap == null) return ordered.toList(growable: false);
+    if (cap == null || ordered.length <= cap) {
+      return ordered.toList(growable: false);
+    }
 
-    // Story 22.6 — quota de suggestions garanti sous le cap. Un ordre
-    // personnalisé (`applyOrder` sticky) relègue les sections « Choisie pour
-    // vous » en fin de liste, où `take(cap)` les coupait toutes (« plus tu
-    // configures, moins tu vois de suggestions »). On réserve jusqu'à
-    // `kTourneeSuggestQuota` slots en queue du cap aux premières suggestions
-    // disponibles, **sans jamais permuter l'ordre relatif des favoris**. No-op
-    // quand `take(cap)` en contient déjà assez (cas non-personnalisé) ou
-    // qu'aucune suggestion ne survit aux `hiddenKeys` (quota 0 rend tous les
-    // slots aux favoris).
-    final suggestedKeySet = suggestedKeys.toSet();
+    // Bug « blocs favoris absents de l'Essentiel » — le cap ne coupe **jamais**
+    // un bloc que l'utilisateur a placé dans son Essentiel (cartes éditoriales
+    // + favoris thème/source/veille) au profit d'une « Choisie pour vous ».
+    // Avant : `take(cap)` tranchait à l'aveugle et le quota 22.6 réservait des
+    // slots aux suggestions **en évinçant des favoris** (`cap - quota`) ; comme
+    // le tri par score du jour ([applyScoreOrder]) intercale suggestions et
+    // favoris dans un même classement, un bloc explicitement choisi pouvait
+    // passer sous le cap et disparaître — sans empty-state ni « Peu d'articles »,
+    // donc indistinguable d'un bug pour l'utilisateur.
+    //
+    // Les suggestions restent un **accent quotidien** : elles n'occupent que les
+    // slots laissés libres par les blocs choisis. L'esprit de la Story 22.6 (ne
+    // pas voir *moins* de suggestions parce qu'on a personnalisé) tient toujours
+    // dans le cas nominal — ≤ 7 favoris backend + 3 cartes éditoriales = 10 sur
+    // 13 → il reste des slots ; seul un compte qui a lui-même rempli le cap de
+    // blocs choisis n'a plus de place pour une suggestion.
+    final chosenKeys = [
+      for (final key in ordered)
+        if (!suggestedKeySet.contains(key)) key,
+    ];
+    // Si l'utilisateur a lui-même plus de blocs que le cap, c'est la queue de
+    // **son** ordre qui tombe — jamais un arbitrage de la Tournée.
+    final keptChosen = chosenKeys.take(cap).toSet();
+    final freeSlots = math.max(0, cap - keptChosen.length);
     final orderedSuggested = [
       for (final key in ordered)
         if (suggestedKeySet.contains(key)) key,
     ];
-    final quota = math.min(orderedSuggested.length, kTourneeSuggestQuota);
-    final capped = ordered.take(cap).toList(growable: false);
-    final visibleSuggested = capped.where(suggestedKeySet.contains).length;
-    // Couvre aussi `quota == 0` (aucune suggestion) : `0 >= 0` rend tous les
-    // slots aux favoris sans branche dédiée.
-    if (visibleSuggested >= quota) return capped;
+    final keptSuggested = orderedSuggested.take(freeSlots).toSet();
 
-    // Rééquilibrage : favoris/éditorial dans l'ordre appliqué, tronqués à
-    // `cap - quota` (ordre préservé), puis les `quota` premières suggestions.
-    final favSlots = math.max(0, cap - quota);
-    final head = [
+    // Ré-émission dans l'ordre d'affichage : le tri par score a pu intercaler
+    // une suggestion entre deux favoris, on ne la relègue pas en queue.
+    return [
       for (final key in ordered)
-        if (!suggestedKeySet.contains(key)) key,
-    ].take(favSlots);
-    return [...head, ...orderedSuggested.take(quota)].toList(growable: false);
+        if (keptChosen.contains(key) || keptSuggested.contains(key)) key,
+    ].toList(growable: false);
+  }
+
+  /// Fait descendre les blocs de [poorKeys] sous les autres blocs choisis, sans
+  /// jamais les faire passer sous une section « Choisie pour vous ».
+  ///
+  /// Ne redistribue que les slots déjà occupés par un bloc choisi ou suggéré :
+  /// les cartes éditoriales (Actus, Bonnes) et tout ce qui n'est ni l'un ni
+  /// l'autre gardent leur **position absolue** — même sémantique que
+  /// [applyScoreOrder], sans quoi le déclassement d'un thème ferait glisser le
+  /// rituel éditorial.
+  ///
+  /// No-op quand aucun bloc n'est pauvre : l'entrelacement favoris/suggestions
+  /// produit par le tri du jour reste alors intact.
+  List<String> _demotePoorBlocks(
+    List<String> ordered, {
+    required Set<String> poorKeys,
+    required Set<String> favoriteKeys,
+    required Set<String> suggestedKeys,
+  }) {
+    if (poorKeys.isEmpty) return ordered;
+
+    final slots = <int>[];
+    final healthy = <String>[];
+    final poor = <String>[];
+    final suggested = <String>[];
+    for (var i = 0; i < ordered.length; i++) {
+      final k = ordered[i];
+      if (suggestedKeys.contains(k)) {
+        slots.add(i);
+        suggested.add(k);
+      } else if (favoriteKeys.contains(k)) {
+        slots.add(i);
+        (poorKeys.contains(k) ? poor : healthy).add(k);
+      }
+    }
+    if (poor.isEmpty) return ordered;
+
+    final refilled = [...healthy, ...poor, ...suggested];
+    final out = [...ordered];
+    for (var i = 0; i < slots.length; i++) {
+      out[slots[i]] = refilled[i];
+    }
+    return out;
   }
 
   /// Renvoie [themeKeys] avec, en tête, la clé du thème auquel l'utilisateur a
@@ -2829,7 +3235,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// section thème rendue. N'est appelé que quand l'ordre n'est pas personnalisé.
   List<String> _biasThemeKeysByMostFollowed(List<String> themeKeys) {
     if (themeKeys.length < 2) return themeKeys;
-    final interests = ref.read(userInterestsProvider).valueOrNull;
+    final interests = _peekValue(userInterestsProvider);
     if (interests == null) return themeKeys;
 
     final counts = <String, int>{};
@@ -2921,7 +3327,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (state.valueOrNull != null) {
       state = AsyncData(_compose(isSerene));
     }
-    final interestsState = ref.read(userInterestsProvider).valueOrNull;
+    final interestsState = _peekValue(userInterestsProvider);
     await _runWithConcurrency(
       [
         for (final favRef in picked)
@@ -2989,7 +3395,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       state = AsyncData(_compose(isSerene));
     }
     final catalog =
-        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+        _peekValue(userSourcesProvider) ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
     final resolved = <Source>[
       for (final fav in picked)
