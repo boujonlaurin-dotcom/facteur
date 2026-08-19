@@ -2,7 +2,7 @@
 perspectives list (PO refinement R3, post PR #619).
 
 Covers three layers:
-- ``_normalize_domain`` — canonicalisation du domaine, désormais la clé
+- ``normalize_domain`` — canonicalisation du domaine, désormais la clé
   d'égalité qui retire le média courant du snapshot de couverture.
 - ``_recompute_bias_distribution`` — keeps the bias counters in sync with
   the filtered list returned to the front.
@@ -22,25 +22,25 @@ from app.models.enums import ContentType, SourceType
 from app.models.source import Source
 from app.routers.contents import (
     _load_cluster_articles_for_representative,
-    _normalize_domain,
     _recompute_bias_distribution,
 )
+from app.services.perspective_service import normalize_domain
 
 # --- Helper unit tests ------------------------------------------------------
 
 
 def test_normalize_domain_strips_scheme_www_and_path():
     """Deux URL du même média collapsent sur une seule clé de couverture."""
-    assert _normalize_domain("https://www.lemonde.fr/article/abc/") == "lemonde.fr"
-    assert _normalize_domain("http://lemonde.fr/autre-article") == "lemonde.fr"
-    assert _normalize_domain("https://LEMONDE.fr") == "lemonde.fr"
+    assert normalize_domain("https://www.lemonde.fr/article/abc/") == "lemonde.fr"
+    assert normalize_domain("http://lemonde.fr/autre-article") == "lemonde.fr"
+    assert normalize_domain("https://LEMONDE.fr") == "lemonde.fr"
     # Domaine nu (tel que persisté dans le snapshot) accepté sans schéma.
-    assert _normalize_domain("www.lemonde.fr") == "lemonde.fr"
+    assert normalize_domain("www.lemonde.fr") == "lemonde.fr"
 
 
 def test_normalize_domain_empty_inputs():
-    assert _normalize_domain(None) == ""
-    assert _normalize_domain("") == ""
+    assert normalize_domain(None) == ""
+    assert normalize_domain("") == ""
 
 
 def test_recompute_bias_distribution_tallies_known_stances_only():

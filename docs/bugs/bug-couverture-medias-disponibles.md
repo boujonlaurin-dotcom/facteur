@@ -89,6 +89,11 @@ mais ne doit plus piloter une copy de couverture. `perspective_count` est gardé
 temporairement pour les anciens clients. Les snapshots restent dans le JSONB de
 `daily_digests.items`.
 
-Validation ciblée : 75 tests backend, 106 tests mobile, `ruff check`,
-`compileall` et analyse Flutter sans erreur. Les tests d'intégration PostgreSQL
-locaux restent dépendants de l'instance de test.
+Validation : suite backend complète (3115 tests), suite mobile complète
+(baseline d'échecs inchangée), `ruff check` / `ruff format` sur `app/` et
+`flutter analyze` sans erreur.
+
+Contrôle live de l'invariant, sur un vrai serveur HTTP et une vraie base :
+`bash docs/qa/scripts/verify_coverage_count_invariant.sh` (14 domaines sur le
+même sujet, un seul biais connu ; les 14 articles renvoient `coverage_count=14`
+et 13 alternatives, sans jamais le domaine lu).

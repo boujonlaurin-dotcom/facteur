@@ -48,6 +48,7 @@ from app.services.editorial.schemas import (
 from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
 from app.services.perspective_service import (
     PerspectiveService,
+    normalize_domain,
     perspective_to_dict,
 )
 from app.services.title_annotation_service import (
@@ -575,19 +576,15 @@ class EditorialPipelineService:
 
             # Recherche hybride (interne + Google News), puis construction de
             # l'univers commun avec le cluster et le pivot.
-            exclude_domain = None
-            if representative.source and representative.source.url:
-                try:
-                    parsed = urlparse(representative.source.url)
-                    exclude_domain = parsed.netloc
-                    if exclude_domain and exclude_domain.startswith("www."):
-                        exclude_domain = exclude_domain[4:]
-                except Exception:
-                    pass
-            if not exclude_domain:
-                exclude_domain = perspective_service._extract_domain(
-                    representative.url or ""
-                )
+            # Même canonicalisation que la dédup du snapshot et que l'exclusion
+            # du média lu côté routeur : sans clé commune, le pivot resterait
+            # dans ses propres alternatives et l'invariant sauterait d'une unité.
+            source_url = (
+                representative.source.url if representative.source else ""
+            ) or ""
+            exclude_domain = normalize_domain(source_url) or normalize_domain(
+                representative.url or ""
+            )
 
             try:
                 (
@@ -631,7 +628,7 @@ class EditorialPipelineService:
             # re-fetches /perspectives on the SAME content as the one used here.
             subject.representative_content_id = representative.id
 
-            pivot_domain = (exclude_domain or "").lower().removeprefix("www.")
+            pivot_domain = exclude_domain
             alternatives = [
                 p
                 for p in coverage_universe

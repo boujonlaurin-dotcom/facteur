@@ -10,7 +10,7 @@ from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import certifi
 import httpx
@@ -234,6 +234,27 @@ class Perspective:
     # News. Il permet de rattacher chaque article du snapshot de couverture au
     # même sujet sans nouvelle requête de clustering.
     content_id: str | None = None
+
+
+def normalize_domain(raw: str | None) -> str:
+    """Forme canonique d'un domaine éditorial : minuscules, sans ``www.``.
+
+    La couverture est définie *par domaine* — dédup du snapshot, exclusion du
+    média en cours de lecture, appartenance à `NON_EDITORIAL_AGGREGATOR_DOMAINS`.
+    Ces trois décisions doivent partager exactement la même clé, sinon
+    `coverage_count` et la liste renvoyée divergent d'une unité. Accepte une URL
+    complète comme un domaine nu (le port est écarté).
+    """
+    if not raw:
+        return ""
+    candidate = raw.strip().lower()
+    if not candidate:
+        return ""
+    try:
+        parsed = urlparse(candidate if "://" in candidate else f"https://{candidate}")
+        return (parsed.hostname or "").removeprefix("www.")
+    except ValueError:
+        return candidate.removeprefix("www.")
 
 
 def perspective_to_dict(p: object) -> dict:
@@ -958,43 +979,26 @@ class PerspectiveService:
         from PR #390 holds: header, spectrum bar, and bottom-sheet all
         describe the same merged set (cluster ∪ Google News).
         """
-        from urllib.parse import urlparse
-
         seen_domains: set[str] = set()
         result: list[Perspective] = []
         for content in contents:
-            domain = ""
-            source_name = ""
             source = getattr(content, "source", None)
-            if source is not None:
-                source_name = getattr(source, "name", "") or ""
-                source_url = getattr(source, "url", "") or ""
-                if isinstance(source_url, str) and source_url:
-                    try:
-                        parsed = urlparse(source_url)
-                        domain = parsed.netloc or ""
-                        if domain.startswith("www."):
-                            domain = domain[4:]
-                    except Exception:
-                        domain = ""
-            # Fallback: extract from article URL.
-            if not domain:
-                url = getattr(content, "url", "") or ""
-                if isinstance(url, str) and url:
-                    try:
-                        parsed = urlparse(url)
-                        domain = parsed.netloc or ""
-                        if domain.startswith("www."):
-                            domain = domain[4:]
-                    except Exception:
-                        domain = ""
+            source_name = (
+                (getattr(source, "name", "") or "") if source is not None else ""
+            )
+            source_url = (
+                (getattr(source, "url", "") or "") if source is not None else ""
+            )
+            # Fallback sur l'URL de l'article quand la ligne Source n'a pas d'URL.
+            domain = normalize_domain(
+                source_url if isinstance(source_url, str) else ""
+            ) or normalize_domain(getattr(content, "url", "") or "")
 
             if not domain and not source_name:
                 continue
 
             # La couverture publique est définie par domaine, pas par ligne
             # Source : deux feeds d'un même média ne doivent compter qu'une fois.
-            domain = domain.lower()
             if not domain or domain in seen_domains:
                 continue
             seen_domains.add(domain)
@@ -1042,7 +1046,7 @@ class PerspectiveService:
 
     @staticmethod
     def _is_editorial_perspective_candidate(perspective: Perspective) -> bool:
-        domain = (perspective.source_domain or "").lower().removeprefix("www.")
+        domain = normalize_domain(perspective.source_domain)
         if not domain or domain in NON_EDITORIAL_AGGREGATOR_DOMAINS:
             return False
         if any(domain.endswith(f".{d}") for d in NON_EDITORIAL_AGGREGATOR_DOMAINS):
@@ -1155,7 +1159,7 @@ class PerspectiveService:
             if not self._is_editorial_perspective_candidate(perspective):
                 non_editorial += 1
                 continue
-            domain = perspective.source_domain.lower().removeprefix("www.")
+            domain = normalize_domain(perspective.source_domain)
             if domain in seen_domains:
                 duplicate_domains += 1
                 continue

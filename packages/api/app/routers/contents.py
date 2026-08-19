@@ -2,7 +2,6 @@ import time
 import uuid
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
@@ -26,7 +25,7 @@ from app.schemas.content import (
 from app.services.collection_service import CollectionService
 from app.services.content_service import ContentService
 from app.services.feed_cache import FEED_CACHE
-from app.services.perspective_service import perspective_to_dict
+from app.services.perspective_service import normalize_domain, perspective_to_dict
 from app.services.title_annotation_service import (
     ClusterAnnotations,
     TitleAnnotationService,
@@ -522,28 +521,17 @@ def _empty_timings() -> dict[str, int]:
     )
 
 
-def _normalize_domain(raw: str | None) -> str:
-    if not raw:
-        return ""
-    candidate = raw.strip().lower()
-    try:
-        parsed = urlparse(candidate if "://" in candidate else f"https://{candidate}")
-        return (parsed.hostname or "").removeprefix("www.")
-    except Exception:
-        return candidate.removeprefix("www.")
-
-
 def _snapshot_article_domain(article: dict) -> str:
     if not isinstance(article, dict):
         return ""
-    return _normalize_domain(article.get("source_domain") or article.get("url"))
+    return normalize_domain(article.get("source_domain") or article.get("url"))
 
 
 def _snapshot_alternatives_for_domain(
     coverage_articles: list[dict], current_domain_or_url: str | None
 ) -> list[dict]:
     """Return every coverage outlet except the domain currently being read."""
-    current_domain = _normalize_domain(current_domain_or_url)
+    current_domain = normalize_domain(current_domain_or_url)
     if not current_domain:
         return list(coverage_articles)
     return [
@@ -934,11 +922,11 @@ async def _refresh_perspectives_cache_background(
                 [content, *cluster_contents],
                 gnews_perspectives,
             )
-            current_domain = _normalize_domain(source_domain or content.url)
+            current_domain = normalize_domain(source_domain or content.url)
             perspectives = [
                 p
                 for p in coverage_universe
-                if _normalize_domain(p.source_domain) != current_domain
+                if normalize_domain(p.source_domain) != current_domain
             ]
             coverage_count = len(coverage_universe)
 
@@ -1582,11 +1570,11 @@ async def get_perspectives(
         [content, *cluster_contents],
         internal_perspectives,
     )
-    current_domain = _normalize_domain(source_domain or content.url)
+    current_domain = normalize_domain(source_domain or content.url)
     perspectives = [
         p
         for p in coverage_universe
-        if _normalize_domain(p.source_domain) != current_domain
+        if normalize_domain(p.source_domain) != current_domain
     ]
     coverage_count = len(coverage_universe)
 
