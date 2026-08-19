@@ -10,7 +10,6 @@ import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/digest/repositories/digest_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/providers/feed_provider.dart';
-import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart';
@@ -31,6 +30,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
+
+import 'feed_repository_mock.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
@@ -38,10 +39,11 @@ import 'flux_continu_settle.dart';
 
 class _MockDigestRepository extends Mock implements DigestRepository {}
 
-class _MockFeedRepository extends Mock implements FeedRepository {}
+// Le fan-out appelle getFeedWithRaw (SWR in-day) : le mock partagé délègue
+// vers getFeed, que ces suites stubbent.
+typedef _MockFeedRepository = MockFeedRepository;
 
-class _MockFluxContinuRepository extends Mock
-    implements FluxContinuRepository {}
+typedef _MockFluxContinuRepository = MockFluxContinuRepository;
 
 class _MockEssentielRepository extends Mock implements EssentielRepository {}
 

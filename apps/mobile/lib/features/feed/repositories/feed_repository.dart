@@ -3,6 +3,11 @@ import '../../../core/api/api_client.dart';
 import '../models/content_model.dart';
 import '../services/read_sync_service.dart' show CompletionSource;
 
+/// Réponse feed **et** son payload brut (JSON décodé), pour les appelants qui
+/// persistent la réponse : les modèles feed n'ont pas de `toJson`, on remet
+/// donc le brut dans [FeedRepository.parseFeedData] à la relecture.
+typedef FeedRawResult = ({FeedResponse feed, dynamic raw});
+
 class FeedRepository {
   final ApiClient _apiClient;
 
@@ -23,7 +28,7 @@ class FeedRepository {
   /// keying is needed because [ApiClient] is per-session and userId is
   /// implicit in the auth header. Cleared on logout via
   /// [clearDefaultViewCache].
-  static Future<({FeedResponse feed, dynamic raw})>? _defaultViewInflight;
+  static Future<FeedRawResult>? _defaultViewInflight;
   static DateTime? _defaultViewLastFetchAt;
   static ({FeedResponse feed, dynamic raw})? _defaultViewLastResult;
   static const Duration _defaultViewDedupeWindow = Duration(seconds: 5);
@@ -123,7 +128,7 @@ class FeedRepository {
   ///
   /// `forceFresh` bypasses the R5.1 default-view dedupe (use for explicit
   /// pull-to-refresh).
-  Future<({FeedResponse feed, dynamic raw})> getFeedWithRaw({
+  Future<FeedRawResult> getFeedWithRaw({
     int page = 1,
     int limit = 20,
     String? contentType,
@@ -227,7 +232,7 @@ class FeedRepository {
     );
   }
 
-  Future<({FeedResponse feed, dynamic raw})> _doFetch({
+  Future<FeedRawResult> _doFetch({
     required int page,
     required int limit,
     String? contentType,
