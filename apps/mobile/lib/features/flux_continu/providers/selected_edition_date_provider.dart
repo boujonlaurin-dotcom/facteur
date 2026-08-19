@@ -132,3 +132,27 @@ String editionPillLabel(EditionSelection selection, {DateTime? now}) {
       return formatFrenchShortWeekdayDay(date);
   }
 }
+
+/// Sous-titre de l'en-tête de la carte Essentiel, accordé à la sélection.
+///
+/// Aujourd'hui, la carte est une **pile à trier** → la phrase dit le geste
+/// (« Choisis… »). Une lettre passée ou la rétro hebdo sont figées (lecture
+/// seule, cf. `_singleDaySlivers`) : y demander un choix mentirait, on présente
+/// donc ce qui est là. Pur et testable ; `now` injectable, même convention que
+/// [editionPillLabel].
+String editionSubtitleLabel(EditionSelection selection, {DateTime? now}) {
+  switch (selection) {
+    case EditionToday():
+      return 'Choisis les articles que tu liras aujourd\'hui.';
+    case EditionWeek():
+      return 'Voici le récap de ta semaine. Bonne lecture.';
+    case EditionPastDay(:final date):
+      final today = editionTodayDate(now: now);
+      final yesterday = DateTime(today.year, today.month, today.day - 1);
+      if (editionDayKey(date) == editionDayKey(yesterday)) {
+        return 'Voici les articles de ton Essentiel d\'hier. Bonne lecture.';
+      }
+      return 'Voici les articles de ton Essentiel du '
+          '${formatFrenchLongDate(date)}. Bonne lecture.';
+  }
+}
