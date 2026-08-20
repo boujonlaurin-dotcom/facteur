@@ -231,6 +231,25 @@ class ScoringWeights:
     POLARIZATION_MEDIUM_BONUS = 6.0
     POLARIZATION_HIGH_BONUS = 12.0
 
+    # --- DIGEST SCORE MIXTE SUJET (Ton Essentiel — PR 4, bug-curation) ---
+    # score_sujet = (1-w)·importance_100 + w·perso_100, calculé par
+    # `helpers/editorial_ranking.mixed_subject_score` et consommé par la clé
+    # `digest_selector.mixed_subject_rank_score` + `essentiel_service`.
+    # ROLLBACK COMPLET vers l'ordre v3 sans redeploy :
+    #   SCORING_OVERRIDES='{"SUBJECT_PERSO_WEIGHT": 0.0, "SUBJECT_SOLO_MALUS": 1000.0}'
+    # (w=0 → importance pure ; malus 1000 ≈ l'ancienne relégation dure des
+    # solos par préfixe `is_multi`).
+    SUBJECT_PERSO_WEIGHT = 0.40
+
+    # Malus appliqué aux sujets mono-source dans la clé de tri v4. À 0.0
+    # (défaut), un solo n'est relégué que par sa propriété coverage(1)=0 ;
+    # à 1000.0 il retombe sous tout sujet multi-sources (rollback v3).
+    SUBJECT_SOLO_MALUS = 0.0
+
+    # Bonus « À la Une » côté essentiel_service — seul bonus éditorial conservé
+    # hors moteur. = topic_selector UNE_BONUS (12.0, ~35/300 old scale).
+    ESSENTIEL_UNE_BONUS = 12.0
+
     # --- DIGEST TRENDING/IMPORTANCE (Pour vous hybride) ---
 
     # Bonus pour article trending (couvert par ≥3 sources distinctes).
