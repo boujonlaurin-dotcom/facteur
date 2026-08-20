@@ -594,7 +594,11 @@ async def _load_cluster_articles_for_representative(
         select(DailyDigest)
         .where(
             DailyDigest.user_id == user_id,
-            DailyDigest.format_version.in_(("editorial_v1", "editorial_v2")),
+            # Préfixe, pas une liste figée : la liste `.in_(("editorial_v1",
+            # "editorial_v2"))` omettait déjà v3 (fallback live silencieux
+            # depuis ce bump), et chaque futur `editorial_vN` re-casserait le
+            # snapshot. Aligné sur `digest_content_refs.py` / `push_dispatcher.py`.
+            DailyDigest.format_version.startswith("editorial_", autoescape=True),
         )
         .order_by(desc(DailyDigest.generated_at))
         .limit(4)  # up to 2 per day * 2 days (normal + serene)
@@ -705,7 +709,10 @@ async def _load_stored_perspectives_for_representative(
         select(DailyDigest)
         .where(
             DailyDigest.user_id == user_id,
-            DailyDigest.format_version.in_(("editorial_v1", "editorial_v2")),
+            # Préfixe, pas une liste figée (cf. le même filtre dans
+            # `_load_cluster_articles_for_representative`) : la liste omettait
+            # v3 → fallback live silencieux, logos CTA ≠ bottom sheet.
+            DailyDigest.format_version.startswith("editorial_", autoescape=True),
         )
         .order_by(desc(DailyDigest.generated_at))
         .limit(4)

@@ -364,18 +364,24 @@ def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
 # Version courante du format editorial. Bumpée editorial_v1 -> editorial_v2 avec
 # la projection per-user (P2), puis editorial_v2 -> editorial_v3 avec le
 # classement par importance éditoriale (couverture + récence + polarisation,
-# perso en départage ; solos relégués) — cf. bug-actus-du-jour-ranking.md. La
-# FORME JSON est inchangée (toujours `subjects[]`), mais la SÉMANTIQUE D'ORDRE
-# change → le bump force la régénération des digests cachés `editorial_v2`
-# (le cron les voit "stale") et évite de servir un mix de sémantiques. Clé
-# d'idempotence (user_id, target_date, is_serene) inchangée.
-EDITORIAL_FORMAT_VERSION = "editorial_v3"
+# perso en départage ; solos relégués), puis editorial_v3 -> editorial_v4 avec
+# le score mixte scalaire `(1-w)·importance + w·perso` (solos relégués par
+# malus configurable) — cf. bug-curation-essentiel-personnalisation.md (PR 4).
+# La FORME JSON est inchangée (toujours `subjects[]`), mais la SÉMANTIQUE
+# D'ORDRE change → le bump force la régénération des digests cachés
+# `editorial_v3` (le cron les voit "stale") et évite de servir un mix de
+# sémantiques. Clé d'idempotence (user_id, target_date, is_serene) inchangée.
+# Rollback = SCORING_OVERRIDES (poids w=0 + malus 1000 ≈ ordre v3), pas un
+# revert de code.
+EDITORIAL_FORMAT_VERSION = "editorial_v4"
 # Tous les formats editorial rendus/clonables pendant les transitions.
 # Même forme JSON → `_build_editorial_response` les traite identiquement.
+# v1/v2/v3 restent lisibles ⇒ aucun 202 pendant la transition v3→v4.
 _EDITORIAL_FORMATS: tuple[str, ...] = (
     "editorial_v1",
     "editorial_v2",
     "editorial_v3",
+    "editorial_v4",
 )
 
 # Format versions that the read-only hot path is willing to render. flat_v1
