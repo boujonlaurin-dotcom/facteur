@@ -2460,11 +2460,11 @@ class DigestService:
                         reason=subject.get("selection_reason", ""),
                         # `is_trending` = signal "≥3 sources couvrent le topic"
                         # (le buzz multi-rédaction). `is_une` = décision
-                        # éditoriale "à la une". Deux leviers indépendants
-                        # dans le scoring Essentiel (_W_TRENDING + _W_UNE) —
-                        # historiquement mappés au même champ JSONB, ce qui
-                        # cumulait +70 sur tout subject "à la une" indépendamment
-                        # de sa couverture.
+                        # éditoriale "à la une". Depuis le score mixte v4,
+                        # `is_trending` n'est plus un input de scoring (la
+                        # couverture passe par `source_count`) : il n'alimente
+                        # que le flag d'affichage `is_actu_du_jour` côté
+                        # essentiel_service.
                         is_trending=subject.get("source_count", 0) >= 3,
                         is_une=subject.get("is_a_la_une", False),
                         source_count=subject.get("source_count", 0),

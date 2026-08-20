@@ -60,7 +60,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONTEXT_DIR = REPO_ROOT / ".context"
 
-# Seuils M1 (mêmes définitions que baseline_curation.sql).
+# Seuils M1 — jumeau de `docs/qa/scripts/baseline_curation.sql` (mêmes
+# définitions ; toute retouche de seuil se répercute dans les deux fichiers).
 QUASI_UNIVERSAL_SHARE = 0.50
 PERSONAL_SHARE = 0.10
 SANITY_MIN_IDENTICAL = 0.80
@@ -102,8 +103,9 @@ os.environ["MISTRAL_API_KEY"] = ""
 from sqlalchemy import text  # noqa: E402
 
 from app.database import async_session_maker, engine  # noqa: E402
-from app.services.digest_selector import mixed_subject_rank_score  # noqa: E402
+from app.services.digest_selector import rank_editorial_subjects  # noqa: E402
 from app.services.recommendation.scoring_config import ScoringWeights  # noqa: E402
+from scripts._scoring_overrides import weights_override  # noqa: E402
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -244,17 +246,11 @@ async def _load_snapshots(days: int, max_users: int) -> list[DigestSnapshot]:
 
 
 def _resort_top(snapshot: DigestSnapshot) -> list[SimpleNamespace]:
-    """Rejoue le seul étage qui change : à-la-une épinglé + tri stable par clé v4."""
-    une = [s for s in snapshot.subjects if s.is_a_la_une]
-    rest = [s for s in snapshot.subjects if not s.is_a_la_une]
-    rest_sorted = sorted(
-        rest,
-        key=lambda s: mixed_subject_rank_score(
-            s, score_map=snapshot.score_map, now=snapshot.now
-        ),
-        reverse=True,
+    """Rejoue le seul étage qui change — l'étage prod lui-même, pas une copie."""
+    ordered = rank_editorial_subjects(
+        snapshot.subjects, score_map=snapshot.score_map, now=snapshot.now
     )
-    return [s for s in une + rest_sorted if s.actu_article is not None]
+    return [s for s in ordered if s.actu_article is not None]
 
 
 def _top5_ids(ordered: list[SimpleNamespace]) -> set[str]:
@@ -333,12 +329,7 @@ def _metrics_for_weight(
         users_total = len({u for u, _ in pairs})
         if users_total == 0:
             continue
-        share_by_content = Counter()
-        for _, cid in pairs:
-            share_by_content[cid] += 1
-        by_users: dict[str, int] = defaultdict(int)
-        for cid in {c for _, c in pairs}:
-            by_users[cid] = len({u for u, c in pairs if c == cid})
+        by_users = Counter(cid for _u, cid in set(pairs))
         for _, cid in pairs:
             per_mode_slots[mode].append(by_users[cid] / users_total)
     for mode, shares in per_mode_slots.items():
@@ -409,23 +400,15 @@ async def run() -> int:
         return 2
     consumed = await _load_consumed_pairs(snapshots)
 
-    orig_w = ScoringWeights.SUBJECT_PERSO_WEIGHT
-    orig_malus = ScoringWeights.SUBJECT_SOLO_MALUS
     results: dict[str, dict] = {}
-    try:
-        # Sanity : la mécanique setattr est la même que SCORING_OVERRIDES — le
-        # harnais teste au passage la lecture des poids au call time.
-        ScoringWeights.SUBJECT_PERSO_WEIGHT = 0.0
-        ScoringWeights.SUBJECT_SOLO_MALUS = 1000.0
+    # `weights_override` (contexte de sweep partagé) : même mécanique setattr
+    # que SCORING_OVERRIDES — le harnais teste au passage la lecture des poids
+    # au call time — avec le garde-fou clé-inconnue/non-patchable en prime.
+    with weights_override(SUBJECT_PERSO_WEIGHT=0.0, SUBJECT_SOLO_MALUS=1000.0):
         sanity = _sanity_check(snapshots)
-
-        ScoringWeights.SUBJECT_SOLO_MALUS = 0.0
-        for w in weights:
-            ScoringWeights.SUBJECT_PERSO_WEIGHT = w
+    for w in weights:
+        with weights_override(SUBJECT_PERSO_WEIGHT=w, SUBJECT_SOLO_MALUS=0.0):
             results[f"{w:.2f}"] = _metrics_for_weight(snapshots, consumed)
-    finally:
-        ScoringWeights.SUBJECT_PERSO_WEIGHT = orig_w
-        ScoringWeights.SUBJECT_SOLO_MALUS = orig_malus
 
     churn_at_default = results[f"{default_w:.2f}"]["churn_vs_v3"]
     sanity_ok = sanity >= SANITY_MIN_IDENTICAL
@@ -480,6 +463,30 @@ async def run() -> int:
     return 0
 
 
+def _weight_rows(p: dict) -> list[tuple]:
+    """Une ligne par poids : (w, m1_quasi, m1_perso, m2_1_5, m2_6_10, churn).
+
+    Seule dérivation des résultats par poids — `_render_md` et
+    `_print_summary` ne font que la formater.
+    """
+    rows = []
+    for w, r in p["results_by_weight"].items():
+        m1 = r["M1"].get("pour_vous") or next(iter(r["M1"].values()), {})
+        m2a = r["M2"].get("1-5", {})
+        m2b = r["M2"].get("6-10", {})
+        rows.append(
+            (
+                w,
+                m1.get("pct_quasi_universels", "—"),
+                m1.get("pct_personnels", "—"),
+                m2a.get("pct_source_suivie", "—"),
+                m2b.get("pct_source_suivie", "—"),
+                r["churn_vs_v3"],
+            )
+        )
+    return rows
+
+
 def _render_md(p: dict) -> str:
     lines = [
         f"# Dry-run score mixte sujet (PR 4) — `{p['tag']}`",
@@ -497,16 +504,10 @@ def _render_md(p: dict) -> str:
         "M2 suivie 6-10 | churn vs v3 |",
         "|---|---|---|---|---|---|",
     ]
-    for w, r in p["results_by_weight"].items():
-        m1 = r["M1"].get("pour_vous") or next(iter(r["M1"].values()), {})
-        m2a = r["M2"].get("1-5", {})
-        m2b = r["M2"].get("6-10", {})
+    for w, m1_quasi, m1_perso, m2_15, m2_610, churn in _weight_rows(p):
         lines.append(
-            f"| {w} | {m1.get('pct_quasi_universels', '—')} % "
-            f"| {m1.get('pct_personnels', '—')} % "
-            f"| {m2a.get('pct_source_suivie', '—')} % "
-            f"| {m2b.get('pct_source_suivie', '—')} % "
-            f"| {r['churn_vs_v3']:.0%} |"
+            f"| {w} | {m1_quasi} % | {m1_perso} % "
+            f"| {m2_15} % | {m2_610} % | {churn:.0%} |"
         )
     lines += [
         "",
@@ -525,15 +526,8 @@ def _print_summary(p: dict) -> None:
     print(f"  Sanity v3         : {p['sanity_v3_identical_pct']:.0%}")
     print(f"  Churn @ w défaut  : {p['churn_at_default']:.0%}")
     print("  w      M1 q-univ   M1 perso   M2 suivie 1-5   churn")
-    for w, r in p["results_by_weight"].items():
-        m1 = r["M1"].get("pour_vous") or next(iter(r["M1"].values()), {})
-        m2a = r["M2"].get("1-5", {})
-        print(
-            f"  {w:<6} {m1.get('pct_quasi_universels', '—'):>8} % "
-            f"{m1.get('pct_personnels', '—'):>8} % "
-            f"{m2a.get('pct_source_suivie', '—'):>12} % "
-            f"{r['churn_vs_v3']:>7.0%}"
-        )
+    for w, m1_quasi, m1_perso, m2_15, _m2_610, churn in _weight_rows(p):
+        print(f"  {w:<6} {m1_quasi:>8} % {m1_perso:>8} % {m2_15:>12} % {churn:>7.0%}")
     if args.compare:
         print("-" * 66)
         for w, r in p["results_by_weight"].items():

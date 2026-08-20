@@ -271,13 +271,10 @@ class ScoringWeights:
     TOPIC_FOLLOWED_SOURCE_BONUS = 40.0
 
     # Bonus pour un topic trending (couvert par ≥3 sources distinctes).
-    # Source de vérité partagée avec Essentiel et feed thématique.
     TOPIC_TRENDING_BONUS = 50.0
-    TOPIC_IS_TRENDING_BONUS = TOPIC_TRENDING_BONUS  # alias canonique
 
     # Bonus pour un topic contenant ≥1 article "À la Une".
     TOPIC_UNE_BONUS = 35.0
-    TOPIC_IS_UNE_BONUS = TOPIC_UNE_BONUS  # alias canonique
 
     # Bonus pour un topic dont le thème dominant matche les intérêts user.
     TOPIC_THEME_MATCH_BONUS = 45.0
@@ -636,10 +633,10 @@ class ScoringWeights:
 #
 # Placement critique : **en bas de ce module**, donc appliqué au premier import
 # de `ScoringWeights`, AVANT que tout autre module ne lie une valeur en argument
-# par défaut (`scheduler.decayed_subtopic_weight`) ou en copie de niveau module
-# (`essentiel_service._W_TRENDING`). Ces call sites picoreront donc la valeur
-# **surchargée** — l'env override est effectif partout, contrairement au sweep
-# runtime (`scripts/_scoring_overrides.py`, cf. `NON_PATCHABLE_AT_RUNTIME`).
+# par défaut (`scheduler.decayed_subtopic_weight`). Ces call sites picoreront
+# donc la valeur **surchargée** — l'env override est effectif partout,
+# contrairement au sweep runtime (`scripts/_scoring_overrides.py`, cf.
+# `NON_PATCHABLE_AT_RUNTIME`).
 #
 # DISCIPLINE (runbook `maintenance-reco-optimisation-lot2.md`) : l'override env
 # est un outil de tuning et de rollback, **pas une surface de configuration**.

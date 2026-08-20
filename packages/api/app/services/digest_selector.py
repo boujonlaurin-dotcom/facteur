@@ -49,9 +49,7 @@ from app.services.recommendation.filter_presets import (
     is_sport_content,
 )
 from app.services.recommendation.helpers.editorial_ranking import (
-    mixed_subject_score,
-    normalized_importance,
-    normalized_perso,
+    blended_subject_score,
 )
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
@@ -152,17 +150,33 @@ def mixed_subject_rank_score(subject, *, score_map: dict, now) -> float:
     """
     if subject.actu_article is None:
         return float("-inf")
-    importance = normalized_importance(
+    score = blended_subject_score(
         subject.source_count,
         subject.actu_article.published_at,
         subject.divergence_level,
+        score_map.get(subject.actu_article.content_id),
         now=now,
     )
-    perso = normalized_perso(score_map.get(subject.actu_article.content_id, 0.0))
-    score = mixed_subject_score(importance, perso)
     if subject.source_count < 2:
         score -= ScoringWeights.SUBJECT_SOLO_MALUS
     return score
+
+
+def rank_editorial_subjects(subjects: list, *, score_map: dict, now) -> list:
+    """L'étage de re-ranking v4 complet : « À la Une » épinglé en tête, le
+    reste trié par `mixed_subject_rank_score` (tri stable ⇒ ex æquo gardent
+    l'ordre d'entrée). Module-level et duck-typée pour la même raison que la
+    clé : le dry-run (`scripts/dryrun_subject_mix.py`) rejoue CET étage, pas
+    une copie — si la règle d'épinglage change, il la suit.
+    """
+    une = [s for s in subjects if s.is_a_la_une]
+    rest = [s for s in subjects if not s.is_a_la_une]
+    rest_sorted = sorted(
+        rest,
+        key=lambda s: mixed_subject_rank_score(s, score_map=score_map, now=now),
+        reverse=True,
+    )
+    return une + rest_sorted
 
 
 @dataclass
@@ -1307,10 +1321,6 @@ class DigestSelector:
         # pour que tous les sujets partagent la même référence de récence.
         now = datetime.datetime.now(datetime.UTC)
 
-        def subject_rank_key(s: EditorialSubject) -> float:
-            """Clé de tri v4 : score mixte scalaire (cf. mixed_subject_rank_score)."""
-            return mixed_subject_rank_score(s, score_map=score_map, now=now)
-
         # 3. Sujets solo au-dessus du seuil. Conservés mais pénalisés par
         # `SUBJECT_SOLO_MALUS` (0.0 par défaut : la relégation vient de
         # coverage(1)=0, plus d'un préfixe dur). Propriété du mélange : un solo
@@ -1346,12 +1356,10 @@ class DigestSelector:
 
         # Re-ranking : « À la Une » reste rang 1 ; le reste trié par le score
         # mixte v4 (importance ⊕ perso, sujets sans actu en -inf, solos via
-        # malus). `sorted` stable ⇒ les ex æquo gardent l'ordre `run_for_user`.
-        # Cf. bug-curation-essentiel-personnalisation.md (PR 4).
-        une = [s for s in subjects if s.is_a_la_une]
-        rest = [s for s in subjects if not s.is_a_la_une] + solo_subjects
-        rest_sorted = sorted(rest, key=subject_rank_key, reverse=True)
-        ordered = (une + rest_sorted)[:target]
+        # malus). Cf. bug-curation-essentiel-personnalisation.md (PR 4).
+        ordered = rank_editorial_subjects(
+            list(subjects) + solo_subjects, score_map=score_map, now=now
+        )[:target]
 
         renumbered: list[EditorialSubject] = []
         for new_rank, s in enumerate(ordered, start=1):

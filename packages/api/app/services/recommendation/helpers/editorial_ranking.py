@@ -135,3 +135,24 @@ def mixed_subject_score(importance_100: float, perso_100: float) -> float:
     """
     w = ScoringWeights.SUBJECT_PERSO_WEIGHT
     return (1.0 - w) * importance_100 + w * perso_100
+
+
+def blended_subject_score(
+    source_count: int,
+    published_at: datetime | None,
+    divergence_level: str | None,
+    perso: float | None,
+    *,
+    neutral: float = 0.0,
+    now: datetime | None = None,
+) -> float:
+    """Le mélange complet en un appel — LA formule partagée par toutes les
+    surfaces (clé v4 du digest, `essentiel_service._score_article`, recall
+    live). Chaque call site n'ajoute que son delta local (malus solo, bonus
+    « À la Une », éviction lu, tie-break rang) : la formule elle-même n'existe
+    qu'ici.
+    """
+    return mixed_subject_score(
+        normalized_importance(source_count, published_at, divergence_level, now=now),
+        normalized_perso(perso, neutral),
+    )

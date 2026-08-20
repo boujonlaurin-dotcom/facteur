@@ -1090,12 +1090,13 @@ def _art(
     content_type: ContentType = ContentType.ARTICLE,
     topics: list[str] | None = None,
     rank: int = 1,
+    published_at: datetime | None = None,
 ) -> DigestTopicArticle:
     return DigestTopicArticle(
         content_id=uuid4(),
         title=title,
         url=f"https://example.com/{title.lower().replace(' ', '-')[:30]}",
-        published_at=datetime.now(UTC),
+        published_at=published_at or datetime.now(UTC),
         source=source or _src(),
         rank=rank,
         reason="Test",
@@ -1553,7 +1554,7 @@ def test_trending_is_not_double_counted_with_coverage():
     now = datetime.now(UTC)
     flagged = _topic(
         "Flagged",
-        [_art(title="A1")],
+        [_art(title="A1", published_at=now)],
         theme="t1",
         is_trending=True,
         perspective_count=4,
@@ -1561,15 +1562,11 @@ def test_trending_is_not_double_counted_with_coverage():
     )
     unflagged = _topic(
         "Unflagged",
-        [_art(title="A2")],
+        [_art(title="A2", published_at=now)],
         theme="t2",
         is_trending=False,
         perspective_count=4,
         rank=1,
-    )
-    flagged.articles[0] = flagged.articles[0].model_copy(update={"published_at": now})
-    unflagged.articles[0] = unflagged.articles[0].model_copy(
-        update={"published_at": now}
     )
 
     flagged_score = _score_article(flagged, flagged.articles[0], now=now)
@@ -1582,17 +1579,21 @@ def test_is_une_alone_adds_exactly_essentiel_une_bonus():
     """`is_une` reste le seul bonus éditorial hors moteur : +ESSENTIEL_UNE_BONUS,
     ni plus (ex-`_W_UNE`=35 cumulable avec badge/trending), ni moins."""
     now = datetime.now(UTC)
-    base = _topic("Plain", [_art(title="A1")], theme="t", perspective_count=2, rank=1)
+    base = _topic(
+        "Plain",
+        [_art(title="A1", published_at=now)],
+        theme="t",
+        perspective_count=2,
+        rank=1,
+    )
     une = _topic(
         "Une",
-        [_art(title="A2")],
+        [_art(title="A2", published_at=now)],
         theme="t",
         is_une=True,
         perspective_count=2,
         rank=1,
     )
-    base.articles[0] = base.articles[0].model_copy(update={"published_at": now})
-    une.articles[0] = une.articles[0].model_copy(update={"published_at": now})
 
     base_score = _score_article(base, base.articles[0], now=now)
     une_score = _score_article(une, une.articles[0], now=now)

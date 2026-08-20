@@ -55,9 +55,7 @@ from app.services.recommendation.filter_presets import (
     is_news_bulletin_title,
 )
 from app.services.recommendation.helpers.editorial_ranking import (
-    mixed_subject_score,
-    normalized_importance,
-    normalized_perso,
+    blended_subject_score,
 )
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.text_similarity import jaccard_similarity, normalize_title
@@ -120,7 +118,7 @@ ESSENTIEL_READ_EVICTION_GRACE = timedelta(minutes=30)
 _BADGE_ACTU = "actu"
 
 # Poids résiduels hors moteur. Le score principal vient du mélange
-# `mixed_subject_score` (mêmes helpers que la clé v4 du digest) ; ne restent
+# `blended_subject_score` (le même helper que la clé v4 du digest) ; ne restent
 # ici que les leviers propres à la surface Essentiel.
 # `_W_FOLLOWED_SOURCE` / `_W_TOPIC_WEIGHT` : perso brute du recall live
 # (`_score_live_candidate`) — les candidats frais n'ont pas de pillar_score.
@@ -368,7 +366,7 @@ def _score_article(
 ) -> float:
     """Score d'un candidat Essentiel — MÊME formule que la clé v4 du digest.
 
-    `mixed_subject_score(importance_100, perso_100)` via les mêmes helpers que
+    `blended_subject_score(...)` — le même helper que
     `digest_selector.mixed_subject_rank_score` (test de parité dédié). Les
     bonus source-suivie/thème ne sont PAS ré-empilés : ils sont déjà dans
     `pillar_score` (les rajouter = double-comptage) ; la préférence source
@@ -380,11 +378,13 @@ def _score_article(
     # Fallback legacy : les vieux snapshots n'ont pas `source_count` mais
     # portent `perspective_count` (même ordre de grandeur de couverture).
     effective_sources = topic.source_count or int(topic.perspective_count or 0)
-    score = mixed_subject_score(
-        normalized_importance(
-            effective_sources, article.published_at, topic.divergence_level, now=now
-        ),
-        normalized_perso(article.pillar_score, neutral),
+    score = blended_subject_score(
+        effective_sources,
+        article.published_at,
+        topic.divergence_level,
+        article.pillar_score,
+        neutral=neutral,
+        now=now,
     )
 
     # Seul bonus éditorial hors moteur : la décision « À la Une ».
@@ -822,7 +822,7 @@ def _score_live_candidate(
 
     Les candidats live n'ont pas de `pillar_score` : la perso brute reste les
     bonus déclaratifs en place (source suivie ×priority_multiplier, thème
-    apprécié ×topic_weight), clampée puis mélangée via `mixed_subject_score`
+    apprécié ×topic_weight), clampée puis mélangée via `blended_subject_score`
     avec une importance mono-source (couverture 1 ⇒ récence seule) — même
     échelle que `_score_article`. Pas de branchement moteur ici :
     `fetch_user_essentiel_context` ne charge que des prefs déclaratives
@@ -838,10 +838,7 @@ def _score_live_candidate(
         perso_raw += _W_FOLLOWED_SOURCE * multiplier
     if content.theme and content.theme in ctx.topic_weights:
         perso_raw += _W_TOPIC_WEIGHT * ctx.topic_weights[content.theme]
-    return mixed_subject_score(
-        normalized_importance(1, content.published_at, None, now=now),
-        normalized_perso(perso_raw),
-    )
+    return blended_subject_score(1, content.published_at, None, perso_raw, now=now)
 
 
 async def _fetch_live_supplements(

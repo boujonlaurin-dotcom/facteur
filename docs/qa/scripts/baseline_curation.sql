@@ -19,6 +19,9 @@
 -- Depuis le bump v4 (score mixte, PR 4), v3 et v4 coexistent ~30 j : M1-M4
 -- sont groupées par format_version pour lire l'avant/après en un seul run,
 -- sans jamais mélanger les cohortes.
+-- ⚠️ Jumeau Python : `packages/api/scripts/dryrun_subject_mix.py` réimplémente
+-- M1-M4 (seuils 0.50/0.10, zones 1-5/6-10) pour le re-tri simulé — toute
+-- retouche de définition ici doit y être répercutée.
 CREATE TEMP VIEW slots AS
 SELECT
     d.user_id,
