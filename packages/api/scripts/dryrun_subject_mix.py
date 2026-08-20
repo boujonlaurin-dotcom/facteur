@@ -99,12 +99,9 @@ args = parser.parse_args()
 # Aucun LLM n'est appelé ; on neutralise la clé par précaution.
 os.environ["MISTRAL_API_KEY"] = ""
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
 from app.database import async_session_maker, engine  # noqa: E402
-from app.models.content import UserContentStatus  # noqa: E402
-from app.models.daily_digest import DailyDigest  # noqa: E402
-from app.models.enums import ContentStatus  # noqa: E402
 from app.services.digest_selector import mixed_subject_rank_score  # noqa: E402
 from app.services.recommendation.scoring_config import ScoringWeights  # noqa: E402
 
@@ -137,9 +134,8 @@ class DigestSnapshot(SimpleNamespace):
     """Un daily_digest reconstruit : sujets triables + score_map + baseline v3."""
 
 
-def _load_snapshot(digest: DailyDigest) -> DigestSnapshot | None:
-    items = digest.items if isinstance(digest.items, dict) else {}
-    raw_subjects = items.get("subjects") or []
+def _load_snapshot(row) -> DigestSnapshot | None:
+    raw_subjects = row.subjects or []
     subjects: list[SimpleNamespace] = []
     score_map: dict[str, float] = {}
     for s in raw_subjects:
@@ -174,40 +170,77 @@ def _load_snapshot(digest: DailyDigest) -> DigestSnapshot | None:
         if s.actu_article is not None and 1 <= s.rank <= 5
     }
     return DigestSnapshot(
-        user_id=str(digest.user_id),
-        target_date=digest.target_date,
-        mode=digest.mode or "pour_vous",
-        now=_as_utc(digest.generated_at),
+        user_id=str(row.user_id),
+        target_date=row.target_date,
+        mode=row.mode or "pour_vous",
+        now=_as_utc(row.generated_at),
         subjects=subjects,
         score_map=score_map,
         baseline_top5=baseline_top5,
     )
 
 
+# Projection JSONB côté serveur : `items` embarque aussi coverage_articles /
+# perspective_articles (l'écrasante majorité du poids), inutiles au re-tri.
+# Sans cette projection, le SELECT 7 j dépasse le statement_timeout du rôle
+# read-only (vu au premier run : ~150 s puis QueryCanceled). Chargé jour par
+# jour pour la même raison.
+_SNAPSHOT_SQL = text(
+    """
+    SELECT d.user_id,
+           d.target_date,
+           d.mode,
+           d.format_version,
+           d.generated_at,
+           (
+               SELECT jsonb_agg(
+                   jsonb_build_object(
+                       'rank', s -> 'rank',
+                       'source_count', s -> 'source_count',
+                       'divergence_level', s -> 'divergence_level',
+                       'is_a_la_une', s -> 'is_a_la_une',
+                       'theme', s -> 'theme',
+                       'actu_article',
+                       CASE
+                           WHEN jsonb_typeof(s -> 'actu_article') = 'object'
+                           THEN jsonb_build_object(
+                               'content_id', s -> 'actu_article' -> 'content_id',
+                               'published_at', s -> 'actu_article' -> 'published_at',
+                               'score', s -> 'actu_article' -> 'score',
+                               'is_user_source', s -> 'actu_article' -> 'is_user_source',
+                               'source_name', s -> 'actu_article' -> 'source_name'
+                           )
+                       END
+                   )
+               )
+               FROM jsonb_array_elements(d.items -> 'subjects') s
+           ) AS subjects
+    FROM daily_digest d
+    WHERE d.format_version LIKE 'editorial\\_v%'
+      AND d.target_date = :day
+    ORDER BY d.user_id, d.generated_at
+    """
+)
+
+
 async def _load_snapshots(days: int, max_users: int) -> list[DigestSnapshot]:
-    since = date.today() - timedelta(days=days)
-    stmt = (
-        select(DailyDigest)
-        .where(
-            DailyDigest.format_version.startswith("editorial_v", autoescape=True),
-            DailyDigest.target_date >= since,
-        )
-        .order_by(DailyDigest.user_id, DailyDigest.generated_at)
-    )
+    rows = []
     async with async_session_maker() as session:
-        result = await session.execute(stmt)
-        digests = [
-            d
-            for d in result.scalars().all()
-            if _editorial_version(d.format_version) >= 3
-        ]
+        for offset in range(days, -1, -1):
+            day = date.today() - timedelta(days=offset)
+            result = await session.execute(_SNAPSHOT_SQL, {"day": day})
+            rows.extend(result.mappings().all())
 
+    rows = [
+        SimpleNamespace(**r)
+        for r in rows
+        if _editorial_version(r["format_version"]) >= 3
+    ]
     if max_users > 0:
-        kept_users = sorted({str(d.user_id) for d in digests})[:max_users]
-        digests = [d for d in digests if str(d.user_id) in kept_users]
+        kept_users = sorted({str(r.user_id) for r in rows})[:max_users]
+        rows = [r for r in rows if str(r.user_id) in kept_users]
 
-    snapshots = [snap for d in digests if (snap := _load_snapshot(d)) is not None]
-    return snapshots
+    return [snap for r in rows if (snap := _load_snapshot(r)) is not None]
 
 
 def _resort_top(snapshot: DigestSnapshot) -> list[SimpleNamespace]:
@@ -231,9 +264,11 @@ def _top5_ids(ordered: list[SimpleNamespace]) -> set[str]:
 async def _load_consumed_pairs(
     snapshots: list[DigestSnapshot],
 ) -> set[tuple[str, str]]:
-    """Paires (user_id, content_id) consommées, pour le CTR de M4."""
-    from uuid import UUID
+    """Paires (user_id, content_id) consommées, pour le CTR de M4.
 
+    `= ANY(array)` plutôt que `IN (...)` : le pool porte des milliers de
+    content_ids, un bind par élément exploserait le parse.
+    """
     content_ids: set[str] = set()
     user_ids: set[str] = set()
     for snap in snapshots:
@@ -243,13 +278,20 @@ async def _load_consumed_pairs(
                 content_ids.add(s.actu_article.content_id)
     if not content_ids:
         return set()
-    stmt = select(UserContentStatus.user_id, UserContentStatus.content_id).where(
-        UserContentStatus.status == ContentStatus.CONSUMED,
-        UserContentStatus.user_id.in_([UUID(u) for u in user_ids]),
-        UserContentStatus.content_id.in_([UUID(c) for c in content_ids]),
+    stmt = text(
+        """
+        SELECT user_id, content_id
+        FROM user_content_status
+        WHERE status = 'consumed'
+          AND user_id = ANY(CAST(:user_ids AS uuid[]))
+          AND content_id = ANY(CAST(:content_ids AS uuid[]))
+        """
     )
     async with async_session_maker() as session:
-        rows = await session.execute(stmt)
+        rows = await session.execute(
+            stmt,
+            {"user_ids": sorted(user_ids), "content_ids": sorted(content_ids)},
+        )
         return {(str(u), str(c)) for u, c in rows.all()}
 
 
