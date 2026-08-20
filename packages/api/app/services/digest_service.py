@@ -2383,6 +2383,9 @@ class DigestService:
                     rank=art_idx + 1,
                     reason=reason,
                     badge=art_data.get("badge"),
+                    # Persisté sur l'actu seulement — extras/deep n'ont pas de
+                    # clé `score` → None. Aucun re-scoring au read.
+                    pillar_score=art_data.get("score"),
                     is_followed_source=content.source_id in followed_source_ids,
                     recommendation_reason=None,
                     is_read=action_state["is_read"],
@@ -2466,7 +2469,9 @@ class DigestService:
                         is_une=subject.get("is_a_la_une", False),
                         source_count=subject.get("source_count", 0),
                         theme=subject.get("theme"),
-                        topic_score=0.0,
+                        topic_score=float(
+                            (subject.get("actu_article") or {}).get("score") or 0.0
+                        ),
                         # `deep_angle` is optional (null for people/faits-divers).
                         # `subject.get("deep_angle", "")` returns None when the
                         # key exists with value null, which breaks the

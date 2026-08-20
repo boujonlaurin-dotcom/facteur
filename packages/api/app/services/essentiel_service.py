@@ -4,32 +4,34 @@ Strictement read-only : consomme la `DigestResponse` déjà calculée par la cro
 nocturne via `read_digest_or_fallback`, et la projette en 5 articles cross-topic
 pour la carte hi-fi "L'Essentiel du jour" du feed mobile.
 
-Architecture :
-- Le `PillarScoringEngine` (services/recommendation/scoring_engine.py) et le
-  `digest_selector` ont déjà scoré + sélectionné les meilleurs articles par
-  topic en amont. On *réutilise* leurs signaux (`topic.is_trending`,
-  `topic.is_une`, `article.badge == "actu"`, `article.is_followed_source`)
-  plutôt que de re-scorer from scratch.
-- Les boosts d'Actu du jour s'alignent sur ceux du `Top3Selector` du briefing
-  pour cohérence cross-feature (`BOOST_UNE=30`, `BOOST_TRENDING=40`).
+Architecture (PR 4, bug-curation-essentiel-personnalisation) :
+- Le `PillarScoringEngine` et le `digest_selector` ont déjà scoré chaque actu
+  de sujet en amont ; le score est persisté dans le snapshot et remonte via
+  `DigestTopicArticle.pillar_score`. Ce service est un **adaptateur** : il
+  rejoue la même formule que la clé v4 du digest
+  (`digest_selector.mixed_subject_rank_score`), via les mêmes helpers
+  (`helpers/editorial_ranking`) — aucun re-scoring, aucun barème parallèle.
+- `_score_article` = `(1-w)·importance_100 + w·perso_100`
+  (+ `ESSENTIEL_UNE_BONUS` si `is_une`, − éviction lu, − tie-break rang).
+  `perso = pillar_score` (None → médiane du pool, ni enterré ni boosté).
 
-Pipeline :
-1. Charge le contexte user (sources/topics suivis + multiplicateurs/poids).
-2. Score chaque article :
-   - bonus Actu (trending/une/badge actu) — aligné top3_selector,
-   - bonus source suivie (×priority_multiplier),
-   - bonus topic suivi (×weight),
-   - bonus perspective_count,
-   - pénalité forte si `is_read` (l'écarte sauf si rien d'autre),
-   - tie-break par rank.
-3. **Slot lead Actu** : si un article est Actu du jour, il occupe le rank=1.
-4. **Diversité dure** : max 2 articles d'une même source dans les 5.
-5. Round "diversité" (1/topic) + round "remplissage", déduplication content_id.
+Reste volontairement HORS moteur (spécifique à la surface Essentiel) :
+- éviction des articles lus + fenêtre de grâce 30 min (`_is_within_read_grace`),
+- déduplication de sujet (topic_id + similarité Jaccard des titres),
+- caps de diversité (1/source, fallback 2) et plafond 5 articles,
+- différé sport (jamais avant le slot 5, 1 max),
+- filtres durs (mutes, langue, types interdits, bulletins, fraîcheur 24 h),
+- tie-break par rang digest,
+- tiers « sources suivies d'abord » (`_fill_from_tier(followed_topics)`) — la
+  préférence source suivie survit structurellement ; le bonus chiffré, lui,
+  est déjà dans `pillar_score` (le ré-empiler = double-comptage).
 
-Fallback sans préférences : le scorer dégénère en `actu_boost + perspective − rank`.
+Fallback digest legacy (sans `score` persisté) : perso neutre partout → le
+score dégénère proprement en importance éditoriale pure.
 """
 
 import logging
+import statistics
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -52,7 +54,11 @@ from app.services.recommendation.filter_presets import (
     LOW_PRIORITY_SPORT_THEMES,
     is_news_bulletin_title,
 )
-from app.services.recommendation.helpers import compute_coverage_score
+from app.services.recommendation.helpers.editorial_ranking import (
+    mixed_subject_score,
+    normalized_importance,
+    normalized_perso,
+)
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.text_similarity import jaccard_similarity, normalize_title
 from app.utils.time import PARIS_TZ
@@ -113,19 +119,15 @@ ESSENTIEL_READ_EVICTION_GRACE = timedelta(minutes=30)
 # Valeur de `DigestTopicArticle.badge` qui marque l'article comme "Actu du jour".
 _BADGE_ACTU = "actu"
 
-# Poids du scoring composite — réglés pour que chaque levier puisse l'emporter
-# isolément sans qu'aucun ne phagocyte les autres. Toute modif → ajouter un
-# test dans `test_essentiel_endpoint.py`.
-# Source de vérité partagée avec le digest topics et le feed thématique
-# (`ScoringWeights.TOPIC_IS_TRENDING_BONUS` / `TOPIC_IS_UNE_BONUS`).
-_W_TRENDING = ScoringWeights.TOPIC_IS_TRENDING_BONUS  # 50 — topic.is_trending
-_W_UNE = ScoringWeights.TOPIC_IS_UNE_BONUS  # 35 — topic.is_une
-_W_BADGE_ACTU = 25.0  # article.badge == _BADGE_ACTU (signal explicite du digest)
+# Poids résiduels hors moteur. Le score principal vient du mélange
+# `mixed_subject_score` (mêmes helpers que la clé v4 du digest) ; ne restent
+# ici que les leviers propres à la surface Essentiel.
+# `_W_FOLLOWED_SOURCE` / `_W_TOPIC_WEIGHT` : perso brute du recall live
+# (`_score_live_candidate`) — les candidats frais n'ont pas de pillar_score.
 _W_FOLLOWED_SOURCE = 100.0
-_W_FOLLOWED_SOURCE_FLAG = 50.0  # bonus moindre si on n'a que le flag du digest
 _W_TOPIC_WEIGHT = 50.0
 _W_RANK_PENALTY = 0.5
-_W_READ_PENALTY = 1000.0  # Écarte les articles déjà lus sauf si rien d'autre.
+_ESSENTIEL_READ_EVICTION = 1000.0  # Écarte les lus sauf si rien d'autre.
 
 # Source types exclus du pool Essentiel — Reddit est un agrégateur, pas une
 # rédaction d'info.
@@ -349,15 +351,6 @@ def _filter_articles_allowed(topics: list[DigestTopic]) -> list[DigestTopic]:
     return filtered
 
 
-def _perspective_score(perspective_count: int) -> float:
-    """Score non-linéaire des perspectives (Story 9.4).
-
-    Délègue à `helpers.compute_coverage_score` — source de vérité partagée
-    avec le feed thématique (`PertinencePillar._score_coverage`).
-    """
-    return compute_coverage_score(perspective_count)
-
-
 def _is_followed_topic(topic: DigestTopic, ctx: EssentielUserContext) -> bool:
     return bool(topic.theme and topic.theme in ctx.topic_weights)
 
@@ -369,43 +362,38 @@ def _is_followed_source(article: DigestTopicArticle, ctx: EssentielUserContext) 
 def _score_article(
     topic: DigestTopic,
     article: DigestTopicArticle,
-    ctx: EssentielUserContext,
+    *,
+    neutral: float = 0.0,
+    now: datetime | None = None,
 ) -> float:
-    """Score composite user-aware d'un article candidat de l'Essentiel.
+    """Score d'un candidat Essentiel — MÊME formule que la clé v4 du digest.
 
-    Réutilise les signaux déjà calculés par le digest (trending/une/badge actu/
-    is_followed_source) et leur applique des coefficients alignés sur ceux du
-    briefing (`Top3Selector`).
+    `mixed_subject_score(importance_100, perso_100)` via les mêmes helpers que
+    `digest_selector.mixed_subject_rank_score` (test de parité dédié). Les
+    bonus source-suivie/thème ne sont PAS ré-empilés : ils sont déjà dans
+    `pillar_score` (les rajouter = double-comptage) ; la préférence source
+    suivie survit structurellement via le tier `_fill_from_tier(followed_topics)`.
+
+    `neutral` = valeur perso des articles sans `pillar_score` (extras, digests
+    legacy) — la médiane du pool en pratique, ni enterrés ni boostés.
     """
-    score = 0.0
+    # Fallback legacy : les vieux snapshots n'ont pas `source_count` mais
+    # portent `perspective_count` (même ordre de grandeur de couverture).
+    effective_sources = topic.source_count or int(topic.perspective_count or 0)
+    score = mixed_subject_score(
+        normalized_importance(
+            effective_sources, article.published_at, topic.divergence_level, now=now
+        ),
+        normalized_perso(article.pillar_score, neutral),
+    )
 
-    # Boost Actu du jour (aligné Top3Selector).
-    if topic.is_trending:
-        score += _W_TRENDING
+    # Seul bonus éditorial hors moteur : la décision « À la Une ».
     if topic.is_une:
-        score += _W_UNE
-    if article.badge == _BADGE_ACTU:
-        score += _W_BADGE_ACTU
+        score += ScoringWeights.ESSENTIEL_UNE_BONUS
 
-    # Bonus source suivie : préfère la jointure DB-fraîche (followed_source_ids).
-    # Fallback sur le flag pré-calculé du digest si le contexte user est vide.
-    if article.source.id in ctx.followed_source_ids:
-        multiplier = ctx.source_priority_multipliers.get(article.source.id, 1.0)
-        score += _W_FOLLOWED_SOURCE * multiplier
-    elif article.is_followed_source:
-        score += _W_FOLLOWED_SOURCE_FLAG
-
-    # Bonus topic suivi (poids utilisateur).
-    if topic.theme and topic.theme in ctx.topic_weights:
-        score += _W_TOPIC_WEIGHT * ctx.topic_weights[topic.theme]
-
-    # Bonus "transversal" log-calibré : un sujet à 6+ médias bat un signal
-    # trending faible, un scoop isolé n'a aucun bonus.
-    score += _perspective_score(int(topic.perspective_count or 0))
-
-    # Pénalité is_read : écarte les articles déjà lus sauf si rien d'autre.
+    # Éviction des lus : écarte les articles déjà lus sauf si rien d'autre.
     if article.is_read:
-        score -= _W_READ_PENALTY
+        score -= _ESSENTIEL_READ_EVICTION
 
     # Tie-break : un article rank=1 reste préféré à rank=2 à signaux égaux.
     score -= _W_RANK_PENALTY * float(article.rank)
@@ -547,11 +535,24 @@ def _pick_transversal_articles(
         return []
 
     # Score de chaque (topic, article) une seule fois sur le pool global frais.
+    # `neutral` = médiane des pillar_score du pool : un article sans score
+    # persisté (extras, digest legacy) est traité comme « moyen », jamais
+    # enterré ni boosté. Digest 100 % legacy → 0.0 partout ⇒ dégénérescence
+    # propre en importance éditoriale pure. `now` figé une fois : tous les
+    # candidats partagent la même référence de récence.
+    pool_scores = [
+        article.pillar_score
+        for topic in fresh_topics
+        for article in topic.articles
+        if article.pillar_score is not None
+    ]
+    neutral = statistics.median(pool_scores) if pool_scores else 0.0
+    now_ref = now or datetime.now(UTC)
     scored: dict[tuple[str, UUID], float] = {}
     for topic in fresh_topics:
         for article in topic.articles:
             scored[(topic.topic_id, article.content_id)] = _score_article(
-                topic, article, ctx
+                topic, article, neutral=neutral, now=now_ref
             )
 
     picked: list[tuple[DigestTopic, DigestTopicArticle]] = []
@@ -637,14 +638,12 @@ def _pick_transversal_articles(
             for topic in tier_topics
             for article in topic.articles
         ]
+        # Plus de préfixe `_is_actu_du_jour` : le badge "actu" est écrit
+        # inconditionnellement par le digest (signal universel = no-op en
+        # prod), le score mixte porte seul l'ordre.
         return sorted(
             candidates,
-            key=lambda item: (
-                not _is_actu_du_jour(item[0], item[1]),
-                -item[2],
-                item[0].rank,
-                item[1].rank,
-            ),
+            key=lambda item: (-item[2], item[0].rank, item[1].rank),
         )
 
     def _fill_from_tier(tier_topics: list[DigestTopic]) -> None:
@@ -750,7 +749,8 @@ def build_essentiel_response(
     """Projette une `DigestResponse` en `EssentielResponse` (5 articles max).
 
     Si `user_context` est None, on utilise un contexte vide → fallback
-    no-prefs (le scorer dégénère en actu_boost + perspective − rank).
+    no-prefs (le scorer dégénère en importance éditoriale ⊕ pillar_score,
+    tie-break rang).
     """
     ctx = user_context or EssentielUserContext()
     picks = _pick_transversal_articles(digest.topics, ctx, now=now)
@@ -815,21 +815,33 @@ def _morning_anchor(now: datetime | None) -> datetime:
     return midnight_paris.astimezone(UTC)
 
 
-def _score_live_candidate(content: Content, ctx: EssentielUserContext) -> float:
-    """Scoring composite léger d'un candidat frais (recall live).
+def _score_live_candidate(
+    content: Content, ctx: EssentielUserContext, now: datetime | None = None
+) -> float:
+    """Scoring léger d'un candidat frais (recall live), rescalé sur le mélange.
 
-    Réutilise les poids en place — bonus source suivie (×priority_multiplier),
-    bonus thème apprécié (×topic_weight). Pas de read-penalty : le `WHERE`
-    exclut déjà les lus. Sert uniquement à ordonner les candidats pour rester
-    cohérent avec le reste du feed, jamais comme gate de découverte.
+    Les candidats live n'ont pas de `pillar_score` : la perso brute reste les
+    bonus déclaratifs en place (source suivie ×priority_multiplier, thème
+    apprécié ×topic_weight), clampée puis mélangée via `mixed_subject_score`
+    avec une importance mono-source (couverture 1 ⇒ récence seule) — même
+    échelle que `_score_article`. Pas de branchement moteur ici :
+    `fetch_user_essentiel_context` ne charge que des prefs déclaratives
+    (ScoringContext complet reporté à une PR 6-bis). Pas de read-penalty : le
+    `WHERE` exclut déjà les lus. Ordonne, ne gate jamais la découverte.
+
+    ⚠️ Signature rétro-compatible (`now` optionnel en dernier) : importée par
+    `topic_alert_producer` et `source_alert_producer` en 2-arguments.
     """
-    score = 0.0
+    perso_raw = 0.0
     if content.source_id in ctx.followed_source_ids:
         multiplier = ctx.source_priority_multipliers.get(content.source_id, 1.0)
-        score += _W_FOLLOWED_SOURCE * multiplier
+        perso_raw += _W_FOLLOWED_SOURCE * multiplier
     if content.theme and content.theme in ctx.topic_weights:
-        score += _W_TOPIC_WEIGHT * ctx.topic_weights[content.theme]
-    return score
+        perso_raw += _W_TOPIC_WEIGHT * ctx.topic_weights[content.theme]
+    return mixed_subject_score(
+        normalized_importance(1, content.published_at, None, now=now),
+        normalized_perso(perso_raw),
+    )
 
 
 async def _fetch_live_supplements(
@@ -959,7 +971,7 @@ async def _fetch_live_supplements(
     # Scoring léger : ordonne les candidats par composite (source suivie / thème
     # apprécié), tie-break `published_at` desc — cohérent avec le reste du feed.
     candidates.sort(
-        key=lambda c: (_score_live_candidate(c, ctx), c.published_at),
+        key=lambda c: (_score_live_candidate(c, ctx, now=now), c.published_at),
         reverse=True,
     )
 
