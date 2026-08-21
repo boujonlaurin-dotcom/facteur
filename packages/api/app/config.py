@@ -197,7 +197,11 @@ class Settings(BaseSettings):
     # de valeur que sur des sujets bien couverts. En deçà de ce seuil de
     # perspectives, on saute l'appel mistral-large et on garde le fallback
     # déterministe `compute_divergence_level` (divergence_level toujours rempli).
-    divergence_llm_min_perspectives: int = 4
+    #
+    # Story 35.1 : 4 → 2. Le design 6C veut des constats dès 2 médias, et le
+    # gate à 4 laissait 9 sujets sur 20 sans analyse. Rollback sans déploiement
+    # via `DIVERGENCE_LLM_MIN_PERSPECTIVES=4` sur Railway.
+    divergence_llm_min_perspectives: int = 2
 
     # Observabilité scaling (enabler WP-E) — instrumentation API externes +
     # sonde pool. Purement additif : ne change aucun comportement métier.

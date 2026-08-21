@@ -14,26 +14,35 @@ cleanup. Deep matching is preserved in `deep_matcher.py` for the next
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlparse
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import case as sa_case
 from sqlalchemy import or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.models.content import Content
+from app.models.coverage_analysis import CoverageAnalysis, CoverageAnalysisArticle
 from app.models.enums import SourceType
 from app.models.source import Source
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.editorial.actu_matcher import ActuMatcher
 from app.services.editorial.config import load_editorial_config
+from app.services.editorial.consensus import (
+    ConsensusPayload,
+    build_corpus_index,
+    normalize_consensus,
+)
 from app.services.editorial.curation import CurationService, _cluster_to_une_topic
 from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import (
@@ -47,6 +56,8 @@ from app.services.editorial.schemas import (
 )
 from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
 from app.services.perspective_service import (
+    CONSENSUS_MODEL,
+    CONSENSUS_PROMPT_VERSION,
     PerspectiveService,
     normalize_domain,
     perspective_to_dict,
@@ -108,6 +119,64 @@ def _is_non_actu_cluster(cluster: TopicCluster) -> bool:
     )
 
 
+@dataclass(slots=True)
+class _ConsensusCacheEntry:
+    """Analyse déjà produite pour un sujet, réutilisable par l'autre mode.
+
+    `compute_global_context` tourne deux fois par run (`pour_vous`, `serein`)
+    sur des pools filtrés différemment : le même événement y forme deux clusters
+    d'articles voisins mais pas identiques, donc deux `subject_key` distincts.
+    Le recouvrement d'articles est la seule clé qui rapproche vraiment les deux —
+    d'où un index `content_id → analyse` plutôt qu'un cache par clé de sujet.
+    """
+
+    analysis_id: UUID
+    analysis_markdown: str | None
+    divergence_level: str | None
+
+
+def _collect_subject_content_ids(
+    perspectives: list, representative_id: UUID
+) -> list[UUID]:
+    """Ids `contents` du sujet : le pivot d'abord, puis les articles internes.
+
+    Les perspectives Google News n'ont pas de ligne `contents` (`content_id`
+    None) : elles comptent dans la couverture mais ne peuvent pas porter un lien
+    FK. C'est sans conséquence pour le Reader — il n'ouvre que des articles
+    ingérés.
+    """
+    ids: list[UUID] = []
+    seen: set[UUID] = set()
+    for raw in [
+        representative_id,
+        *(getattr(p, "content_id", None) for p in perspectives),
+    ]:
+        if not raw:
+            continue
+        try:
+            content_id = raw if isinstance(raw, UUID) else UUID(str(raw))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if content_id not in seen:
+            seen.add(content_id)
+            ids.append(content_id)
+    return ids
+
+
+def _coerce_analysis_text(raw: object) -> str | None:
+    """Ramène le champ `analysis` du LLM à une string plate.
+
+    Round 3 fix (Sentry PYTHON-R) : le modèle peut renvoyer un dict imbriqué
+    (ex: {"contexte": "...", "liens": [...]}) au lieu d'une string. Pydantic
+    rejette → 500 sur /digest/both.
+    """
+    if raw is None or isinstance(raw, str):
+        return raw
+    if isinstance(raw, dict):
+        return json.dumps(raw, ensure_ascii=False)
+    return str(raw)
+
+
 # Curation oversample : on demande +buffer sujets de plus que la cible pour
 # absorber les échecs d'actu/deep matching. EDITORIAL_TARGET_SUBJECT_COUNT=5
 # permet un rollback safe au comportement pré-passage 5→10.
@@ -152,6 +221,10 @@ class EditorialPipelineService:
         self.actu_matcher = ActuMatcher(
             actu_max_age_hours=self.config.pipeline.actu_max_age_hours
         )
+        # Index `content_id → analyse des angles` de ce batch. Le job réutilise
+        # la même instance pour les deux modes (digest_generation_job), donc un
+        # sujet analysé en `pour_vous` n'est pas repayé en `serein`.
+        self._consensus_by_content: dict[UUID, _ConsensusCacheEntry] = {}
 
     @asynccontextmanager
     async def _short_session(self):
@@ -755,13 +828,49 @@ class EditorialPipelineService:
                 for p in coverage_universe
             ]
 
-            # The LLM divergence analysis must describe the SAME media set
-            # as the counters above — feed it the merged list (cluster +
-            # Google News), not just Google News.
+            # The LLM analysis must describe the SAME media set as the
+            # counters above — feed it the merged list (cluster + Google News),
+            # not just Google News.
+            #
+            # Story 35.1 : `analyze_consensus` remplace `analyze_divergences`
+            # ici. Même appel, même endroit, sortie JSON au lieu de markdown —
+            # le markdown reste dans le JSON (clé `analysis`), donc le bloc du
+            # digest ne bouge pas, et les constats structurés partent en base
+            # pour le Reader 6C.
+            #
+            subject_content_ids = _collect_subject_content_ids(
+                coverage_universe, representative.id
+            )
+
+            cached = self._lookup_consensus_cache(subject_content_ids)
+            if cached is not None:
+                # Même événement, déjà analysé dans l'autre mode : on rattache
+                # les articles de ce cluster à la ligne existante plutôt que de
+                # repayer l'appel.
+                subject.divergence_analysis = cached.analysis_markdown
+                subject.divergence_level = cached.divergence_level
+                # Cas dominant : le 2ᵉ mode voit le même jeu d'articles, donc
+                # zéro lien à écrire. Le delta se lit dans le cache (renseigné
+                # juste après), pas dans un INSERT qui ne poserait rien.
+                new_ids = [
+                    cid
+                    for cid in subject_content_ids
+                    if cid not in self._consensus_by_content
+                ]
+                if new_ids:
+                    await self._link_coverage_analysis_articles(
+                        cached.analysis_id, new_ids
+                    )
+                self._register_consensus_cache(subject_content_ids, cached)
+                logger.info(
+                    "editorial_pipeline.consensus_cache_hit",
+                    topic_id=subject.topic_id,
+                    linked_articles=len(new_ids),
+                )
             # LR-1 PR 2 : on ne paie l'appel mistral-large que sur des sujets
             # assez couverts (>= divergence_llm_min_perspectives). En deçà, le
             # fallback déterministe `compute_divergence_level` ci-dessous suffit.
-            if len(alternatives) >= get_settings().divergence_llm_min_perspectives:
+            elif len(alternatives) >= get_settings().divergence_llm_min_perspectives:
                 try:
                     source_bias = await perspective_service.resolve_bias(
                         domain=exclude_domain or "",
@@ -769,12 +878,13 @@ class EditorialPipelineService:
                             representative.source.name if representative.source else ""
                         ),
                     )
-                    divergence_result = await perspective_service.analyze_divergences(
+                    consensus_result = await perspective_service.analyze_consensus(
                         article_title=representative.title,
                         source_name=(
                             representative.source.name if representative.source else ""
                         ),
                         source_bias=source_bias,
+                        source_domain=exclude_domain or "",
                         perspectives=[
                             {
                                 "title": p.title,
@@ -789,29 +899,25 @@ class EditorialPipelineService:
                         ],
                         article_description=representative.description,
                     )
-                    if isinstance(divergence_result, dict):
-                        analysis_raw = divergence_result.get("analysis")
-                        # Round 3 fix (Sentry PYTHON-R) : le LLM peut renvoyer
-                        # un dict imbriqué (ex: {"contexte": "...", "liens": [...]})
-                        # au lieu d'une string plate. Pydantic rejette → 500 sur
-                        # /digest/both. Coerce en string propre ici, source du bug.
-                        if isinstance(analysis_raw, dict):
-                            import json as _json
-
-                            subject.divergence_analysis = _json.dumps(
-                                analysis_raw, ensure_ascii=False
-                            )
-                        elif analysis_raw is not None and not isinstance(
-                            analysis_raw, str
-                        ):
-                            subject.divergence_analysis = str(analysis_raw)
-                        else:
-                            subject.divergence_analysis = analysis_raw
-                        subject.divergence_level = divergence_result.get(
+                    if isinstance(consensus_result, dict):
+                        subject.divergence_analysis = _coerce_analysis_text(
+                            consensus_result.get("analysis")
+                        )
+                        subject.divergence_level = consensus_result.get(
                             "divergence_level"
                         )
-                    elif isinstance(divergence_result, str):
-                        subject.divergence_analysis = divergence_result
+                        # Le corpus inclut le pivot : un constat peut être porté
+                        # par le média qu'on est en train de lire.
+                        corpus_domains, bias_by_domain = build_corpus_index(
+                            coverage_universe
+                        )
+                        await self._store_consensus(
+                            subject=subject,
+                            raw_result=consensus_result,
+                            corpus_domains=corpus_domains,
+                            bias_by_domain=bias_by_domain,
+                            content_ids=subject_content_ids,
+                        )
                 except Exception:
                     logger.warning(
                         "editorial_pipeline.divergence_analysis_failed",
@@ -873,6 +979,164 @@ class EditorialPipelineService:
             subjects=subjects,
             cluster_data=cluster_data,
             generated_at=datetime.now(UTC),
+        )
+
+    # --- Analyse des angles 6C (Story 35.1) ---
+
+    def _lookup_consensus_cache(
+        self, content_ids: list[UUID]
+    ) -> _ConsensusCacheEntry | None:
+        """Analyse déjà produite pour un sujet qui partage un de ces articles."""
+        for content_id in content_ids:
+            entry = self._consensus_by_content.get(content_id)
+            if entry is not None:
+                return entry
+        return None
+
+    def _register_consensus_cache(
+        self, content_ids: list[UUID], entry: _ConsensusCacheEntry
+    ) -> None:
+        for content_id in content_ids:
+            self._consensus_by_content.setdefault(content_id, entry)
+
+    async def _store_consensus(
+        self,
+        *,
+        subject: EditorialSubject,
+        raw_result: dict,
+        corpus_domains: list[str],
+        bias_by_domain: dict[str, str],
+        content_ids: list[UUID],
+    ) -> None:
+        """Normalise la sortie LLM et persiste la ligne + les liens articles.
+
+        Seule l'**écriture** est best-effort : l'analyse des angles est un
+        enrichissement du Reader, un échec DB ne doit pas faire tomber le
+        digest. Le post-traitement, lui, reste hors du `try` — c'est la pièce
+        sur laquelle repose tout le design (D3), une régression dedans doit se
+        voir, pas se lire comme un incident base.
+
+        On persiste **aussi** l'état `unavailable` (appel fait, rien
+        d'exploitable) : sans cette trace, la PR 2 ne saurait pas distinguer un
+        échec définitif d'une analyse pas encore produite, et le Reader
+        afficherait « analyse en cours » indéfiniment.
+        """
+        payload = normalize_consensus(raw_result, corpus_domains, bias_by_domain)
+        try:
+            analysis_id = await self._persist_coverage_analysis(
+                # Même empreinte de composition de cluster que l'annotation LLM
+                # des titres : un seul hash de cluster dans le pipeline. Rend
+                # l'écriture idempotente — un re-run sur le même jeu d'articles
+                # réécrit la ligne au lieu d'en empiler une seconde.
+                subject_key=TitleAnnotationService.compute_cluster_signature(
+                    content_ids
+                ),
+                payload=payload,
+                corpus_domains=corpus_domains,
+                coverage_count=subject.coverage_count,
+                content_ids=content_ids,
+            )
+        except Exception:
+            logger.warning(
+                "editorial_pipeline.consensus_persist_failed",
+                topic_id=subject.topic_id,
+            )
+            return
+
+        self._register_consensus_cache(
+            content_ids,
+            _ConsensusCacheEntry(
+                analysis_id=analysis_id,
+                analysis_markdown=subject.divergence_analysis,
+                divergence_level=subject.divergence_level,
+            ),
+        )
+        logger.info(
+            "editorial_pipeline.consensus_persisted",
+            topic_id=subject.topic_id,
+            state=payload.state,
+            qualifier=payload.qualifier,
+            agreements=len(payload.agreements),
+            disagreements=len(payload.disagreements),
+            linked_articles=len(content_ids),
+        )
+
+    async def _persist_coverage_analysis(
+        self,
+        *,
+        subject_key: str,
+        payload: ConsensusPayload,
+        corpus_domains: list[str],
+        coverage_count: int,
+        content_ids: list[UUID],
+    ) -> UUID:
+        """Upsert de la ligne sujet, puis des liens articles. Retourne son id."""
+        stmt = pg_insert(CoverageAnalysis).values(
+            id=uuid4(),
+            subject_key=subject_key,
+            consensus=payload.model_dump(mode="json"),
+            qualifier=payload.qualifier,
+            state=payload.state,
+            model_version=f"{CONSENSUS_MODEL}/{CONSENSUS_PROMPT_VERSION}",
+            corpus_domains=corpus_domains,
+            coverage_count=coverage_count,
+            generated_at=datetime.now(UTC),
+        )
+        # `excluded` = la ligne qu'on tentait d'insérer (même motif que
+        # `_upsert_deep_recommendations`) : les valeurs ne sont écrites qu'une
+        # fois, le conflit ne fait que les réutiliser.
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[CoverageAnalysis.subject_key],
+            set_={
+                "consensus": stmt.excluded.consensus,
+                "qualifier": stmt.excluded.qualifier,
+                "state": stmt.excluded.state,
+                "model_version": stmt.excluded.model_version,
+                "corpus_domains": stmt.excluded.corpus_domains,
+                "coverage_count": stmt.excluded.coverage_count,
+                "generated_at": stmt.excluded.generated_at,
+            },
+        ).returning(CoverageAnalysis.id)
+        async with self._short_session() as session:
+            analysis_id = (await session.execute(stmt)).scalar_one()
+            await self._insert_analysis_links(session, analysis_id, content_ids)
+            await session.commit()
+        return analysis_id
+
+    async def _link_coverage_analysis_articles(
+        self, analysis_id: UUID, content_ids: list[UUID]
+    ) -> None:
+        """Rattache des articles à une analyse existante (cache inter-modes)."""
+        try:
+            async with self._short_session() as session:
+                await self._insert_analysis_links(session, analysis_id, content_ids)
+                await session.commit()
+        except Exception:
+            logger.warning(
+                "editorial_pipeline.consensus_link_failed",
+                analysis_id=str(analysis_id),
+            )
+
+    @staticmethod
+    async def _insert_analysis_links(
+        session: AsyncSession, analysis_id: UUID, content_ids: list[UUID]
+    ) -> None:
+        if not content_ids:
+            return
+        await session.execute(
+            pg_insert(CoverageAnalysisArticle)
+            .values(
+                [
+                    {"coverage_analysis_id": analysis_id, "content_id": content_id}
+                    for content_id in content_ids
+                ]
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    CoverageAnalysisArticle.coverage_analysis_id,
+                    CoverageAnalysisArticle.content_id,
+                ]
+            )
         )
 
     async def _precompute_deep_recommendations(

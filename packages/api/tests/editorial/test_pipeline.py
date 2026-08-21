@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import pytest
@@ -15,7 +14,7 @@ from app.services.editorial.schemas import (
     MatchedDeepArticle,
     SelectedTopic,
 )
-from app.services.perspective_service import Perspective
+from tests.editorial.factories import _make_cluster_mock, _make_content_mock
 
 # T1 (couverture v4) : l'étape 3B-bis (annotation LLM bias) du pipeline est
 # désactivée — la boucle est commentée dans `editorial.pipeline`, donc plus
@@ -29,45 +28,6 @@ _LLM_BIAS_STEP_DISABLED = pytest.mark.skip(
 )
 
 
-def _make_content_mock(title="Test article", bias_stance="center"):
-    c = MagicMock()
-    c.id = uuid4()
-    c.title = title
-    c.source_id = uuid4()
-    c.source = MagicMock()
-    c.source.name = "Test Source"
-    c.source.bias_stance = bias_stance
-    c.source.url = "https://test-source.example/"
-    c.source.type = None
-    c.source.reliability_score = None
-    c.url = "https://test-source.example/article"
-    c.description = None
-    c.topics = ["politique"]
-    c.entities = []
-    c.language = "fr"
-    c.published_at = datetime.now(UTC)
-    c.is_paid = False
-    return c
-
-
-def _make_cluster_mock(
-    cluster_id="c1",
-    label="Test cluster",
-    contents=None,
-    source_ids=None,
-    theme="politique",
-):
-    cluster = MagicMock()
-    cluster.cluster_id = cluster_id
-    cluster.label = label
-    cluster.contents = contents or [_make_content_mock()]
-    cluster.source_ids = source_ids or {uuid4()}
-    cluster.theme = theme
-    cluster.is_trending = True
-    cluster.is_multi_source = True
-    return cluster
-
-
 def _make_subject(rank=1, topic_id="c1", deep_article=None, actu_article=None):
     return EditorialSubject(
         rank=rank,
@@ -78,122 +38,6 @@ def _make_subject(rank=1, topic_id="c1", deep_article=None, actu_article=None):
         deep_article=deep_article,
         actu_article=actu_article,
     )
-
-
-@pytest.fixture
-def mock_dependencies():
-    """Patch all external dependencies of EditorialPipelineService.
-
-    Note: DeepMatcher is disabled in the post-unification cleanup. The
-    pipeline hardcodes ``deep_matches = {topic_id: None}`` so no patch is
-    required for it.
-    """
-    with (
-        patch("app.services.editorial.pipeline.load_editorial_config") as mock_config,
-        patch("app.services.editorial.pipeline.EditorialLLMClient") as mock_llm_cls,
-        patch("app.services.editorial.pipeline.CurationService") as mock_curation_cls,
-        patch("app.services.editorial.pipeline.ActuMatcher") as mock_actu_cls,
-        patch(
-            "app.services.editorial.pipeline.PerspectiveService"
-        ) as mock_perspective_cls,
-    ):
-        # Config
-        from app.services.editorial.config import EditorialConfig, PipelineConfig
-
-        config = EditorialConfig(
-            pipeline=PipelineConfig(),
-        )
-        mock_config.return_value = config
-
-        # LLM
-        mock_llm = MagicMock()
-        mock_llm.is_ready = True
-        mock_llm.close = AsyncMock()
-        mock_llm_cls.return_value = mock_llm
-
-        # Curation
-        mock_curation = MagicMock()
-        mock_curation.select_topics = AsyncMock()
-        mock_curation.select_a_la_une = AsyncMock(return_value=None)
-        mock_curation_cls.return_value = mock_curation
-
-        # Actu matcher
-        mock_actu = MagicMock()
-        mock_actu_cls.return_value = mock_actu
-
-        # Perspective service
-        mock_perspective = MagicMock()
-        mock_perspective.get_perspectives_hybrid = AsyncMock(return_value=([], []))
-        mock_perspective.resolve_bias = AsyncMock(return_value="center")
-        mock_perspective.analyze_divergences = AsyncMock(return_value=None)
-        mock_perspective._extract_domain.side_effect = lambda url: urlparse(
-            url
-        ).netloc.removeprefix("www.")
-
-        async def _build_coverage_universe(reference, contents, discovered):
-            """Deterministic stand-in for the service's domain-level merge."""
-            merged = []
-            seen_domains = set()
-            for content in contents:
-                source = getattr(content, "source", None)
-                source_url = getattr(source, "url", "") or ""
-                domain = urlparse(source_url).netloc.removeprefix("www.")
-                if not domain:
-                    domain = urlparse(getattr(content, "url", "") or "").netloc
-                    domain = domain.removeprefix("www.")
-                if not domain or domain in seen_domains:
-                    continue
-                seen_domains.add(domain)
-                bias = await mock_perspective.resolve_bias(
-                    domain=domain,
-                    source_name=getattr(source, "name", "") or domain,
-                )
-                merged.append(
-                    Perspective(
-                        title=content.title,
-                        url=content.url,
-                        source_name=getattr(source, "name", "") or domain,
-                        source_domain=domain,
-                        bias_stance=bias,
-                        published_at=(
-                            content.published_at.isoformat()
-                            if content.published_at
-                            else None
-                        ),
-                        description=getattr(content, "description", None),
-                        language=getattr(content, "language", None),
-                        content_id=str(content.id),
-                    )
-                )
-            for perspective in discovered:
-                domain = perspective.source_domain.removeprefix("www.")
-                if not domain or domain in seen_domains:
-                    continue
-                perspective.source_domain = domain
-                seen_domains.add(domain)
-                merged.append(perspective)
-            return merged
-
-        async def _build_cluster_perspectives(contents):
-            if not contents:
-                return []
-            return await _build_coverage_universe(contents[0], contents, [])
-
-        mock_perspective.build_coverage_universe = AsyncMock(
-            side_effect=_build_coverage_universe
-        )
-        mock_perspective.build_cluster_perspectives = AsyncMock(
-            side_effect=_build_cluster_perspectives
-        )
-        mock_perspective_cls.return_value = mock_perspective
-
-        yield {
-            "config": config,
-            "llm": mock_llm,
-            "curation": mock_curation,
-            "actu": mock_actu,
-            "perspective": mock_perspective,
-        }
 
 
 class TestComputeGlobalContext:
@@ -796,8 +640,9 @@ class TestPerspectiveCountAlignment:
         """Scénario à 2 perspectives connues (GNews left + right).
 
         Renvoie le sujet calculé. Sert aux deux tests de seuil de divergence
-        (LR-1 PR 2) : 2 perspectives est sous le défaut (4) mais au niveau d'un
-        seuil patché à 2.
+        (LR-1 PR 2, puis Story 35.1 qui abaisse le défaut 4 → 2) : 2
+        perspectives est au niveau du défaut actuel, et sous un seuil patché
+        à 4.
         """
         from app.services.editorial.pipeline import EditorialPipelineService
 
@@ -875,29 +720,29 @@ class TestPerspectiveCountAlignment:
 
     @pytest.mark.asyncio
     async def test_divergence_llm_skipped_below_threshold(self, mock_dependencies):
-        """2 perspectives < défaut (4) ⇒ pas d'appel LLM, fallback déterministe (LR-1 PR 2)."""
-        subject = await self._run_with_few_perspectives(mock_dependencies)
-
-        # 2 perspectives connues, sous le seuil par défaut → LLM non appelé.
-        assert subject.coverage_count == 3
-        assert subject.perspective_count == 2
-        mock_dependencies["perspective"].analyze_divergences.assert_not_awaited()
-        # divergence_level toujours rempli par le fallback déterministe.
-        assert subject.divergence_level is not None
-
-    @pytest.mark.asyncio
-    async def test_divergence_llm_runs_at_configured_threshold(self, mock_dependencies):
-        """Seuil abaissé à 2 ⇒ 2 perspectives déclenchent l'appel LLM (wiring config)."""
+        """2 perspectives < seuil patché (4) ⇒ pas d'appel LLM, fallback déterministe."""
         settings_stub = MagicMock()
-        settings_stub.divergence_llm_min_perspectives = 2
+        settings_stub.divergence_llm_min_perspectives = 4
         with patch(
             "app.services.editorial.pipeline.get_settings", return_value=settings_stub
         ):
             subject = await self._run_with_few_perspectives(mock_dependencies)
 
+        # 2 perspectives connues, sous le seuil → LLM non appelé.
+        assert subject.coverage_count == 3
+        assert subject.perspective_count == 2
+        mock_dependencies["perspective"].analyze_consensus.assert_not_awaited()
+        # divergence_level toujours rempli par le fallback déterministe.
+        assert subject.divergence_level is not None
+
+    @pytest.mark.asyncio
+    async def test_divergence_llm_runs_at_configured_threshold(self, mock_dependencies):
+        """Défaut à 2 (Story 35.1) ⇒ 2 perspectives déclenchent l'appel LLM."""
+        subject = await self._run_with_few_perspectives(mock_dependencies)
+
         assert subject.perspective_count == 2
         assert subject.coverage_count == 3
-        mock_dependencies["perspective"].analyze_divergences.assert_awaited()
+        mock_dependencies["perspective"].analyze_consensus.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_safety_net_counts_cluster_sources_when_all_bias_unknown(
