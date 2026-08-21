@@ -104,7 +104,7 @@ pondère de la redondance ; A sans C pondère du bruit.
 | 1 | PR 1 | **B-1** métadonnées sources (script idempotent) | ✅ mergée (#1047) |
 | 2 | PR 2 | **B-2** fold couverture + dry-run comparatif du top-15 | ✅ **cette PR** |
 | 3 | PR 3 | **C-1** stopper la fabrication d'intérêts + unicité `(user_id, topic_slug)` | ✅ **cette PR** |
-| 4 | PR 4 | **A** score mixte, `is_multi` retiré, poids en env, bump `editorial_v4` | à venir |
+| 4 | PR 4 | **A** score mixte, `is_multi` retiré, poids en env, bump `editorial_v4` | ✅ **cette PR** |
 | 5 | PR 5 | **A** pool personnalisé rebranché (`digest_selector.py:406-407`) | à venir |
 | 6 | PR 6 | **C-2** taux appris lissés vers le prior population | à venir |
 
@@ -261,3 +261,47 @@ Nouvelles métriques (M8-M11) dans `docs/qa/scripts/baseline_curation.sql`
 | M9 | Lignes `user_interests` à `1,0 < w < 1,2` | 174 / 746 | ne plus croître |
 | M10 | Users à amplitude `user_subtopics` < 0,2 | 85 / 101 | ne plus croître |
 | M11 | Doublons `(user_id, topic_slug)` | 5 | 0, impossible |
+
+---
+
+## PR 4 — A : le score mixte existe enfin (`editorial_v4`)
+
+Livré par cette PR (aucun DDL, aucun changement mobile) :
+
+- **Clé de tri v4** : `digest_selector.mixed_subject_rank_score` (module-level,
+  duck-typée) remplace le tuple `(is_multi, importance, perso)` par le scalaire
+  `(1-w)·importance_100 + w·perso_100`, `w = SUBJECT_PERSO_WEIGHT = 0.40`.
+  Les solos ne sont plus relégués par préfixe mais par `coverage(1)=0`
+  (+ `SUBJECT_SOLO_MALUS` configurable, 0.0 par défaut). « À la Une » reste
+  épinglé rang 1. Sujet sans actu → `float("-inf")` **avant** toute
+  arithmétique (piège `0.0 × -inf = nan` au rollback w=0).
+- **Rollback sans redeploy** :
+  `SCORING_OVERRIDES='{"SUBJECT_PERSO_WEIGHT": 0.0, "SUBJECT_SOLO_MALUS": 1000.0}'`
+  ≈ ordre v3. Retuning de `w` par la même variable.
+- **`essentiel_service` devient un adaptateur** : même formule via les mêmes
+  helpers (`helpers/editorial_ranking`), `perso = pillar_score` persisté
+  (médiane du pool pour les articles sans score). Test de parité anti-divergence.
+- **Dry-run** : `scripts/dryrun_subject_mix.py` (sanity v3 + sweep de `w` +
+  M1-M4 + churn sur snapshots prod, read-only).
+
+### Découvertes de l'exploration (consignées ici)
+
+- **Le score du moteur était persisté puis jeté deux fois** : écrit dans le
+  JSONB (`digest_service.py`, `actu_article.score`) mais ignoré au tri des
+  sujets (3ᵉ position d'un tuple jamais atteinte) ET à la lecture
+  (`_build_editorial_response` renvoyait `topic_score=0.0` en dur). Corrigé :
+  il porte désormais le terme perso du mélange et remonte en
+  `DigestTopicArticle.pillar_score`.
+- **`badge == "actu"` est universel** : écrit inconditionnellement sur toute
+  actu de sujet à la persistance → `_W_BADGE_ACTU` (+25) et le préfixe de tri
+  `_is_actu_du_jour` étaient des no-ops en prod (et `is_actu_du_jour` est
+  toujours vrai côté app). Supprimés du scoring ; le champ API reste pour le
+  contrat mobile.
+- **`_W_TRENDING` double-comptait la couverture** : `is_trending` est dérivé de
+  `source_count >= 3` à la lecture — le même signal que le score de couverture.
+  Supprimé.
+- **Filtre figé dans `routers/contents.py`** : les deux loaders de
+  `/perspectives` matchaient `format_version IN ('editorial_v1','editorial_v2')`
+  → **v3 ne matchait déjà plus** (fallback live silencieux, logos CTA ≠ bottom
+  sheet). Passés en préfixe `startswith("editorial_")`, aligné sur
+  `digest_content_refs.py` / `push_dispatcher.py`.

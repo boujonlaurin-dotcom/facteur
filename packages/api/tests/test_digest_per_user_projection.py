@@ -378,14 +378,27 @@ async def test_solo_subject_created_for_follower_only(monkeypatch):
     assert other_solo == [], "pas de fuite cross-user : aucun solo pour le non-suiveur"
 
 
-# ─── Tests: classement par importance éditoriale (bug-actus-du-jour-ranking) ──
+# ─── Tests: score mixte v4 (bug-curation-essentiel-personnalisation, PR 4) ────
+
+
+def _patch_scores(selector, score_by_id):
+    """Fixe les scores perso du moteur — l'assertion porte sur le MIXAGE.
+
+    Le vrai moteur sur des mocks produit des scores non maîtrisés ; on ne
+    patche donc `_score_candidates` que quand le test raisonne en points.
+    """
+    selector._score_candidates = AsyncMock(
+        side_effect=lambda candidates, context, mode="pour_vous": [
+            (c, score_by_id.get(c.id, 0.0), [], {}) for c in candidates
+        ]
+    )
 
 
 @pytest.mark.asyncio
 async def test_multi_source_ranks_above_personalized_single_source():
-    """Partie C : un sujet multi-sources passe devant un sujet mono-source
-    même quand ce dernier est porté par une source SUIVIE (perso fort). La
-    couverture éditoriale prime, la perso ne fait que départager."""
+    """Un sujet 5 sources reste devant un mono-source personnalisé : l'écart
+    d'importance mixée (≈23 pts) dépasse une amplitude perso réaliste
+    (0,40×40 = 16 pts). La perso pèse, elle ne renverse plus tout."""
     srcMulti, srcFollowed = uuid4(), uuid4()
     now = datetime.now(UTC)
     a_multi = _make_content(srcMulti, published_at=now, title="Sujet très couvert")
@@ -404,9 +417,10 @@ async def test_multi_source_ranks_above_personalized_single_source():
     global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
 
     selector = _make_selector()
+    # Perso favorable au mono-source (+40 pts d'écart, amplitude réaliste).
+    _patch_scores(selector, {a_solo.id: 80.0, a_multi.id: 40.0})
     pipeline = _StubPipeline()
 
-    # L'utilisateur SUIT la source du sujet mono-source → perso boost dessus.
     ctx = _make_context(uuid4(), {srcFollowed})
     res = await selector._project_editorial_for_user(
         pipeline=pipeline,
@@ -422,26 +436,38 @@ async def test_multi_source_ranks_above_personalized_single_source():
 
 
 @pytest.mark.asyncio
-async def test_solo_subject_never_above_multi_source(monkeypatch):
-    """Partie C : un sujet solo (source suivie, créé per-user) est relégué sous
-    tout sujet multi-sources, même si son score perso est élevé."""
+async def test_solo_is_relegated_by_zero_coverage_not_by_a_hard_prefix(monkeypatch):
+    """v4 : la relégation des solos n'est plus un préfixe dur `is_multi`.
+
+    - coverage(1)=0 suffit à garder un solo sous un sujet 6+ sources, même
+      avec un perso max (Δimportance mixée 25 pts > amplitude perso 20 pts) ;
+    - mais un solo très personnel PEUT passer devant un 2-sources impersonnel
+      (Δ 10 pts) — c'est le comportement voulu du mélange.
+    """
     monkeypatch.setenv("EDITORIAL_SOLO_SUBJECT_MIN_SCORE", "0")
 
-    srcMulti, srcFollowed = uuid4(), uuid4()
+    srcBig, srcSmall, srcFollowed = uuid4(), uuid4(), uuid4()
     now = datetime.now(UTC)
-    a_multi = _make_content(srcMulti, published_at=now, title="Multi")
+    a_big = _make_content(srcBig, published_at=now, title="Multi massif")
+    a_small = _make_content(srcSmall, published_at=now, title="Deux sources")
     # Source suivie, non représentée → deviendra un sujet solo per-user.
     a_leftover = _make_content(srcFollowed, published_at=now, title="Leftover suivi")
 
-    c_multi = _make_topic_cluster("multi", [a_multi])
-    c_followed = _make_topic_cluster("followed", [a_leftover])
-    clusters = [c_multi, c_followed]
-
-    # Seul le sujet multi est dans le contexte global ; a_leftover devient solo.
-    subjects = [_make_subject("multi", a_multi, rank=1, source_count=4)]
+    clusters = [
+        _make_topic_cluster("big", [a_big]),
+        _make_topic_cluster("small", [a_small]),
+        _make_topic_cluster("followed", [a_leftover]),
+    ]
+    subjects = [
+        _make_subject("big", a_big, rank=1, source_count=6),
+        _make_subject("small", a_small, rank=2, source_count=2),
+    ]
     global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
 
     selector = _make_selector()
+    # Perso max sur le solo (50 pts au-dessus des deux autres, amplitude
+    # maximale de la propriété A4), zéro partout ailleurs.
+    _patch_scores(selector, {a_leftover.id: 50.0})
     pipeline = _StubPipeline()
 
     ctx = _make_context(uuid4(), {srcFollowed})
@@ -455,9 +481,82 @@ async def test_solo_subject_never_above_multi_source(monkeypatch):
     order = [s.topic_id for s in res.subjects]
     solo_ids = [t for t in order if t.startswith("solo-")]
     assert solo_ids, "le sujet solo doit exister"
-    # Aucun solo ne précède le sujet multi-sources.
-    assert order[0] == "multi"
-    assert order.index("multi") < order.index(solo_ids[0])
+    # coverage(1)=0 relègue le solo sous le 6-sources…
+    assert order.index("big") < order.index(solo_ids[0])
+    # …mais plus de préfixe dur : le solo très personnel bat le 2-sources.
+    assert order.index(solo_ids[0]) < order.index("small")
+
+
+@pytest.mark.asyncio
+async def test_perso_weight_zero_reproduces_importance_only_order(monkeypatch):
+    """Rollback partiel : w=0 ⇒ ordre = importance pure, la perso ne pèse plus."""
+    from app.services.recommendation.scoring_config import ScoringWeights
+
+    monkeypatch.setattr(ScoringWeights, "SUBJECT_PERSO_WEIGHT", 0.0)
+
+    srcA, srcB = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    a_covered = _make_content(srcA, published_at=now, title="Couvert")
+    a_perso = _make_content(srcB, published_at=now, title="Personnel")
+
+    clusters = [
+        _make_topic_cluster("covered", [a_covered]),
+        _make_topic_cluster("perso", [a_perso]),
+    ]
+    subjects = [
+        _make_subject("covered", a_covered, rank=1, source_count=4),
+        _make_subject("perso", a_perso, rank=2, source_count=2),
+    ]
+    global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
+
+    selector = _make_selector()
+    # Perso écrasant sur le moins couvert : sans effet à w=0.
+    _patch_scores(selector, {a_perso.id: 100.0})
+    res = await selector._project_editorial_for_user(
+        pipeline=_StubPipeline(),
+        global_ctx=global_ctx,
+        clusters=clusters,
+        context=_make_context(uuid4(), {srcB}),
+        mode="pour_vous",
+    )
+    order = [s.topic_id for s in res.subjects]
+    assert order.index("covered") < order.index("perso")
+
+
+@pytest.mark.asyncio
+async def test_solo_malus_override_restores_v3_relegation(monkeypatch):
+    """Rollback complet : malus 1000 ⇒ tout solo retombe sous tout multi (v3)."""
+    from app.services.recommendation.scoring_config import ScoringWeights
+
+    monkeypatch.setenv("EDITORIAL_SOLO_SUBJECT_MIN_SCORE", "0")
+    monkeypatch.setattr(ScoringWeights, "SUBJECT_SOLO_MALUS", 1000.0)
+
+    srcSmall, srcFollowed = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    a_small = _make_content(srcSmall, published_at=now, title="Deux sources")
+    a_leftover = _make_content(srcFollowed, published_at=now, title="Leftover suivi")
+
+    clusters = [
+        _make_topic_cluster("small", [a_small]),
+        _make_topic_cluster("followed", [a_leftover]),
+    ]
+    subjects = [_make_subject("small", a_small, rank=1, source_count=2)]
+    global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
+
+    selector = _make_selector()
+    # Même perso max que le test « voulu » ci-dessus : le malus doit l'écraser.
+    _patch_scores(selector, {a_leftover.id: 100.0})
+    res = await selector._project_editorial_for_user(
+        pipeline=_StubPipeline(),
+        global_ctx=global_ctx,
+        clusters=clusters,
+        context=_make_context(uuid4(), {srcFollowed}),
+        mode="pour_vous",
+    )
+    order = [s.topic_id for s in res.subjects]
+    solo_ids = [t for t in order if t.startswith("solo-")]
+    assert solo_ids, "le sujet solo doit exister"
+    assert order.index("small") < order.index(solo_ids[0])
 
 
 @pytest.mark.asyncio
@@ -496,8 +595,9 @@ async def test_a_la_une_stays_rank_1_despite_higher_importance_elsewhere():
 
 @pytest.mark.asyncio
 async def test_polarization_breaks_tie_between_multi_sources():
-    """Partie C : à couverture et récence égales, le sujet le plus polarisé
-    (divergence_level high) passe devant."""
+    """À couverture, récence et perso égales, le sujet le plus polarisé
+    (divergence_level high) passe devant : la polarisation reste un signal
+    d'importance dans le terme (1-w)·importance du score mixte."""
     srcA, srcB = uuid4(), uuid4()
     now = datetime.now(UTC)
     a_plain = _make_content(srcA, published_at=now, title="Consensus")
@@ -516,6 +616,8 @@ async def test_polarization_breaks_tie_between_multi_sources():
     global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
 
     selector = _make_selector()
+    # Perso strictement égale : seule la polarisation départage.
+    _patch_scores(selector, {a_plain.id: 50.0, a_polar.id: 50.0})
     pipeline = _StubPipeline()
 
     ctx = _make_context(uuid4(), set())
@@ -528,6 +630,98 @@ async def test_polarization_breaks_tie_between_multi_sources():
     )
     order = [s.topic_id for s in res.subjects]
     assert order.index("polar") < order.index("plain")
+
+
+# ─── Tests: clé v4 en isolation (mixed_subject_rank_score) ────────────────────
+
+
+@pytest.mark.parametrize("weight", [0.0, 0.4, 1.0])
+def test_subject_without_actu_is_last_and_never_nan(monkeypatch, weight):
+    """Piège NaN verrouillé : `0.0 * float("-inf") = nan` — le cas « sujet sans
+    actu » doit court-circuiter en -inf AVANT toute arithmétique, pour tout w
+    (y compris le rollback w=0)."""
+    import math
+
+    from app.services.digest_selector import mixed_subject_rank_score
+    from app.services.recommendation.scoring_config import ScoringWeights
+
+    monkeypatch.setattr(ScoringWeights, "SUBJECT_PERSO_WEIGHT", weight)
+    subject = types.SimpleNamespace(
+        actu_article=None, source_count=3, divergence_level=None
+    )
+
+    score = mixed_subject_rank_score(subject, score_map={}, now=datetime.now(UTC))
+
+    assert not math.isnan(score)
+    assert score == float("-inf")
+
+
+def test_serein_sport_subject_keeps_importance_with_neutral_perso():
+    """Mode serein : le `continue` sport de `_score_candidates` laisse le
+    représentant hors de `score_map` → perso neutre 0.0, JAMAIS -inf. Le sujet
+    garde toute son importance éditoriale."""
+    from app.services.digest_selector import mixed_subject_rank_score
+    from app.services.editorial.schemas import EditorialSubject, MatchedActuArticle
+
+    now = datetime.now(UTC)
+    subject = EditorialSubject(
+        rank=1,
+        topic_id="sport",
+        label="Sport serein",
+        selection_reason="test",
+        source_count=4,
+        actu_article=MatchedActuArticle(
+            content_id=uuid4(),
+            title="Sport",
+            source_name="S",
+            source_id=uuid4(),
+            is_user_source=False,
+            published_at=now,
+        ),
+    )
+
+    # score_map vide = l'article a été écarté du scoring (continue serein).
+    score = mixed_subject_rank_score(subject, score_map={}, now=now)
+
+    assert score != float("-inf")
+    # (1-w)·importance exactement : perso neutre n'ajoute rien.
+    from app.services.recommendation.helpers.editorial_ranking import (
+        normalized_importance,
+    )
+    from app.services.recommendation.scoring_config import ScoringWeights
+
+    expected = (1.0 - ScoringWeights.SUBJECT_PERSO_WEIGHT) * normalized_importance(
+        4, now, None, now=now
+    )
+    assert score == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
+async def test_ties_keep_input_order():
+    """`sorted` stable : deux sujets au score mixte identique gardent l'ordre
+    `run_for_user` (aucun réarrangement gratuit des ex æquo)."""
+    srcA, srcB = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    a1 = _make_content(srcA, published_at=now, title="Jumeau A")
+    a2 = _make_content(srcB, published_at=now, title="Jumeau B")
+
+    clusters = [_make_topic_cluster("t1", [a1]), _make_topic_cluster("t2", [a2])]
+    subjects = [
+        _make_subject("t1", a1, rank=1, source_count=3),
+        _make_subject("t2", a2, rank=2, source_count=3),
+    ]
+    global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
+
+    selector = _make_selector()
+    _patch_scores(selector, {a1.id: 50.0, a2.id: 50.0})
+    res = await selector._project_editorial_for_user(
+        pipeline=_StubPipeline(),
+        global_ctx=global_ctx,
+        clusters=clusters,
+        context=_make_context(uuid4(), set()),
+        mode="pour_vous",
+    )
+    assert [s.topic_id for s in res.subjects] == ["t1", "t2"]
 
 
 # ─── Tests: persistance des scores (jauge CTR) ────────────────────────────────

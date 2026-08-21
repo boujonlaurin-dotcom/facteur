@@ -364,18 +364,24 @@ def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
 # Version courante du format editorial. Bumpée editorial_v1 -> editorial_v2 avec
 # la projection per-user (P2), puis editorial_v2 -> editorial_v3 avec le
 # classement par importance éditoriale (couverture + récence + polarisation,
-# perso en départage ; solos relégués) — cf. bug-actus-du-jour-ranking.md. La
-# FORME JSON est inchangée (toujours `subjects[]`), mais la SÉMANTIQUE D'ORDRE
-# change → le bump force la régénération des digests cachés `editorial_v2`
-# (le cron les voit "stale") et évite de servir un mix de sémantiques. Clé
-# d'idempotence (user_id, target_date, is_serene) inchangée.
-EDITORIAL_FORMAT_VERSION = "editorial_v3"
+# perso en départage ; solos relégués), puis editorial_v3 -> editorial_v4 avec
+# le score mixte scalaire `(1-w)·importance + w·perso` (solos relégués par
+# malus configurable) — cf. bug-curation-essentiel-personnalisation.md (PR 4).
+# La FORME JSON est inchangée (toujours `subjects[]`), mais la SÉMANTIQUE
+# D'ORDRE change → le bump force la régénération des digests cachés
+# `editorial_v3` (le cron les voit "stale") et évite de servir un mix de
+# sémantiques. Clé d'idempotence (user_id, target_date, is_serene) inchangée.
+# Rollback = SCORING_OVERRIDES (poids w=0 + malus 1000 ≈ ordre v3), pas un
+# revert de code.
+EDITORIAL_FORMAT_VERSION = "editorial_v4"
 # Tous les formats editorial rendus/clonables pendant les transitions.
 # Même forme JSON → `_build_editorial_response` les traite identiquement.
+# v1/v2/v3 restent lisibles ⇒ aucun 202 pendant la transition v3→v4.
 _EDITORIAL_FORMATS: tuple[str, ...] = (
     "editorial_v1",
     "editorial_v2",
     "editorial_v3",
+    "editorial_v4",
 )
 
 # Format versions that the read-only hot path is willing to render. flat_v1
@@ -2377,6 +2383,9 @@ class DigestService:
                     rank=art_idx + 1,
                     reason=reason,
                     badge=art_data.get("badge"),
+                    # Persisté sur l'actu seulement — extras/deep n'ont pas de
+                    # clé `score` → None. Aucun re-scoring au read.
+                    pillar_score=art_data.get("score"),
                     is_followed_source=content.source_id in followed_source_ids,
                     recommendation_reason=None,
                     is_read=action_state["is_read"],
@@ -2451,16 +2460,18 @@ class DigestService:
                         reason=subject.get("selection_reason", ""),
                         # `is_trending` = signal "≥3 sources couvrent le topic"
                         # (le buzz multi-rédaction). `is_une` = décision
-                        # éditoriale "à la une". Deux leviers indépendants
-                        # dans le scoring Essentiel (_W_TRENDING + _W_UNE) —
-                        # historiquement mappés au même champ JSONB, ce qui
-                        # cumulait +70 sur tout subject "à la une" indépendamment
-                        # de sa couverture.
+                        # éditoriale "à la une". Depuis le score mixte v4,
+                        # `is_trending` n'est plus un input de scoring (la
+                        # couverture passe par `source_count`) : il n'alimente
+                        # que le flag d'affichage `is_actu_du_jour` côté
+                        # essentiel_service.
                         is_trending=subject.get("source_count", 0) >= 3,
                         is_une=subject.get("is_a_la_une", False),
                         source_count=subject.get("source_count", 0),
                         theme=subject.get("theme"),
-                        topic_score=0.0,
+                        topic_score=float(
+                            (subject.get("actu_article") or {}).get("score") or 0.0
+                        ),
                         # `deep_angle` is optional (null for people/faits-divers).
                         # `subject.get("deep_angle", "")` returns None when the
                         # key exists with value null, which breaks the

@@ -23,17 +23,15 @@ from app.models.enums import ContentType
 from app.schemas.content import SourceMini
 from app.schemas.digest import DigestResponse, DigestTopic, DigestTopicArticle
 from app.services.essentiel_service import (
-    _W_TRENDING,
-    _W_UNE,
     ESSENTIEL_MAX_ARTICLES,
     ESSENTIEL_MIN_ARTICLES,
     PERSPECTIVE_SOURCES_CAP,
     EssentielUserContext,
-    _perspective_score,
     _score_article,
     _source_letter,
     build_essentiel_response,
 )
+from app.services.recommendation.scoring_config import ScoringWeights
 
 
 def _make_source(name: str = "Le Monde") -> SourceMini:
@@ -56,6 +54,7 @@ def _make_article(
     badge: str | None = None,
     is_read: bool = False,
     published_at: datetime | None = None,
+    pillar_score: float | None = None,
 ) -> DigestTopicArticle:
     return DigestTopicArticle(
         content_id=uuid4(),
@@ -68,6 +67,7 @@ def _make_article(
         is_followed_source=is_followed_source,
         badge=badge,
         is_read=is_read,
+        pillar_score=pillar_score,
     )
 
 
@@ -507,8 +507,11 @@ def test_followed_source_promoted_above_unfollowed_competitor():
     assert response.articles[1].source.id == other_source.id
 
 
-def test_user_topic_weight_promotes_lower_ranked_topic():
-    """Un topic dont le `theme` est lourdement pondéré doit remonter."""
+def test_pillar_score_promotes_lower_ranked_topic():
+    """Le signal perso passe désormais par `pillar_score` (persisté par le
+    digest, où le moteur a déjà compté intérêts/thèmes suivis) : un article
+    mieux scoré remonte devant un topic.rank supérieur. Les poids déclaratifs
+    ne sont plus ré-empilés ici (double-comptage)."""
     topics = [
         DigestTopic(
             topic_id="t1",
@@ -517,7 +520,7 @@ def test_user_topic_weight_promotes_lower_ranked_topic():
             reason="Test",
             theme="politique",
             perspective_count=2,
-            articles=[_make_article(rank=1, title="P-1")],
+            articles=[_make_article(rank=1, title="P-1", pillar_score=20.0)],
         ),
         DigestTopic(
             topic_id="t2",
@@ -526,7 +529,7 @@ def test_user_topic_weight_promotes_lower_ranked_topic():
             reason="Test",
             theme="sciences",
             perspective_count=2,
-            articles=[_make_article(rank=1, title="S-1")],
+            articles=[_make_article(rank=1, title="S-1", pillar_score=80.0)],
         ),
         DigestTopic(
             topic_id="t3",
@@ -535,14 +538,12 @@ def test_user_topic_weight_promotes_lower_ranked_topic():
             reason="Test",
             theme="cuisine",
             perspective_count=2,
-            articles=[_make_article(rank=1, title="C-1")],
+            articles=[_make_article(rank=1, title="C-1", pillar_score=20.0)],
         ),
     ]
     digest = _make_digest(topics)
-    # Le user suit fortement "sciences", très peu "politique".
-    ctx = EssentielUserContext(topic_weights={"sciences": 3.0})
 
-    response = build_essentiel_response(digest, user_context=ctx)
+    response = build_essentiel_response(digest, user_context=EssentielUserContext())
 
     # "Sciences" doit passer devant "Politique" qui avait pourtant topic.rank=1.
     assert response.articles[0].section_label == "Sciences"
@@ -622,9 +623,10 @@ def test_diversity_constraint_one_article_per_topic_in_round_one():
     assert first_two_labels == {"Politique", "Climat"}
 
 
-def test_followed_source_flag_fallback_when_db_set_empty():
-    """Si `followed_source_ids` est vide mais le digest a déjà flaggé
-    `is_followed_source`, on garde un bonus moindre."""
+def test_followed_source_signal_flows_through_pillar_score():
+    """Contexte DB vide : la préférence source suivie n'est plus un flag
+    ré-empilé (`_W_FOLLOWED_SOURCE_FLAG` supprimé) — elle arrive par le
+    `pillar_score` persisté, où le SourcePillar l'a déjà comptée."""
     s_followed = _make_source("Mediapart")
     s_other = _make_source("Le Monde")
     topics = [
@@ -635,7 +637,9 @@ def test_followed_source_flag_fallback_when_db_set_empty():
             reason="Test",
             theme="t1",
             perspective_count=2,
-            articles=[_make_article(rank=1, title="A-1", source=s_other)],
+            articles=[
+                _make_article(rank=1, title="A-1", source=s_other, pillar_score=30.0)
+            ],
         ),
         DigestTopic(
             topic_id="t2",
@@ -650,13 +654,12 @@ def test_followed_source_flag_fallback_when_db_set_empty():
                     title="B-1",
                     source=s_followed,
                     is_followed_source=True,
+                    pillar_score=80.0,
                 )
             ],
         ),
     ]
     digest = _make_digest(topics)
-    # Aucun follow chargé en DB (contexte vide), mais le flag du digest doit
-    # quand même promouvoir l'article B au-dessus de A (rank topic plus haut).
     ctx = EssentielUserContext()
     response = build_essentiel_response(digest, user_context=ctx)
 
@@ -1087,12 +1090,13 @@ def _art(
     content_type: ContentType = ContentType.ARTICLE,
     topics: list[str] | None = None,
     rank: int = 1,
+    published_at: datetime | None = None,
 ) -> DigestTopicArticle:
     return DigestTopicArticle(
         content_id=uuid4(),
         title=title,
         url=f"https://example.com/{title.lower().replace(' ', '-')[:30]}",
-        published_at=datetime.now(UTC),
+        published_at=published_at or datetime.now(UTC),
         source=source or _src(),
         rank=rank,
         reason="Test",
@@ -1374,22 +1378,11 @@ def test_reddit_source_excluded():
     assert all(a.source.name != "r/france" for a in response.articles)
 
 
-def test_perspective_score_log_curve():
-    """Vérifie la calibration log2 du score perspectives."""
-    assert _perspective_score(0) == 0.0
-    assert _perspective_score(1) == 0.0
-    # 12 * log2(2) = 12
-    assert _perspective_score(2) == pytest.approx(12.0)
-    # 12 * log2(4) = 24
-    assert _perspective_score(4) == pytest.approx(24.0)
-    # 12 * log2(6) ≈ 31 → capé à 30
-    assert _perspective_score(6) == pytest.approx(30.0)
-    assert _perspective_score(20) == pytest.approx(30.0)
-
-
 def test_six_perspectives_beats_one_perspective_scoop():
     """Cas PO : sujet à 6 médias (sans signal éditorial) doit passer devant un
-    scoop isolé (1 perspective), sans aucune préférence user."""
+    scoop isolé (1 perspective), sans aucune préférence user. Les topics de
+    test n'ont pas de `source_count` → le fallback legacy `perspective_count`
+    porte la couverture."""
     pop_src = _src("Le Monde")
     scoop_src = _src("Mediapart")
     very_relayed = _art(
@@ -1412,8 +1405,8 @@ def test_six_perspectives_beats_one_perspective_scoop():
 
     response = build_essentiel_response(digest)
 
-    # Sans signal user, 6 perspectives (+30) > 1 perspective (0) +
-    # rank_penalty (-0.5 vs -1.0) → MO passe devant.
+    # Sans signal user, la couverture (6 vs 1) domine le terme importance du
+    # score mixte ; le tie-break rank ne suffit pas à compenser.
     assert response.articles[0].section_label == "MO"
     assert response.articles[1].section_label == "Climat"
 
@@ -1554,62 +1547,120 @@ def test_muted_source_does_not_break_other_topics():
     assert labels == ["Politique"]
 
 
-def test_trending_and_une_decoupled_in_scoring():
-    """Bug audit #6 : `is_une` et `is_trending` étaient lus du même champ
-    JSONB → tout subject à la une recevait +70 (40+30). Après découplage,
-    un subject avec `is_une=True` seul reçoit `+_W_UNE` (30) uniquement."""
-    topic_une_only = _topic(
-        "UneOnly",
-        [_art(title="A1")],
-        theme="theme-une",
-        is_trending=False,
-        is_une=True,
-        perspective_count=1,
+def test_trending_is_not_double_counted_with_coverage():
+    """`is_trending` n'est qu'un dérivé de la couverture (`source_count>=3`) :
+    l'ancien `_W_TRENDING` la comptait donc deux fois. À couverture égale, le
+    flag seul ne doit plus produire AUCUN écart de score."""
+    now = datetime.now(UTC)
+    flagged = _topic(
+        "Flagged",
+        [_art(title="A1", published_at=now)],
+        theme="t1",
+        is_trending=True,
+        perspective_count=4,
         rank=1,
     )
-    topic_trending_only = _topic(
-        "TrendingOnly",
-        [_art(title="A2")],
-        theme="theme-trending",
-        is_trending=True,
-        is_une=False,
-        perspective_count=1,
+    unflagged = _topic(
+        "Unflagged",
+        [_art(title="A2", published_at=now)],
+        theme="t2",
+        is_trending=False,
+        perspective_count=4,
+        rank=1,
+    )
+
+    flagged_score = _score_article(flagged, flagged.articles[0], now=now)
+    unflagged_score = _score_article(unflagged, unflagged.articles[0], now=now)
+
+    assert flagged_score == pytest.approx(unflagged_score)
+
+
+def test_is_une_alone_adds_exactly_essentiel_une_bonus():
+    """`is_une` reste le seul bonus éditorial hors moteur : +ESSENTIEL_UNE_BONUS,
+    ni plus (ex-`_W_UNE`=35 cumulable avec badge/trending), ni moins."""
+    now = datetime.now(UTC)
+    base = _topic(
+        "Plain",
+        [_art(title="A1", published_at=now)],
+        theme="t",
+        perspective_count=2,
+        rank=1,
+    )
+    une = _topic(
+        "Une",
+        [_art(title="A2", published_at=now)],
+        theme="t",
+        is_une=True,
+        perspective_count=2,
+        rank=1,
+    )
+
+    base_score = _score_article(base, base.articles[0], now=now)
+    une_score = _score_article(une, une.articles[0], now=now)
+
+    assert une_score - base_score == pytest.approx(ScoringWeights.ESSENTIEL_UNE_BONUS)
+
+
+def test_score_article_matches_subject_rank_key_formula():
+    """Anti-divergence : `_score_article` et la clé v4 du digest
+    (`mixed_subject_rank_score`) partagent les mêmes primitives — mêmes
+    helpers, même résultat au tie-break rang près."""
+    from types import SimpleNamespace
+
+    from app.services.digest_selector import mixed_subject_rank_score
+    from app.services.essentiel_service import _W_RANK_PENALTY
+
+    now = datetime.now(UTC)
+    published = now - timedelta(hours=10)
+    content_id = uuid4()
+    pillar = 62.0
+
+    article = _make_article(
+        rank=1, title="Parité", published_at=published, pillar_score=pillar
+    )
+    topic = _topic("Parité", [article], theme="t", perspective_count=1, rank=1)
+    topic = topic.model_copy(update={"source_count": 4, "divergence_level": "medium"})
+
+    subject = SimpleNamespace(
+        source_count=4,
+        divergence_level="medium",
+        actu_article=SimpleNamespace(content_id=content_id, published_at=published),
+    )
+
+    essentiel_score = _score_article(topic, topic.articles[0], now=now)
+    digest_score = mixed_subject_rank_score(
+        subject, score_map={content_id: pillar}, now=now
+    )
+
+    assert essentiel_score == pytest.approx(
+        digest_score - _W_RANK_PENALTY * article.rank
+    )
+
+
+def test_actu_du_jour_prefix_removed_does_not_change_editorial_path_order():
+    """Le préfixe `not _is_actu_du_jour` du tri a été retiré (badge "actu"
+    écrit inconditionnellement par le digest = signal universel, no-op en
+    prod). Un article mieux scoré SANS badge doit donc passer devant un
+    badgé moins scoré — l'ancien préfixe aurait inversé."""
+    plain = _topic(
+        "SansBadge",
+        [_art(title="Sans badge")],
+        theme="t1",
+        perspective_count=5,
         rank=2,
     )
-    ctx = EssentielUserContext()
-
-    une_score = _score_article(topic_une_only, topic_une_only.articles[0], ctx)
-    trending_score = _score_article(
-        topic_trending_only, topic_trending_only.articles[0], ctx
-    )
-
-    # `is_une` seul : +_W_UNE (30), `is_trending` seul : +_W_TRENDING (40).
-    # Tie-break par rank pénalisé (-0.5 * 1).
-    assert une_score == pytest.approx(_W_UNE - 0.5)
-    assert trending_score == pytest.approx(_W_TRENDING - 0.5)
-    # Le découplage doit produire des scores différents (avant le fix,
-    # is_une=true et is_trending=true étaient toujours cumulés → scores égaux
-    # ne se distinguaient jamais).
-    assert une_score != trending_score
-
-
-def test_une_and_trending_can_cumulate_when_both_set():
-    """Cumul `+70` toujours possible mais légitime — quand le subject est
-    à la fois à la une éditoriale (`is_une`) et couvert par ≥3 sources
-    (`is_trending`)."""
-    topic = _topic(
-        "Both",
-        [_art(title="A1")],
-        theme="t",
-        is_trending=True,
-        is_une=True,
+    badged = _topic(
+        "AvecBadge",
+        [_art(title="Avec badge")],
+        theme="t2",
         perspective_count=1,
         rank=1,
     )
+    badged.articles[0] = badged.articles[0].model_copy(update={"badge": "actu"})
 
-    score = _score_article(topic, topic.articles[0], EssentielUserContext())
+    response = build_essentiel_response(_make_digest([badged, plain]))
 
-    assert score == pytest.approx(_W_TRENDING + _W_UNE - 0.5)
+    assert response.articles[0].section_label == "SansBadge"
 
 
 def test_coverage_is_propagated_and_legacy_perspective_sources_capped():

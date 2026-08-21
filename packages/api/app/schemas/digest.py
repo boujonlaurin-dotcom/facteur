@@ -69,6 +69,10 @@ class DigestTopicArticle(BaseModel):
     is_followed_source: bool = False
     recommendation_reason: DigestRecommendationReason | None = None
     badge: str | None = None  # "actu" | "pas_de_recul"
+    # Score du moteur de piliers persisté sur l'actu du sujet (JSONB `score`).
+    # `None` sur les extras/deep et les digests antérieurs à la persistance —
+    # les consommateurs (essentiel_service) doivent traiter None comme neutre.
+    pillar_score: float | None = None
     is_read: bool = False
     is_saved: bool = False
     is_liked: bool = False

@@ -48,10 +48,8 @@ from app.services.recommendation.filter_presets import (
     apply_good_news_filter,
     is_sport_content,
 )
-from app.services.recommendation.helpers.coverage_score import compute_coverage_score
 from app.services.recommendation.helpers.editorial_ranking import (
-    polarization_bonus,
-    recency_bonus,
+    blended_subject_score,
 )
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
@@ -134,6 +132,51 @@ def _read_solo_subject_min_score() -> float:
         return float(os.environ.get("EDITORIAL_SOLO_SUBJECT_MIN_SCORE", ""))
     except ValueError:
         return 40.0
+
+
+def mixed_subject_rank_score(subject, *, score_map: dict, now) -> float:
+    """Clé de tri v4 d'un sujet éditorial : score mixte scalaire.
+
+    `(1-w)·importance_100 + w·perso_100` (helpers/editorial_ranking), moins
+    `SUBJECT_SOLO_MALUS` pour un sujet mono-source (même frontière que
+    l'ex-préfixe `is_multi` ; à 0.0 par défaut, un solo n'est relégué que par
+    sa propriété coverage(1)=0). Module-level et duck-typée (EditorialSubject
+    ou snapshot re-hydraté) : importée telle quelle par
+    `scripts/dryrun_subject_mix.py` — zéro réimplémentation.
+
+    Un sujet sans actu court-circuite en `float("-inf")` AVANT toute
+    arithmétique : au rollback `SUBJECT_PERSO_WEIGHT=0.0`,
+    `0.0 * float("-inf")` produirait `nan` et corromprait le tri.
+    """
+    if subject.actu_article is None:
+        return float("-inf")
+    score = blended_subject_score(
+        subject.source_count,
+        subject.actu_article.published_at,
+        subject.divergence_level,
+        score_map.get(subject.actu_article.content_id),
+        now=now,
+    )
+    if subject.source_count < 2:
+        score -= ScoringWeights.SUBJECT_SOLO_MALUS
+    return score
+
+
+def rank_editorial_subjects(subjects: list, *, score_map: dict, now) -> list:
+    """L'étage de re-ranking v4 complet : « À la Une » épinglé en tête, le
+    reste trié par `mixed_subject_rank_score` (tri stable ⇒ ex æquo gardent
+    l'ordre d'entrée). Module-level et duck-typée pour la même raison que la
+    clé : le dry-run (`scripts/dryrun_subject_mix.py`) rejoue CET étage, pas
+    une copie — si la règle d'épinglage change, il la suit.
+    """
+    une = [s for s in subjects if s.is_a_la_une]
+    rest = [s for s in subjects if not s.is_a_la_une]
+    rest_sorted = sorted(
+        rest,
+        key=lambda s: mixed_subject_rank_score(s, score_map=score_map, now=now),
+        reverse=True,
+    )
+    return une + rest_sorted
 
 
 @dataclass
@@ -1274,39 +1317,16 @@ class DigestSelector:
                     user_id=str(context.user_id),
                 )
 
-        def subject_perso(s: EditorialSubject) -> float:
-            """Score de personnalisation du représentant — départage uniquement."""
-            if s.actu_article is None:
-                return float("-inf")
-            return score_map.get(s.actu_article.content_id, 0.0)
+        # Horloge figée UNE FOIS avant le tri (précédent : `_score_candidates`)
+        # pour que tous les sujets partagent la même référence de récence.
+        now = datetime.datetime.now(datetime.UTC)
 
-        def subject_importance(s: EditorialSubject) -> float:
-            """Importance éditoriale = couverture + récence + polarisation.
-
-            Critère primaire du rang 2+. Réutilise `compute_coverage_score`
-            (source de vérité couverture) et les helpers partagés de récence /
-            polarisation. La personnalisation ne sert plus qu'à départager.
-            """
-            published = s.actu_article.published_at if s.actu_article else None
-            return (
-                compute_coverage_score(s.source_count)
-                + recency_bonus(published)
-                + polarization_bonus(s.divergence_level)
-            )
-
-        def subject_rank_key(s: EditorialSubject) -> tuple[bool, float, float]:
-            """Clé de tri reverse=True : importance éditoriale d'abord, perso en
-            départage, et les sujets solo (1 source) toujours sous les
-            multi-sources. Un sujet sans actu est relégué en dernier.
-            """
-            if s.actu_article is None:
-                return (False, float("-inf"), float("-inf"))
-            is_multi = s.source_count >= 2
-            return (is_multi, subject_importance(s), subject_perso(s))
-
-        # 3. Sujets solo au-dessus du seuil. Conservés mais RELÉGUÉS sous les
-        # sujets multi-sources par `subject_rank_key` (is_multi=False) — décision
-        # PO : un solo n'est jamais au-dessus d'un multi-sources.
+        # 3. Sujets solo au-dessus du seuil. Conservés mais pénalisés par
+        # `SUBJECT_SOLO_MALUS` (0.0 par défaut : la relégation vient de
+        # coverage(1)=0, plus d'un préfixe dur). Propriété du mélange : un solo
+        # (Δimportance mixée = 25,0 pts vs un sujet 6+ sources) ne peut battre
+        # l'amplitude perso max (0,40×50 = 20 pts) ; il peut battre un
+        # 2-sources (Δ 10,0) — voulu.
         threshold = _read_solo_subject_min_score()
         solo_subjects: list[EditorialSubject] = []
         for c in solo_candidates:
@@ -1334,13 +1354,12 @@ class DigestSelector:
                 )
             )
 
-        # Re-ranking : « À la Une » reste rang 1 ; le reste trié par importance
-        # éditoriale (couverture + récence + polarisation), perso en départage,
-        # solos relégués sous les multi-sources. Cf. bug-actus-du-jour-ranking.md.
-        une = [s for s in subjects if s.is_a_la_une]
-        rest = [s for s in subjects if not s.is_a_la_une] + solo_subjects
-        rest_sorted = sorted(rest, key=subject_rank_key, reverse=True)
-        ordered = (une + rest_sorted)[:target]
+        # Re-ranking : « À la Une » reste rang 1 ; le reste trié par le score
+        # mixte v4 (importance ⊕ perso, sujets sans actu en -inf, solos via
+        # malus). Cf. bug-curation-essentiel-personnalisation.md (PR 4).
+        ordered = rank_editorial_subjects(
+            list(subjects) + solo_subjects, score_map=score_map, now=now
+        )[:target]
 
         renumbered: list[EditorialSubject] = []
         for new_rank, s in enumerate(ordered, start=1):

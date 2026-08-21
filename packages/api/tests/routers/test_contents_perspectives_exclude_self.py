@@ -66,14 +66,18 @@ def test_recompute_bias_distribution_tallies_known_stances_only():
 
 
 @pytest_asyncio.fixture
-async def digest_with_subject(db_session):
+async def digest_with_subject(db_session, request):
     """Build a Source + 3 Content rows + 1 editorial DailyDigest snapshot.
 
     The subject references the same 3 content_ids in both ``actu_article``
     and ``extra_actu_articles`` so the cluster loader treats them as
     carousel siblings. The loader returns the complete pool so coverage can be
     reconstructed once, before the endpoint excludes the current domain.
+
+    Paramétrable (indirect) sur le ``format_version`` du digest — le filtre du
+    loader matche par préfixe ``editorial_``, pas une liste figée.
     """
+    format_version = getattr(request, "param", "editorial_v1")
     user_id = uuid4()
 
     source = Source(
@@ -123,7 +127,7 @@ async def digest_with_subject(db_session):
         id=uuid4(),
         user_id=user_id,
         target_date=date.today(),
-        format_version="editorial_v1",
+        format_version=format_version,
         is_serene=False,
         items={
             "subjects": [
@@ -163,3 +167,64 @@ async def test_load_cluster_articles_returns_complete_coverage_pool(
         digest_with_subject["sib_a"].id,
         digest_with_subject["sib_b"].id,
     }
+
+
+@pytest.mark.parametrize("digest_with_subject", ["editorial_v4"], indirect=True)
+@pytest.mark.asyncio
+async def test_load_cluster_articles_matches_editorial_v4(
+    db_session, digest_with_subject
+):
+    """Régression du filtre figé : `.in_(("editorial_v1", "editorial_v2"))`
+    omettait déjà v3 (fallback live silencieux) — un digest v4 DOIT matcher
+    via le préfixe, sur le modèle de `test_digest_content_refs`."""
+    cluster = await _load_cluster_articles_for_representative(
+        db=db_session,
+        content_id=digest_with_subject["ref"].id,
+        user_id=digest_with_subject["user_id"],
+    )
+    assert {c.id for c in cluster} == {
+        digest_with_subject["ref"].id,
+        digest_with_subject["sib_a"].id,
+        digest_with_subject["sib_b"].id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_load_stored_perspectives_matches_editorial_v4(db_session):
+    """Même régression côté snapshot : le loader `perspective_articles` doit
+    lire un digest `editorial_v4` (préfixe) au lieu de retomber en live path."""
+    from app.routers.contents import _load_stored_perspectives_for_representative
+
+    user_id = uuid4()
+    ref_id = uuid4()
+    digest = DailyDigest(
+        id=uuid4(),
+        user_id=user_id,
+        target_date=date.today(),
+        format_version="editorial_v4",
+        is_serene=False,
+        items={
+            "subjects": [
+                {
+                    "representative_content_id": str(ref_id),
+                    "actu_article": {"content_id": str(ref_id)},
+                    "perspective_articles": [
+                        {"title": "Angle B", "source_domain": "figaro.fr"}
+                    ],
+                    "bias_distribution": {"left": 1},
+                    "divergence_level": "medium",
+                    "perspective_count": 1,
+                }
+            ]
+        },
+    )
+    db_session.add(digest)
+    await db_session.commit()
+
+    snapshot = await _load_stored_perspectives_for_representative(
+        db=db_session, content_id=ref_id, user_id=user_id
+    )
+
+    assert snapshot is not None
+    assert snapshot.articles == [{"title": "Angle B", "source_domain": "figaro.fr"}]
+    assert snapshot.divergence_level == "medium"
