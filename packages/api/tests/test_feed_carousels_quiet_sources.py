@@ -1,11 +1,13 @@
 """Tests DB-driven du carrousel « Tes sources discrètes » (quiet_sources).
 
 Source « rare » = source suivie, active, avec < 3 articles publiés sur les
-30 derniers jours. Item = dernier article (≤ 60 j) non consommé de chaque
-source rare. Carrousel émis seulement si ≥ 2 items.
+30 derniers jours. Item = dernier article (≤ 30 j) ni consommé ni déjà trié
+dans la pile Essentiel, de chaque source rare. Carrousel émis seulement si
+≥ 2 items, capé à 3 (filet de dernier recours, Volet B).
 """
 
 import datetime
+import hashlib
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -13,8 +15,11 @@ import pytest
 
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, InterestState, SourceType
+from app.models.essentiel_triage import EssentielTriageDecision
 from app.models.source import Source, UserSource
+from app.services.recommendation import randomization
 from app.services.recommendation_service import RecommendationService
+from app.utils.time import today_paris
 
 
 @pytest.fixture(autouse=True)
@@ -103,6 +108,16 @@ def _quiet(carousels):
     return [c for c in carousels if c["carousel_type"] == "quiet_sources"]
 
 
+def _triage_decision(user_id, content_id, decision="pass") -> EssentielTriageDecision:
+    """Une décision de tri du jour (mémoire d'exclusion des carrousels)."""
+    return EssentielTriageDecision(
+        user_id=user_id,
+        content_id=content_id,
+        digest_date=today_paris(),
+        decision=decision,
+    )
+
+
 @pytest.mark.asyncio
 async def test_quiet_sources_carousel_basic(db_session, fake_session_maker):
     user_id = uuid4()
@@ -116,7 +131,7 @@ async def test_quiet_sources_carousel_basic(db_session, fake_session_maker):
     assert len(quiet) == 1
     c = quiet[0]
     assert c["title"] == "Tes sources discrètes"
-    # ≤ 5 sources : le shuffle déterministe ne change pas l'ENSEMBLE, juste
+    # ≤ 3 sources : le shuffle déterministe ne change pas l'ENSEMBLE, juste
     # l'ordre (l'ancien "most recent first" n'est plus garanti).
     assert {i.id for i in c["items"]} == {content_a.id, content_b.id}
     assert len(c["badges"]) == 2
@@ -131,11 +146,11 @@ async def test_quiet_sources_carousel_basic(db_session, fake_session_maker):
 
 @pytest.mark.asyncio
 async def test_quiet_sources_rotate_subset_by_seed(db_session, fake_session_maker):
-    """> 5 sources discrètes : deux seeds différents sélectionnent des
-    sous-ensembles différents (rotation au fil des refresh), même seed ⇒ même
-    sous-ensemble (stabilité dans la fenêtre de cache)."""
+    """> 3 sources discrètes : deux seeds (= deux jours) sélectionnent des
+    sous-ensembles différents (rotation jour à jour), même seed ⇒ même
+    sous-ensemble (stabilité dans la journée)."""
     user_id = uuid4()
-    # 7 sources discrètes valides → pool > MAX_CAROUSEL_ITEMS (5).
+    # 7 sources discrètes valides → pool > QUIET_SOURCES_MAX_ITEMS (3).
     all_ids = set()
     for i in range(7):
         _, content = await _seed_quiet_source(
@@ -145,19 +160,19 @@ async def test_quiet_sources_rotate_subset_by_seed(db_session, fake_session_make
 
     async def _subset(seed_value):
         with patch(
-            "app.services.recommendation.randomization.compute_seed",
+            "app.services.recommendation.randomization.compute_stable_seed",
             return_value=seed_value,
         ):
             carousels = await _build(db_session, fake_session_maker, user_id)
         quiet = _quiet(carousels)
         assert len(quiet) == 1
         items = quiet[0]["items"]
-        assert len(items) == 5  # coupe à MAX_CAROUSEL_ITEMS
+        assert len(items) == 3  # coupe à QUIET_SOURCES_MAX_ITEMS
         ids = {i.id for i in items}
         assert ids <= all_ids  # sous-ensemble du pool
         return frozenset(ids)
 
-    # seed 0 et seed 4 donnent des top-5 différents (shuffle Gumbel déterministe)
+    # seed 0 et seed 4 donnent des top-3 différents (shuffle Gumbel déterministe)
     subset0 = await _subset(0)
     subset4 = await _subset(4)
     assert subset0 != subset4  # rotation selon le seed
@@ -229,18 +244,118 @@ async def test_all_consumed_no_carousel(db_session, fake_session_maker):
 
 
 @pytest.mark.asyncio
-async def test_old_article_beyond_60_days_excluded(db_session, fake_session_maker):
+async def test_article_beyond_service_window_not_served(db_session, fake_session_maker):
+    """La fenêtre de SERVICE est alignée sur la sonde (30 j) — Volet B.
+
+    L'ancienne fenêtre de service à 60 j faisait qu'une source éligible (1
+    article < 30 j) dont l'article récent était consommé servait en fallback un
+    article de 31-60 j. Ce cas exerce vraiment la fenêtre : l'ancien test (article
+    à 75 j) passait pour la mauvaise raison, la sonde d'éligibilité excluant déjà
+    toute source sans article < 30 j.
+    """
     user_id = uuid4()
     await _seed_quiet_source(db_session, "Rare A", user_id)
     await _seed_quiet_source(db_session, "Rare B", user_id)
-    src_old, content_old = await _seed_quiet_source(
-        db_session, "Rare Old", user_id, article_days_ago=75
+    # Source éligible : 1 article à 5 j (consommé) + 1 article à 35 j.
+    src_c, recent_c = await _seed_quiet_source(db_session, "Rare C", user_id)
+    old_c = _make_content(src_c, 35, title="Rare C old")
+    db_session.add(old_c)
+    db_session.add(
+        UserContentStatus(
+            user_id=user_id,
+            content_id=recent_c.id,
+            status=ContentStatus.CONSUMED,
+        )
     )
+    await db_session.commit()
 
     carousels = await _build(db_session, fake_session_maker, user_id)
     quiet = _quiet(carousels)
     assert len(quiet) == 1
-    assert content_old.id not in {i.id for i in quiet[0]["items"]}
+    ids = {i.id for i in quiet[0]["items"]}
+    # Le 35 j n'est PAS servi en fallback : la source sort du carrousel.
+    assert old_c.id not in ids
+    assert recent_c.id not in ids
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("decision", ["keep", "later", "pass"])
+async def test_triaged_article_is_not_reproposed_in_quiet_sources(
+    db_session, fake_session_maker, decision
+):
+    """Un article déjà trié dans la pile Essentiel (quel que soit le geste) ne
+    revient pas dans le carrousel — c'est la mémoire de triage du Volet B (un
+    « pass » n'écrit jamais CONSUMED, donc `consumed_ids` ne suffisait pas)."""
+    user_id = uuid4()
+    await _seed_quiet_source(db_session, "Rare A", user_id)
+    await _seed_quiet_source(db_session, "Rare B", user_id)
+    _, triaged_content = await _seed_quiet_source(db_session, "Rare C", user_id)
+    db_session.add(_triage_decision(user_id, triaged_content.id, decision))
+    await db_session.commit()
+
+    carousels = await _build(db_session, fake_session_maker, user_id)
+    quiet = _quiet(carousels)
+    assert len(quiet) == 1
+    assert triaged_content.id not in {i.id for i in quiet[0]["items"]}
+
+
+@pytest.mark.asyncio
+async def test_quiet_sources_seed_is_daily_and_process_stable(
+    db_session, fake_session_maker
+):
+    """Le seed vient de `compute_stable_seed` (md5) sur la date Paris du jour —
+    pas de `compute_seed`, dont le `hash()` builtin est randomisé par
+    PYTHONHASHSEED (sous-ensemble instable entre workers/redéploiements)."""
+    user_id = uuid4()
+    await _seed_quiet_source(db_session, "Rare A", user_id)
+    await _seed_quiet_source(db_session, "Rare B", user_id)
+
+    with patch(
+        "app.services.recommendation.randomization.compute_stable_seed",
+        wraps=randomization.compute_stable_seed,
+    ) as spy:
+        carousels = await _build(db_session, fake_session_maker, user_id)
+    assert len(_quiet(carousels)) == 1
+    spy.assert_called_once_with(str(user_id), today_paris().isoformat())
+
+    # md5, pas hash() : la même entrée donne le même seed dans tout process.
+    assert randomization.compute_stable_seed("u", "2026-08-21") == int(
+        hashlib.md5(b"u|2026-08-21").hexdigest(), 16
+    )
+
+
+@pytest.mark.asyncio
+async def test_saved_carousel_still_serves_a_later_triaged_article(
+    db_session, fake_session_maker
+):
+    """Verrou du piège n°2 : `decision=later` sauvegarde l'article
+    (`set_save_status`) — « Plus tard, c'est maintenant ! » doit continuer à le
+    servir. La mémoire de triage ne s'applique qu'aux carrousels de découverte,
+    jamais à `saved`."""
+    user_id = uuid4()
+    source = _make_source("Saved Source")
+    db_session.add(source)
+    contents = [_make_content(source, d, title=f"Saved {d}") for d in (1, 2, 3)]
+    for content in contents:
+        db_session.add(content)
+    await db_session.flush()
+    for i, content in enumerate(contents):
+        db_session.add(
+            UserContentStatus(
+                user_id=user_id,
+                content_id=content.id,
+                status=ContentStatus.UNSEEN,
+                is_saved=True,
+                saved_at=_now() - datetime.timedelta(days=i),
+            )
+        )
+        db_session.add(_triage_decision(user_id, content.id, "later"))
+    await db_session.commit()
+
+    carousels = await _build(db_session, fake_session_maker, user_id)
+    saved = [c for c in carousels if c["carousel_type"] == "saved"]
+    assert len(saved) == 1
+    assert {i.id for i in saved[0]["items"]} == {c.id for c in contents}
 
 
 @pytest.mark.asyncio

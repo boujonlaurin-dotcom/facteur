@@ -134,49 +134,68 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   FeedCarouselData? _memoCarousel;
   List<EssentielArticle> _memoFetched = const [];
   List<EssentielArticle> _memoPool = const [];
+  List<EssentielArticle> _memoSyncPool = const [];
   Map<String, EssentielArticle> _memoPoolById = const {};
+  bool? _memoReleased;
 
-  /// [fetched] = articles rapatriés par « Plus d'articles ? » quand la réserve
-  /// locale était épuisée ([essentielExtraArticlesProvider]). Ils entrent dans
-  /// le pool **en queue**, après le carrousel : le préfixe (slate backend puis
-  /// carrousel) ne bouge jamais, donc rien de ce qui est déjà affiché n'est
-  /// rebattu, ni au tri ni au cold-boot.
+  /// Latch de **versement du carrousel** (Volet B « dernier recours ») : tant
+  /// qu'il est bas, les items du carrousel vivent dans le pool complet (donc
+  /// résolvables, exclus de `/more`) mais pas dans le pool syncable — ils
+  /// n'entrent pas dans le slate. Il flippe (au plus 1×/session) quand la pile
+  /// est basse ET que `/more` est à sec. Non persisté, et c'est voulu : une
+  /// fois versés, les ids vivent dans le slate persisté du jour et
+  /// [_memoPoolById] les résout au cold-boot, latch retombé.
+  bool _carouselReleased = false;
+
+  /// [fetched] = articles rapatriés par « Plus d'articles ? » ou le prefetch
+  /// ([essentielExtraArticlesProvider]). Composition déléguée à
+  /// [essentielTriagePools] (source unique, partagée avec le deck de lecture) :
+  /// slate, puis rapatriés, puis les items du carrousel — versés dans le pool
+  /// syncable seulement une fois [_carouselReleased] levé. Le préfixe ne bouge
+  /// jamais, donc rien de ce qui est déjà affiché n'est rebattu, ni au tri ni
+  /// au cold-boot.
   void _refreshPoolMemo(List<EssentielArticle> fetched) {
     final articles = widget.articles;
     final carousel = widget.carousel;
     if (identical(_memoArticles, articles) &&
         identical(_memoCarousel, carousel) &&
-        identical(_memoFetched, fetched)) {
+        identical(_memoFetched, fetched) &&
+        _memoReleased == _carouselReleased) {
       return;
     }
     _memoArticles = articles;
     _memoCarousel = carousel;
     _memoFetched = fetched;
+    _memoReleased = _carouselReleased;
 
-    // Articles réinjectables : les items du carrousel du jour non déjà dans le
-    // slate, adaptés en articles triables. Rangs au-delà du slate d'origine (le
-    // backend accepte leur tri avec le `slate_size` **courant** que `decide()`
-    // envoie — le slate s'allonge, la borne de schéma a été relevée en 33.4).
-    final seen = {for (final a in articles) a.contentId};
-    final extra = <EssentielArticle>[];
-    final items = carousel?.items ?? const [];
-    for (var i = 0; i < items.length; i++) {
-      if (!seen.add(items[i].id)) continue; // déjà dans le slate
-      extra.add(
-        EssentielArticle.fromContent(items[i], rank: articles.length + i + 1),
-      );
-    }
-    // Articles rapatriés au réseau, dédupés contre tout ce qui précède.
-    final fetchedFresh = [
-      for (final a in fetched)
-        if (seen.add(a.contentId)) a,
-    ];
-    // Pool adressable par la pile : slate du jour + articles injectables. Le
-    // slate (`syncSlate`) reçoit ce pool **ordonné** et le porte en entier — il
-    // n'est plus coupé à la cible (33.4), c'est le nombre de gardés qui borne
-    // le tri.
-    _memoPool = List.unmodifiable([...articles, ...extra, ...fetchedFresh]);
+    final pools = essentielTriagePools(
+      articles: articles,
+      carousel: carousel,
+      fetched: fetched,
+      carouselReleased: _carouselReleased,
+    );
+    // Pool complet, adressable par la pile : sert la résolution
+    // ([_memoPoolById] doit résoudre un slate persisté qui porte des ids
+    // carrousel versés la veille du reboot) et les exclusions de
+    // [_schedulePrefetchMore] (le carrousel reste exclu de `/more` même non
+    // versé, sinon doublons).
+    _memoPool = pools.full;
+    // Pool destiné au slate (`syncSlate`) : il le reçoit **ordonné** et le
+    // porte en entier — il n'est plus coupé à la cible (33.4), c'est le nombre
+    // de gardés qui borne le tri.
+    _memoSyncPool = pools.syncable;
     _memoPoolById = {for (final a in _memoPool) a.contentId: a};
+  }
+
+  /// Ids du pool syncable pas encore entrés dans le slate. Ils sont par
+  /// construction non décidés, donc ils comptent dans ce qui reste à proposer —
+  /// et c'est ce qui évite un second prefetch pendant la frame où `syncSlate`
+  /// n'a pas encore couru. Les items du carrousel non versés n'y comptent
+  /// **plus** (Volet B) : `remainingToTriage` reflète la vraie pile, donc
+  /// `/more` se déclenche au lieu d'être bloqué par une réserve fantôme.
+  int _pendingSyncPoolIds(EssentielTriageState triage) {
+    final inSlate = triage.slate.toSet();
+    return _memoSyncPool.where((a) => !inSlate.contains(a.contentId)).length;
   }
 
   /// Répare un slate figé qui référence un article que le pool ne porte plus.
@@ -226,7 +245,10 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   void _scheduleSyncSlate() {
     if (_startScheduled) return;
     _startScheduled = true;
-    final snapshot = _memoPool.map((a) => a.contentId).toList(growable: false);
+    // Pool **syncable** : les items du carrousel n'entrent dans le slate
+    // qu'une fois versés ([_carouselReleased]) — filet de dernier recours.
+    final snapshot =
+        _memoSyncPool.map((a) => a.contentId).toList(growable: false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startScheduled = false;
       if (!mounted) return;
@@ -334,7 +356,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     final extraState = ref.watch(essentielExtraArticlesProvider);
     _refreshPoolMemo(extraState.articles);
     final pool = _memoPool;
-    // Pool **ordonné** (slate, carrousel, puis rapatriés) : le slate et les
+    // Pool **ordonné** (slate, rapatriés, puis carrousel) : le slate et les
     // exclusions envoyées au backend raisonnent sur cette même liste.
     final poolIds = [for (final a in pool) a.contentId];
 
@@ -380,17 +402,39 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     // hors slate du jour.
     final triage = ref.watch(essentielTriageProvider);
     final canTriage = isToday && articles.isNotEmpty && triage.hydrated;
+    final showTriage = canTriage && triage.isActive;
+    if (showTriage) _sawTriageActive = true;
     var pendingPoolIds = 0;
     if (canTriage) {
-      // Le slate porte tout le pool proposé (33.4) : tout id du pool qui n'y
-      // est pas encore doit l'y rejoindre, en queue. C'est aussi ce qui fait
-      // entrer les articles prefetchés dans la pile.
-      final inSlate = triage.slate.toSet();
-      // Articles du pool pas encore entrés dans le slate. Ils sont par
-      // construction non décidés, donc ils comptent dans ce qui reste à
-      // proposer — et c'est ce qui évite un second prefetch pendant la frame
-      // où `syncSlate` n'a pas encore couru.
-      pendingPoolIds = poolIds.where((id) => !inSlate.contains(id)).length;
+      // Le slate porte tout le pool syncable (33.4, resserré au Volet B) :
+      // tout id qui n'y est pas encore doit l'y rejoindre, en queue. C'est
+      // aussi ce qui fait entrer les articles prefetchés dans la pile.
+      pendingPoolIds = _pendingSyncPoolIds(triage);
+      // **Versement du carrousel en dernier recours** (Volet B) : la pile est
+      // basse, l'objectif n'est pas atteint, et `/more` est à sec — budget de
+      // prefetchs épuisé ou cooldown « pool sec », jamais un fetch en vol dont
+      // les résultats arrivent. Alors seulement les items du carrousel
+      // deviennent « pending » et le sync existant les appende en queue du
+      // slate gelé. Les gardes bon marché d'abord : post-flip et hors tri, le
+      // rebuild (chemin chaud, un par décision) ne paie rien.
+      if (!_carouselReleased &&
+          showTriage &&
+          !triage.goalReached &&
+          (triage.slate.length - triage.index) + pendingPoolIds <=
+              kTriagePrefetchLowWaterMark) {
+        final extraNotifier = ref.read(essentielExtraArticlesProvider.notifier);
+        final moreIsDry = extraState.hydrated &&
+            !extraNotifier.isLoading &&
+            !extraNotifier.canAutoFetch();
+        if (moreIsDry) {
+          _carouselReleased = true;
+          // Le flip invalide le memo (garde `_memoReleased`) — un seul
+          // passage, déterministe : re-refresh, re-calcul, puis le sync
+          // ci-dessous.
+          _refreshPoolMemo(extraState.articles);
+          pendingPoolIds = _pendingSyncPoolIds(triage);
+        }
+      }
       if (!triage.hasStarted || pendingPoolIds > 0) _scheduleSyncSlate();
       _scheduleArchiveKept();
     }
@@ -409,8 +453,6 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     ];
     final renderPool =
         archivedOnly.isEmpty ? pool : [...pool, ...archivedOnly];
-    final showTriage = canTriage && triage.isActive;
-    if (showTriage) _sawTriageActive = true;
     // **Alimentation continue de la pile** (33.4) : dès qu'il reste moins de
     // deux articles à proposer et que la cible de gardés n'est pas atteinte, on
     // va chercher la suite. Sans ça, l'objectif « N articles à garder » ne
@@ -694,7 +736,7 @@ class _TriageDoneReveal extends StatelessWidget {
 ///    ignore le cooldown d'épuisement du prefetch automatique) ;
 /// 3. rien d'inédit → la zone **reste** et son sous-titre le dit sobrement.
 class _TriageDoneActions extends ConsumerStatefulWidget {
-  /// Pool ordonné du jour (slate, carrousel, puis rapatriés) — base des
+  /// Pool ordonné du jour (slate, rapatriés, puis carrousel) — base des
   /// exclusions envoyées au backend.
   final List<String> poolIds;
 
