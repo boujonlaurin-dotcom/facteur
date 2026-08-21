@@ -4,39 +4,57 @@ import '../../feed/models/content_model.dart' show FeedCarouselData;
 import '../models/flux_continu_models.dart';
 import '../providers/essentiel_triage_provider.dart';
 
-/// Pool **ordonné** des articles adressables par la pile de tri du jour.
+/// Les deux pools **ordonnés** des articles adressables par la pile de tri du
+/// jour (Volet B « carrousel en dernier recours »).
 ///
-/// Slate du matin, puis les items du carrousel absents du slate, puis les
-/// articles rapatriés au réseau (« Plus d'articles ? »). L'ordre est
-/// significatif : le préfixe ne bouge jamais, donc rien de ce qui est déjà
-/// affiché n'est rebattu — ni au tri, ni au cold-boot.
+/// - [full] : slate du matin, puis les articles rapatriés au réseau (« Plus
+///   d'articles ? »), puis les items du carrousel absents du reste. C'est le
+///   pool de **résolution** : un slate persisté du même jour peut référencer
+///   des ids carrousel déjà versés — ils doivent rester résolvables au
+///   cold-boot, latch retombé.
+/// - [syncable] : ce qui est destiné au **slate**. Les items du carrousel n'y
+///   entrent qu'une fois versés ([carouselReleased]) : le carrousel est un
+///   filet de dernier recours, il ne précède jamais les articles frais ni ceux
+///   de `/more`.
+///
+/// L'ordre est significatif : le préfixe ne bouge jamais, donc rien de ce qui
+/// est déjà affiché n'est rebattu — ni au tri, ni au cold-boot ; le versement
+/// du carrousel ne fait qu'**allonger la queue**.
 ///
 /// Source unique de cette composition : la carte l'utilise pour alimenter la
 /// pile, [essentielArticleDeck] pour résoudre les gardés. Les deux doivent voir
-/// exactement le même pool, sans quoi un gardé injecté via le carrousel
+/// exactement le même pool complet, sans quoi un gardé injecté via le carrousel
 /// manquerait au deck.
-List<EssentielArticle> essentielTriagePool({
+({List<EssentielArticle> full, List<EssentielArticle> syncable})
+    essentielTriagePools({
   required List<EssentielArticle> articles,
   FeedCarouselData? carousel,
   List<EssentielArticle> fetched = const [],
+  bool carouselReleased = false,
 }) {
-  // Items du carrousel non déjà dans le slate, adaptés en articles triables.
-  // Rangs au-delà du slate d'origine (le backend accepte leur tri avec le
-  // `slate_size` **courant** que `decide()` envoie).
   final seen = {for (final a in articles) a.contentId};
-  final extra = <EssentielArticle>[];
-  final items = carousel?.items ?? const [];
-  for (var i = 0; i < items.length; i++) {
-    if (!seen.add(items[i].id)) continue; // déjà dans le slate
-    extra.add(
-      EssentielArticle.fromContent(items[i], rank: articles.length + i + 1),
-    );
-  }
+  // Articles rapatriés au réseau, dédupés contre le slate.
   final fetchedFresh = [
     for (final a in fetched)
       if (seen.add(a.contentId)) a,
   ];
-  return List.unmodifiable([...articles, ...extra, ...fetchedFresh]);
+  // Items du carrousel non déjà connus, adaptés en articles triables. Rangs en
+  // queue de pool (le backend accepte leur tri avec le `slate_size` **courant**
+  // que `decide()` envoie).
+  final extra = <EssentielArticle>[];
+  final items = carousel?.items ?? const [];
+  final baseRank = articles.length + fetchedFresh.length;
+  for (var i = 0; i < items.length; i++) {
+    if (!seen.add(items[i].id)) continue; // déjà dans le slate ou rapatrié
+    extra.add(EssentielArticle.fromContent(items[i], rank: baseRank + i + 1));
+  }
+  final full = List<EssentielArticle>.unmodifiable(
+    [...articles, ...fetchedFresh, ...extra],
+  );
+  final syncable = carouselReleased
+      ? full
+      : List<EssentielArticle>.unmodifiable([...articles, ...fetchedFresh]);
+  return (full: full, syncable: syncable);
 }
 
 /// Deck de lecture de la carte « Ton Essentiel » (Story 34.1, ajustement v4).
@@ -71,11 +89,13 @@ ArticleDeckPayload? essentielArticleDeck({
   // n'est pas gelé — la carte rend alors sa silhouette, rien de tappable).
   if (!triage.done) return null;
 
-  final pool = essentielTriagePool(
+  // Résolution sur le pool complet : un gardé peut venir du carrousel versé,
+  // que le latch (état de session de la carte) porte ou non à cet instant.
+  final pool = essentielTriagePools(
     articles: section.articles,
     carousel: section.carousel,
     fetched: fetched,
-  );
+  ).full;
   final byId = {for (final a in pool) a.contentId: a};
   final kept = [
     for (final id in triage.keptContentIds)

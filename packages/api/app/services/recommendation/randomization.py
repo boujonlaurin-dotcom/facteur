@@ -4,6 +4,7 @@ Utilise le Gumbel-max trick pour shuffler les articles à scores proches,
 équivalent à un sampling depuis une distribution softmax.
 """
 
+import hashlib
 import math
 import random
 
@@ -89,3 +90,15 @@ def compute_seed(user_id: str, granularity: str = "hourly") -> int:
         time_key = now.strftime("%Y-%m-%d-%H")
 
     return hash((user_id, time_key))
+
+
+def compute_stable_seed(user_id: str, time_key: str) -> int:
+    """Seed déterministe ET stable inter-process pour `(user, fenêtre)`.
+
+    `compute_seed` repose sur le `hash()` builtin, randomisé par
+    `PYTHONHASHSEED` : le « même » seed change entre workers et à chaque
+    redéploiement, donc un sous-ensemble censé être stable la journée ne
+    l'est pas. Source unique du seed md5 `(user, fenêtre)` — la rotation
+    Phase B (`carousel_selection_service._rotation_order`) délègue ici.
+    """
+    return int(hashlib.md5(f"{user_id}|{time_key}".encode()).hexdigest(), 16)

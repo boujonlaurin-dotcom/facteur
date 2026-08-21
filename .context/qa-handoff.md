@@ -1,76 +1,44 @@
-# QA Handoff — Mode Serein déplacé de l'onboarding vers le tour guidé
+# QA Handoff — Volet B : carrousel « sources discrètes » en dernier recours
 
-> Rempli par l'agent dev. Input de /validate-feature.
+- **Branche** : `claude/essentiel-carrousel-dernier-recours`
+- **Type** : Bug (grief PO n°2, `docs/bugs/bug-curation-essentiel-personnalisation.md`)
+- **Surfaces impactées** : carte « Ton Essentiel » (pile de tri) ; backend
+  `GET /api/essentiel` (carrousel attaché) et `GET /api/feed/` (Phase B Flâner).
 
-## Feature développée
-Retrait de l'écran « 🌿 Rester serein ? » en fin d'onboarding et présentation du
-Mode Serein comme **dernière étape du tour guidé post-onboarding** : le coach-mark
-ouvre la modale Réglages, met en surbrillance la tuile « Mode Serein » (switch
-actionnable sur place), avec les explications de l'ancien écran. Aucun commit
-automatique — le mode reste OFF par défaut.
+## Ce qui change pour l'utilisateur
 
-## PR associée
-À créer (base `main`).
+1. Le carrousel du jour n'entre **plus** dans la pile de tri d'emblée : la
+   pile ne propose que le slate du jour + les articles `/more`.
+2. Il se **verse en queue** de pile seulement quand la pile est basse
+   (≤ 2 restants), l'objectif de gardés non atteint, et `/more` à sec.
+3. Carrousel « Tes sources discrètes » (backend) : **3 items max**, jamais un
+   article déjà trié (keep/later/pass, 90 j), jamais > 30 j, sous-ensemble
+   stable la journée.
 
-## Écrans impactés
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Onboarding Section 3 (finalize) | flow onboarding | Modifié (écran serein retiré ; récap sans ligne « Mode ») |
-| Tour guidé (overlay) | par-dessus `/flux-continu` | Modifié (nouvelle étape `serein`, 6/6) |
-| Modale Réglages | `/settings` | Modifié (tuile Mode Serein = ancre spotlight `tourSereinTileKey`) |
+## Scénarios de test (build web, viewport 390x844, compte QA en mémoire `reference_qa_staging_account`)
 
-## Scénarios de test
+> ⚠️ Les scénarios 2-3 exigent un état backend difficile à mettre en scène
+> (carrousel présent + `/more` épuisé). Ils sont verrouillés par widget tests
+> (`essentiel_hi_fi_card_test.dart`, section « Volet B ») — la passe web peut
+> se limiter aux scénarios 1 et 4 si l'état ne se présente pas.
 
-### Scénario 1 : Onboarding SANS objectif « anxiety »
-**Parcours** : faire un onboarding complet sans cocher « anxiety ».
-**Résultat attendu** : l'écran « Rester serein ? » n'apparaît jamais ; le récap
-final n'affiche plus la ligne « Mode : … » (3 lignes : thèmes, sources, articles).
-
-### Scénario 2 : Onboarding AVEC objectif « anxiety »
-**Parcours** : onboarding complet en cochant « anxiety ».
-**Résultat attendu** : identique au scénario 1 — l'écran serein n'apparaît plus
-(l'étape n'est plus conditionnelle à l'objectif). La séquence Section 3 fait
-toujours 5 questions (themes → subtopics → swipe → sources → finalize).
-
-### Scénario 3 : Dernière étape du tour guidé (happy path)
-**Parcours** : après l'onboarding, dérouler le tour jusqu'à la dernière étape.
-1. Passer les étapes jusqu'à « Mon courrier » (bouton « Suivant »).
-2. À l'étape suivante « Mode Serein » : la modale Réglages s'ouvre, la tuile
-   « Mode Serein » est en surbrillance, le texte reprend les explications
-   (filtrer les contenus anxiogènes, activable/désactivable à tout moment), et
-   le bouton est « Terminer » (pastille 6/6).
-3. Activer le switch Mode Serein directement sous le spotlight.
-4. Taper « Terminer ».
-**Résultat attendu** : le switch bascule ON (persisté), la modale se referme, la
-carte « C'est parti ! » s'affiche par-dessus le shell puis disparaît (~1,8 s).
-
-### Scénario 4 : Fermeture manuelle de la modale (edge case / watchdog)
-**Parcours** : à l'étape « Mode Serein », refermer la modale Réglages au doigt
-(drag down) sans taper « Terminer ».
-**Résultat attendu** : le tour enchaîne vers la conclusion (carte « C'est parti »)
-sans rester bloqué derrière un voile orphelin.
-
-### Scénario 5 : Ne pas activer le mode
-**Parcours** : à l'étape « Mode Serein », taper « Terminer » sans toucher le switch.
-**Résultat attendu** : Mode Serein reste OFF (aucun commit automatique).
+1. **Happy path — pas de carrousel prématuré** : se connecter, ouvrir
+   l'Essentiel du jour, trier quelques cartes. Vérifier qu'aucune carte
+   « carrousel » (badge source discrète/reco) n'apparaît tant que la pile a
+   des articles du jour, et que la pile s'allonge d'articles réseau quand elle
+   descend sous 2 restants (requête `/api/essentiel/more` visible réseau).
+2. **Versement dernier recours** : épuiser la pile ET `/more` (6 lots ou
+   retour vide) sans atteindre l'objectif → les items carrousel apparaissent
+   en fin de pile, 3 max.
+3. **Pas de répétition** : trier un item carrousel, recharger le lendemain
+   simulé → il ne revient pas.
+4. **Non-régression fin de tri** : terminer le tri → liste « Tes articles »,
+   « Plus d'articles ? » et « Refaire ? » fonctionnels ; cold-boot (reload) →
+   pas de silhouette infinie, gardés intacts.
 
 ## Critères d'acceptation
-- [ ] L'écran « Rester serein ? » n'apparaît plus en onboarding (avec ou sans anxiety).
-- [ ] Le récap final n'a plus la ligne « Mode ».
-- [ ] Le tour guidé a une dernière étape « Mode Serein » (6/6, bouton « Terminer »).
-- [ ] La modale Réglages s'ouvre et la tuile Mode Serein est en surbrillance et actionnable.
-- [ ] Aucun commit automatique du mode (OFF par défaut) ; activation persistée si l'utilisateur bascule.
-- [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus.
 
-## Zones de risque
-- **Reprise Hive** : `_currentVersion` bumpé 7 → 8 (le retrait de `digestMode`
-  réindexe `finalize` 5 → 4). Un onboarding en cours d'une version antérieure est
-  réinitialisé au boot — comportement attendu et conforme aux bumps précédents.
-- **Overlay racine vs modale** : le spotlight (overlay racine) doit peindre
-  par-dessus la modale `/settings` (même mécanique que la feuille favoris).
-- **Ancre spotlight** : `tourSereinTileKey` n'est montée qu'à l'ouverture de la
-  modale → jamais dupliquée.
-
-## Dépendances
-- Contrat API `POST /users/onboarding` **inchangé** : `digest_mode` reste envoyé
-  (`pour_vous` par défaut → `serein_enabled=false`).
+- Aucune erreur console inattendue, aucun 4xx/5xx inattendu.
+- La pile ne « saute » jamais : le versement du carrousel n'ajoute qu'en queue.
+- `GET /api/essentiel` : `carousel.items` ≤ 3 quand type `quiet_sources`, et
+  deux appels espacés dans la même journée rendent le même sous-ensemble.

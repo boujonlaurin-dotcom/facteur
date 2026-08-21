@@ -43,6 +43,7 @@ from app.services.recommendation.carousel_catalog import (
     MAX_CAROUSEL_ITEMS,
     CarouselBuildContext,
     fetch_consumed_ids,
+    fetch_triaged_ids,
 )
 from app.services.recommendation.carousel_selection_service import (
     select_essentiel_carousel,
@@ -92,11 +93,15 @@ async def _enrich_essentiel_carousel(
 
     try:
         consumed_ids = await fetch_consumed_ids(db, user_uuid)
+        # Symétrique de `_build_carousels` (Flâner) : l'éligibilité doit rester
+        # surface-indépendante, sinon la complémentarité cross-surface casse.
+        triaged_ids = await fetch_triaged_ids(db, user_uuid)
         ctx = CarouselBuildContext(
             session=db,
             session_maker=safe_async_session,
             user_id=user_uuid,
             consumed_ids=consumed_ids,
+            triaged_ids=triaged_ids,
         )
         # Construit paresseusement le SEUL carrousel du jour (rotation date-seedée),
         # sans bâtir les 3 types perdants → endpoint sensible à la latence.

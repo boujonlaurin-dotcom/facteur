@@ -1,89 +1,97 @@
-# fix(perspectives): aligner la couverture médiatique sur les sources réellement disponibles
+# Volet B — carrousel « sources discrètes » en dernier recours
 
-## Contexte
+Grief PO n°2 (bug-curation-essentiel-personnalisation) : les articles de
+sources discrètes **arrivaient trop tôt dans la pile, trop nombreux, et
+revenaient tous les jours**. Une seule PR backend + mobile, **aucune migration
+Alembic** (head unique `su03_support_link_delivery` inchangé).
 
-Bug P1 : une carte pouvait annoncer « 14 sources » alors que le reader ne
-proposait qu'un seul autre média. Le compteur visible mélangeait quatre notions
-distinctes :
+## Quoi
 
-- `source_count` : nombre de domaines du cluster, **signal de ranking** ;
-- `perspective_count` : compteur partiel des alternatives, filtré par biais ;
-- `response.perspectives.length` : ce qui est réellement consultable ;
-- `coverageCount` mobile : `max(source_count, perspective_count)`, qui masquait
-  l'écart.
+Le carrousel devient un **filet de dernier recours** : 3 items max, jamais un
+article déjà trié, jamais > 30 j, sous-ensemble stable la journée et tournant
+d'un jour à l'autre, versé dans la pile **seulement** quand les articles frais
+ET `/essentiel/more` sont épuisés.
 
-Cause racine : `source_count` était exposé comme un compteur de couverture, et le
-pipeline ne persistait que les perspectives au biais connu. Les médias au biais
-`unknown` disparaissaient donc du snapshot sans pouvoir être ouverts.
+### Backend (`packages/api`, sans migration)
 
-Doc : `docs/bugs/bug-couverture-medias-disponibles.md`.
+- **B1 — mémoire de triage** : `fetch_triaged_ids(session, user_id, days=90)`
+  (`carousel_catalog.py`) relit `essentiel_triage_decisions` (index
+  `ix_essentiel_triage_user_date` existant). Champ **additif avec default**
+  `CarouselBuildContext.triaged_ids`, appliqué aux 3 carrousels de découverte
+  (`quiet_sources`, `new_source`, `community` en union avec `consumed_ids`) et
+  **jamais** à `saved` : `decision=later` déclenche `set_save_status(...)`, le
+  carrousel « Plus tard, c'est maintenant ! » doit re-servir ces articles
+  (piège n°2, verrouillé par test). Peuplé **symétriquement** dans
+  `routers/essentiel.py` (`_enrich_essentiel_carousel`) et
+  `recommendation_service._build_carousels` (variable dédiée, `consumed_ids`
+  intact car il sert aussi la Phase A) → l'éligibilité reste
+  surface-indépendante, la complémentarité Essentiel/Flâner tient.
+- **B2 — volume** : `QUIET_SOURCES_MAX_ITEMS = 3` dans le builder (les
+  `excluding(..., MAX_CAROUSEL_ITEMS)` des routeurs deviennent des plafonds
+  inertes, contrat inchangé).
+- **B3 — seed stable** : `randomization.compute_stable_seed` (md5, pattern
+  `_rotation_order`) sur `today_paris().isoformat()`. Découverte consignée :
+  `compute_seed` repose sur `hash()` **randomisé par PYTHONHASHSEED** — un
+  simple passage hourly→daily aurait laissé le sous-ensemble instable entre
+  workers/redéploiements. `build_new_source` garde `compute_seed` (hors
+  périmètre, follow-up).
+- **B4 — fenêtre 60 j → 30 j** : `QUIET_SOURCE_WINDOW_DAYS = 30`, fenêtre de
+  service alignée sur la sonde d'éligibilité. Sûr **uniquement** parce que la
+  mémoire de triage arrive dans la même PR (piège n°3) : une source dont les
+  articles récents sont tous consommés/triés sort du carrousel au lieu de
+  servir un article de 45 j.
 
-## Invariant public introduit
+### Mobile (`apps/mobile`) — injection différée, tous types de carrousel
 
-`coverage_count` = nombre total de domaines éditoriaux couvrant le même sujet,
-**média courant inclus**. Pour tout article de ce snapshot,
-`GET /contents/{id}/perspectives` renvoie exactement `coverage_count - 1` autres
-domaines.
+- **M1 — split des pools** : `essentielTriagePools` (ex-miroir mort
+  `essentiel_deck.dart`, devenu la **vraie** source unique — M4) rend
+  `(full, syncable)`. `full` = slate + rapatriés + carrousel : résolution
+  (`_memoPoolById`, cold-boot d'un slate qui porte des ids carrousel versés),
+  `renderPool`, exclusions de `/more` (le carrousel reste exclu même non
+  versé). `syncable` = sans le carrousel tant que non versé : c'est lui que
+  `syncSlate` snapshote.
+- **M2 — latch `_carouselReleased`** (état de session, non persisté) : flip au
+  plus 1×/session quand pile basse (`remainingToTriage ≤ 2`) + objectif non
+  atteint + `/more` **à sec** (`hydrated && !isLoading && !canAutoFetch()` —
+  un fetch en vol n'est PAS sec). Invalidate le memo (`_memoReleased`), le
+  sync existant appende alors le carrousel **en queue** du slate gelé.
+- **M3 — `pendingPoolIds` sur le pool syncable** : les items carrousel non
+  versés ne comptent plus ⇒ `remainingToTriage` baisse vraiment et le prefetch
+  `/more` se déclenche (c'était le fix « arrive trop tôt / bloque
+  l'alimentation réseau »).
 
-Les sources au biais `unknown` comptent et restent consultables ; elles sont
-exclues uniquement de `bias_distribution`, du niveau de polarisation et des
-visualisations politiques.
+### Limite connue (assumée, hors périmètre)
 
-## Ce que fait la PR
+Tri terminé par objectif atteint + « Plus d'articles ? » + backend à sec : le
+carrousel non versé reste en réserve (le latch ne s'évalue que pendant le tri
+actif). Cas rare ; à revoir avec PR 5 (pool perso) / PR 6-bis (moteur `/more`).
 
-**Backend**
+## Comment ça a été vérifié
 
-- `PerspectiveService.build_coverage_universe()` : univers commun pivot + cluster
-  + résultats internes/Google News, passé au filtre de cohérence thématique déjà
-  utilisé par la recherche interne, dédupliqué **par domaine**, avec les biais
-  `unknown` conservés. Les agrégateurs sans production éditoriale (Reddit, Google
-  News, hosts listicle) sont écartés.
-- `perspective_to_dict()` devient la forme sérialisée unique, partagée entre le
-  snapshot du pipeline et la réponse live du routeur : un champ ajouté arrive des
-  deux côtés d'un coup.
-- Persistance dans le JSONB existant : `coverage_count`, `coverage_articles`
-  (pivot inclus) et `coverage_sources`. **Aucune migration Alembic.**
-- `GET /contents/{id}/perspectives` retire **tout le domaine** actuellement lu
-  (plus seulement son URL) et renvoie `coverage_count` avec la liste.
-- Contrats Digest et Essentiel : ajout de `coverage_count` et `coverage_sources`,
-  avec fallback legacy `perspective_count + 1` (jamais `source_count`).
-- Logs structurés : candidats, rejets hors sujet, doublons de domaine, sources
-  connues/inconnues, et `invariant_ok` sur les trois chemins (pipeline, live,
-  snapshot).
+- [ ] Backend : `pytest -v` complet (0 échec) ; suites ciblées
+  `test_feed_carousels_quiet_sources.py` (17), `test_carousel_catalog.py`,
+  `test_carousel_selection.py`, `test_essentiel_carousel.py`,
+  `tests/routers/test_essentiel_triage.py`.
+  - Tests neufs : triage exclu des 3 carrousels de découverte
+    (keep/later/pass paramétrés), `saved` re-sert un `later`, seed md5 daily
+    (spy sur `compute_stable_seed`), fenêtre de service réellement exercée
+    (article 35 j non servi quand le récent est consommé), parité
+    Essentiel/Flâner avec `triaged_ids` peuplé, `fetch_triaged_ids` fenêtré
+    90 j + isolation user.
+- [ ] Mobile : `flutter test` (baseline ~26-27 échecs pré-existants hors
+  périmètre, cf. mémoire) + `flutter analyze` propre sur les fichiers touchés.
+  - Tests neufs : carrousel absent du slate d'emblée (test 33.3 inversé),
+    versement quand `/more` sec (cooldown) en **queue** du slate, fetch en vol
+    ≠ sec, le carrousel ne bloque plus le prefetch (+ reste exclu de `/more`),
+    cold-boot slate avec ids carrousel versés résolu sans prune ni silhouette.
+- [ ] `alembic heads` : 1 head, inchangé (aucune migration).
+- [ ] Uvicorn local + compte QA : `GET /api/essentiel` → carrousel ≤ 3 items.
 
-**Mobile**
+## Zones à risque
 
-- Toutes les surfaces visibles passent sur `coverageCount` : cartes, « À la une »,
-  badge « Couvert par N sources », Essentiel, triage, CTA d'analyse et reader. Le
-  seuil multi-source devient `coverage_count >= 2`.
-- Les anciens caches Hive retombent sur `perspectiveCount + 1` ; `source_count`
-  ne pilote plus aucune copy visible.
-- Carrousel : biais connus de gauche à droite, puis un séparateur vertical
-  « Autres sources » et toutes les sources inconnues. Leurs cartes n'affichent ni
-  point politique ni `?`, mais gardent source, fiabilité et date.
-- Fin de la limite de huit cartes : `ListView.builder` virtualisé (les
-  `RepaintBoundary` explicites disparaissent, `addRepaintBoundaries` les fournit).
-  Le tap sur la barre de biais tient compte du séparateur.
-- `EssentielArticle.copyWith` remplace une reconstruction manuelle qui perdait
-  silencieusement des champs au passage « lu » (couverture, chapô, fiabilité).
-
-## Rétrocompatibilité
-
-`source_count` et `perspective_count` restent dans les payloads (ranking et
-anciens clients). Les snapshots restent dans le JSONB de `daily_digests.items` :
-pas de DDL, donc rien à étaler sur deux cycles hebdo.
-
-## Tests
-
-- Backend : univers de 14 domaines dont un seul biais connu, chacun des 14
-  articles obtenant exactement 13 alternatives ; rejet des hors-sujet, des
-  doublons de domaine et des agrégateurs ; snapshot complet retrouvé depuis
-  n'importe quel `content_id` membre ; fallback legacy sur les anciens digests ;
-  normalisation de domaine.
-- Mobile : `coverage_count` explicite gagne sur la longueur des alternatives ;
-  payload legacy `source_count=14`, `perspective_count=1` affiche `2` ; snapshot
-  Hive sans les champs parse en défauts ; carrousel > 8 cartes consultable dans la
-  liste virtualisée ; séparateur présent/absent/groupe entièrement `unknown` ;
-  aucune puce politique sur une source inconnue.
-- Suites complètes vertes : `pytest` (3110 passed), `flutter test` (baseline
-  inchangée), `ruff check`/`ruff format` sur `app/`, `flutter analyze` sans erreur.
+- `recommendation_service._build_carousels` (Flâner) : +1 SELECT indexé par
+  requête feed (`fetch_triaged_ids`, index `(user_id, digest_date)` existant).
+- `essentiel_hi_fi_card.dart` : ordre du pool changé (rapatriés avant
+  carrousel) — le préfixe du slate ne bouge jamais, y compris au versement.
+- Invariant « Collecte seule » de `essentiel_triage_decisions` intact côté
+  écriture (nouvel usage en **lecture** documenté dans le modèle).

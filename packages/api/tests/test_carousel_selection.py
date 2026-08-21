@@ -129,12 +129,16 @@ def _make_content(source: Source, days_ago: float, title: str = "Article") -> Co
 
 
 async def _seed_saved_and_community(db_session, user_id):
-    """Rend `saved` ET `community` éligibles (≥ 3 items chacun)."""
+    """Rend `saved` ET `community` éligibles (≥ 3 items chacun).
+
+    4 articles communautaires (et non 3) : le test de parité en trie un via
+    `triaged_ids` et `community` doit rester éligible des deux côtés.
+    """
     source = _make_source("Flaner")
     db_session.add(source)
     saved_arts = [_make_content(source, days_ago=1 + i) for i in range(3)]
     comm_arts = [
-        _make_content(source, days_ago=1 + i, title=f"cm{i}") for i in range(3)
+        _make_content(source, days_ago=1 + i, title=f"cm{i}") for i in range(4)
     ]
     for a in saved_arts + comm_arts:
         db_session.add(a)
@@ -161,6 +165,7 @@ async def _seed_saved_and_community(db_session, user_id):
                 )
             )
     await db_session.commit()
+    return comm_arts
 
 
 async def _flaner_types(db_session, session_maker, user_id):
@@ -214,17 +219,22 @@ async def test_flaner_no_reservation_serves_both(db_session, fake_session_maker)
 async def test_select_essentiel_carousel_matches_pick(db_session, fake_session_maker):
     """La construction paresseuse de l'Essentiel (`select_essentiel_carousel`)
     choisit le MÊME type que le couple Flâner `build_phase_b` + `pick_essentiel_type`
-    — parité qui garantit la complémentarité cross-surface."""
+    — parité qui garantit la complémentarité cross-surface, y compris avec une
+    mémoire de triage peuplée (Volet B : `triaged_ids` doit être appliqué
+    symétriquement des deux côtés)."""
     user_id = uuid4()
-    await _seed_saved_and_community(db_session, user_id)
+    comm_arts = await _seed_saved_and_community(db_session, user_id)
     ctx = CarouselBuildContext(
         session=db_session,
         session_maker=fake_session_maker,
         user_id=user_id,
         consumed_ids=set(),
+        triaged_ids={comm_arts[0].id},
     )
     full = await build_phase_b(ctx)
     expected = pick_essentiel_type(user_id, _DATE, full)
     lazy = await select_essentiel_carousel(ctx, _DATE)
     assert lazy is not None
     assert lazy.carousel_type == expected
+    # L'article trié n'est servi par aucun des deux chemins.
+    assert comm_arts[0].id not in {i.id for i in lazy.items}
