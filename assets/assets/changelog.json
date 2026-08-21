@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Ton Essentiel",
+      "summary": "Ta sélection du jour équilibre enfin les deux choses qu'on lui demande : l'importance d'un sujet (combien de rédactions le traitent, sa fraîcheur) et ce qui compte pour toi (tes sources et tes centres d'intérêt). Jusqu'ici seul le premier critère décidait de l'ordre : un sujet suivi par toi mais couvert par peu de médias restait coincé sous la pile. Il peut maintenant passer devant une actualité très reprise mais qui ne te concerne pas, tandis qu'une vraie grande actualité garde sa place en tête."
+    },
+    {
       "tag": "Tes cartes",
       "summary": "Le nombre de rédactions annoncé sur une carte correspond enfin à ce que tu peux vraiment ouvrir : quand la carte dit 7 médias, tu retrouves les 6 autres dans « Comparer les angles ». Jusqu'ici le compteur pouvait annoncer 14 sources pour un seul autre article consultable. Les rédactions dont on ne connaît pas l'orientation comptent désormais elles aussi et restent accessibles : elles sont regroupées en fin de carrousel sous « Autres sources », sans étiquette politique. Et le carrousel n'est plus limité à huit cartes, donc chaque source comptée est bien consultable."
     },

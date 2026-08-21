@@ -16,11 +16,18 @@
 \set ON_ERROR_STOP on
 \timing off
 
+-- Depuis le bump v4 (score mixte, PR 4), v3 et v4 coexistent ~30 j : M1-M4
+-- sont groupées par format_version pour lire l'avant/après en un seul run,
+-- sans jamais mélanger les cohortes.
+-- ⚠️ Jumeau Python : `packages/api/scripts/dryrun_subject_mix.py` réimplémente
+-- M1-M4 (seuils 0.50/0.10, zones 1-5/6-10) pour le re-tri simulé — toute
+-- retouche de définition ici doit y être répercutée.
 CREATE TEMP VIEW slots AS
 SELECT
     d.user_id,
     d.target_date,
     d.mode,
+    d.format_version,
     (s ->> 'rank')::int                              AS rank,
     s ->> 'theme'                                    AS theme,
     (s -> 'actu_article' ->> 'content_id')::uuid     AS content_id,
@@ -32,7 +39,7 @@ SELECT
 FROM daily_digest d,
      LATERAL jsonb_array_elements(d.items -> 'subjects') s
 WHERE d.target_date >= CURRENT_DATE - 30
-  AND d.format_version = 'editorial_v3'
+  AND d.format_version LIKE 'editorial\_v%'
   AND jsonb_typeof(s -> 'actu_article') = 'object';
 
 CREATE TEMP VIEW top5 AS SELECT * FROM slots WHERE rank BETWEEN 1 AND 5;
@@ -42,43 +49,46 @@ CREATE TEMP VIEW top5 AS SELECT * FROM slots WHERE rank BETWEEN 1 AND 5;
 -- top-5 d'au moins 50 % des utilisateurs servis ce jour-là dans ce mode ;
 -- « personnel » s'il l'est chez moins de 10 %.
 WITH day_users AS (
-    SELECT target_date, mode, COUNT(DISTINCT user_id) AS users_total
-    FROM top5 GROUP BY 1, 2
+    SELECT target_date, mode, format_version, COUNT(DISTINCT user_id) AS users_total
+    FROM top5 GROUP BY 1, 2, 3
 ),
 art_share AS (
-    SELECT t.target_date, t.mode, t.content_id,
+    SELECT t.target_date, t.mode, t.format_version, t.content_id,
            COUNT(DISTINCT t.user_id)::float / du.users_total AS share
-    FROM top5 t JOIN day_users du USING (target_date, mode)
-    GROUP BY t.target_date, t.mode, t.content_id, du.users_total
+    FROM top5 t JOIN day_users du USING (target_date, mode, format_version)
+    GROUP BY t.target_date, t.mode, t.format_version, t.content_id, du.users_total
 )
-SELECT t.mode,
+SELECT t.format_version, t.mode,
        COUNT(*)                                                        AS slots,
        ROUND((100.0 * AVG((a.share >= 0.50)::int))::numeric, 1)        AS pct_quasi_universels,
        ROUND((100.0 * AVG((a.share <  0.10)::int))::numeric, 1)        AS pct_personnels
-FROM top5 t JOIN art_share a USING (target_date, mode, content_id)
-GROUP BY t.mode ORDER BY t.mode;
+FROM top5 t JOIN art_share a USING (target_date, mode, format_version, content_id)
+GROUP BY t.format_version, t.mode ORDER BY t.format_version, t.mode;
 
 \echo ''
 \echo '=== M2 — Personnalisation affichee (1-5) vs tronquee (6-10) ==='
-SELECT CASE WHEN rank <= 5 THEN '1-5 (affiche)' ELSE '6-10 (jamais vu)' END AS zone,
+SELECT format_version,
+       CASE WHEN rank <= 5 THEN '1-5 (affiche)' ELSE '6-10 (jamais vu)' END AS zone,
        COUNT(*)                                                     AS slots,
        ROUND((100.0 * AVG(is_user_source::int))::numeric, 1)        AS pct_source_suivie,
        ROUND((100.0 * AVG((source_count = 1)::int))::numeric, 1)    AS pct_mono_source
 FROM slots WHERE rank BETWEEN 1 AND 10
-GROUP BY 1 ORDER BY 1;
+GROUP BY 1, 2 ORDER BY 1, 2;
 
 \echo ''
 \echo '=== M3 — Repartition des themes dans le top-5 ==='
-SELECT COALESCE(theme, '(null)')                                  AS theme,
+SELECT format_version,
+       COALESCE(theme, '(null)')                                  AS theme,
        COUNT(*)                                                   AS slots,
-       ROUND((100.0 * COUNT(*) / SUM(COUNT(*)) OVER ())::numeric, 1) AS pct_top5
-FROM top5 GROUP BY 1 ORDER BY 2 DESC;
+       ROUND((100.0 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY format_version))::numeric, 1) AS pct_top5
+FROM top5 GROUP BY 1, 2 ORDER BY 1, 3 DESC;
 
 \echo ''
 \echo '=== M4 — Pourvoyeurs : part du top-5 et CTR ==='
-SELECT s.source_name,
+SELECT s.format_version,
+       s.source_name,
        COUNT(*)                                                      AS slots,
-       ROUND((100.0 * COUNT(*) / SUM(COUNT(*)) OVER ())::numeric, 2) AS pct_top5,
+       ROUND((100.0 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY s.format_version))::numeric, 2) AS pct_top5,
        COUNT(ucs.content_id)                                         AS lus,
        ROUND((100.0 * COUNT(ucs.content_id) / COUNT(*))::numeric, 2) AS ctr_pct
 FROM top5 s
@@ -86,7 +96,7 @@ LEFT JOIN user_content_status ucs
        ON ucs.user_id = s.user_id
       AND ucs.content_id = s.content_id
       AND ucs.status = 'consumed'
-GROUP BY s.source_name ORDER BY 2 DESC LIMIT 15;
+GROUP BY s.format_version, s.source_name ORDER BY 3 DESC LIMIT 15;
 
 \echo ''
 \echo '=== M5 — CTR du top-5 : source suivie vs non suivie ==='

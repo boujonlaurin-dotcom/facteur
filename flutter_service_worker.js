@@ -52,7 +52,7 @@ const RESOURCES = {"version.json": "70b5fade9ecbeb9fe37be04201dbfc18",
 "assets/assets/notifications/facteur_veille.png": "8f3c79d4f1d34dadb493bad1b8912700",
 "assets/assets/notifications/facteur_bike.png": "aeee823f094172a5afe1c367e0a94687",
 "assets/assets/loaders/loading_facteur.json": "2ad70ee4008c820c0462e0f56ea83c7e",
-"assets/assets/changelog.json": "0d3800c47b30af4ba13aa52f44a47a32",
+"assets/assets/changelog.json": "ecfe8c59cf487f22a2b08e6f889b1cba",
 "assets/shaders/stretch_effect.frag": "40d68efbbf360632f614c731219e95f0",
 "assets/shaders/ink_sparkle.frag": "ecc85a2e95f5e9f53123dcaf8cb9b6ce",
 "assets/packages/flutter_inappwebview_web/assets/web/web_support.js": "509ae636cfdd93e49b5a6eaf0f06d79f",
@@ -67,7 +67,7 @@ const RESOURCES = {"version.json": "70b5fade9ecbeb9fe37be04201dbfc18",
 "reset-password.html": "55abf02dbadfe0e9c531305c62fbf29d",
 "main.dart.js": "d9967e6c8d28cebfce82dcaa95140910",
 "email-confirmation.html": "ac115775cbd8a949a4c666e687510e43",
-"flutter_bootstrap.js": "acb32536ae891b69ab81853fee73539d",
+"flutter_bootstrap.js": "a7054ae8a9173068909fbb3da2aa28ca",
 "manifest.json": "d7eddc4cd63df39a919eddaf81649c6f"};
 // The application shell files that are downloaded before a service worker can
 // start.

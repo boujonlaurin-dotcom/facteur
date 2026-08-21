@@ -76,3 +76,25 @@ virgule + `l'art`) n'est **pas** matché → pas de faux-positif.
 La **Partie A** (dédoublonnage par domaine) reste un durcissement correct et
 nécessaire (le cas « 2 feeds radiofrance.fr » existe ailleurs), mais n'était pas
 le levier décisif pour ce cas précis.
+
+## Addendum (2026-08-20) — remplacé par le score mixte v4
+
+La clé composite `(is_multi, importance, perso)` instaurée par ce correctif a
+basculé le pendule à 0 % perso : `importance` est continue, donc `perso` ne
+départageait jamais (cf. [bug-curation-essentiel-personnalisation.md]
+(bug-curation-essentiel-personnalisation.md), « Le cadrage : c'est un pendule »).
+
+`editorial_v4` (PR 4 du dossier curation) la remplace par le **score mixte
+scalaire** `(1-w)·importance_100 + w·perso_100`
+(`digest_selector.mixed_subject_rank_score`, `w = SUBJECT_PERSO_WEIGHT = 0.40`) :
+
+- la relégation des solos n'est plus un préfixe dur mais `coverage(1)=0`
+  + `SUBJECT_SOLO_MALUS` configurable (0.0 par défaut) ;
+- « À la Une » reste épinglé rang 1 ;
+- rollback vers l'ordre v3 **sans redeploy** :
+  `SCORING_OVERRIDES='{"SUBJECT_PERSO_WEIGHT": 0.0, "SUBJECT_SOLO_MALUS": 1000.0}'`.
+
+Les décisions PO de juin 2026 (importance d'abord, solos jamais au-dessus d'un
+multi) restent respectées *en tendance* : un solo ne peut battre un sujet 6+
+sources qu'avec un écart perso irréaliste (> 50 pts), mais peut désormais
+passer devant un 2-sources impersonnel — c'est l'arbitrage PO d'août 2026.
