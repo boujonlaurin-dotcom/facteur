@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart'
-    show HighlightSpan, TokenSpan;
+    show DisplayGates, HighlightSpan, TokenSpan;
 import 'package:facteur/features/feed/widgets/diff_title.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 import 'package:facteur/widgets/design/facteur_card.dart';
@@ -74,6 +74,7 @@ Widget _carouselHome() {
           biasDistribution: const {'left': 1},
           keywords: const [],
           contentId: 'test',
+          display: DisplayGates.fromCoverageCount(2),
         ),
       ),
     ),

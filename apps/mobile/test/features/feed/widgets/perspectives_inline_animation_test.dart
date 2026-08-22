@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart'
-    show HighlightSpan, TokenSpan;
+    show DisplayGates, HighlightSpan, TokenSpan;
 import 'package:facteur/features/feed/widgets/diff_title.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
@@ -52,6 +52,7 @@ class _HarnessState extends State<_Harness> {
             biasDistribution: const {'left': 1, 'center': 1},
             keywords: const [],
             contentId: 'test',
+            display: DisplayGates.fromCoverageCount(3),
           ),
         ),
       ),

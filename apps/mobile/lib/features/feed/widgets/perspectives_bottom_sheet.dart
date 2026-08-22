@@ -25,7 +25,15 @@ import '../../soutien/soutien_copy.dart';
 import '../../premium/premium_provider.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
-import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
+import '../repositories/feed_repository.dart'
+    show
+        ConsensusBlock,
+        ConsensusStatement,
+        DisplayGates,
+        HighlightSpan,
+        PerspectiveData,
+        TokenSpan;
+import 'consensus_widgets.dart';
 import 'coverage_comparison_card.dart';
 import 'coverage_spectrum_bar.dart';
 import 'diff_title.dart';
@@ -263,8 +271,18 @@ String _toBarGroup(String stance) {
   }
 }
 
-/// Analysis workflow state
-enum PerspectivesAnalysisState { idle, loading, done, error }
+/// Analysis workflow state.
+///
+/// `throttled` = cap global quotidien du POST analyze atteint (#1109) :
+/// message dédié, sans « Réessayer » ni shimmer — réessayer aujourd'hui ne
+/// donnera rien.
+enum PerspectivesAnalysisState { idle, loading, done, error, throttled }
+
+/// Message du sheet quand l'analyse est throttlée (cap quotidien).
+/// `{N}` = `coverageCount` servi (invariant #1104).
+String analysisThrottledText(int coverageCount) =>
+    "Beaucoup de demandes aujourd'hui : l'analyse sera de nouveau disponible "
+    'demain. Les $coverageCount articles restent consultables.';
 
 enum PerspectivesSectionStatus { loading, empty, ready }
 
@@ -416,10 +434,12 @@ class _PerspectivesBottomSheetState
       if (!mounted) return;
 
       setState(() {
-        _analysisText = result;
-        _analysisState = result != null
-            ? PerspectivesAnalysisState.done
-            : PerspectivesAnalysisState.error;
+        _analysisText = result.analysis;
+        _analysisState = result.throttled
+            ? PerspectivesAnalysisState.throttled
+            : result.analysis != null
+                ? PerspectivesAnalysisState.done
+                : PerspectivesAnalysisState.error;
       });
     } catch (e) {
       if (!mounted) return;
@@ -671,6 +691,7 @@ class _PerspectivesBottomSheetState
                       child: PerspectivesAnalysisZone(
                         state: _analysisState,
                         text: _analysisText,
+                        coverageCount: widget.coverageCount,
                         onRequestAnalysis: _requestAnalysis,
                         colors: colors,
                         textTheme: textTheme,
@@ -1272,6 +1293,9 @@ class PerspectivesBiasBar extends StatelessWidget {
 class PerspectivesAnalysisZone extends StatefulWidget {
   final PerspectivesAnalysisState state;
   final String? text;
+
+  /// `coverage_count` servi — alimente le message throttled (invariant #1104).
+  final int coverageCount;
   final VoidCallback? onRequestAnalysis;
   final FacteurColors colors;
   final TextTheme textTheme;
@@ -1285,6 +1309,7 @@ class PerspectivesAnalysisZone extends StatefulWidget {
     super.key,
     required this.state,
     this.text,
+    this.coverageCount = 0,
     required this.onRequestAnalysis,
     required this.colors,
     required this.textTheme,
@@ -1322,6 +1347,16 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
         PerspectivesAnalysisState.loading => _buildAnalysisSkeleton(),
         PerspectivesAnalysisState.done => _buildAnalysisResult(),
         PerspectivesAnalysisState.error => _buildAnalysisError(),
+        // Cap quotidien : message seul, sans « Réessayer » ni shimmer.
+        PerspectivesAnalysisState.throttled => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              analysisThrottledText(widget.coverageCount),
+              style: widget.textTheme.bodyMedium?.copyWith(
+                color: widget.colors.textSecondary,
+              ),
+            ),
+          ),
       },
     );
   }
@@ -1497,7 +1532,6 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   final String sourceName;
   final String contentId;
   final String comparisonQuality;
-  final String? divergenceLevel;
 
   /// Key attached to the first perspective card so the parent can detect
   /// when the user has scrolled past it.
@@ -1514,6 +1548,23 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   /// indicateur discret dans le header quand le carousel est déjà visible.
   final bool partial;
 
+  /// Bloc « Analyse des angles » 6C (contrat #1109). `absent()` = rien à
+  /// afficher côté constats (la section dégrade sur barre + carrousel).
+  final ConsensusBlock consensus;
+
+  /// Gates d'affichage 6C, appliquées sans re-dérivation. `hidden()` (défaut,
+  /// chemins d'erreur) masque tout le corps prêt : l'escamotage `empty`
+  /// existant reste le comportement de repli.
+  final DisplayGates display;
+
+  /// Domaine du média lu (dérivé de `content.url`) : repli d'attribution des
+  /// constats portés par le média en cours de lecture.
+  final String? readerDomain;
+
+  /// Incrémenté par l'écran parent après le scroll CTA haut → section : joue
+  /// un flash orangé one-shot (foreground, zéro impact layout).
+  final int flashTick;
+
   const PerspectivesInlineSection({
     super.key,
     this.perspectives = const [],
@@ -1524,11 +1575,14 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     this.sourceBiasStance = 'unknown',
     this.sourceName = '',
     this.comparisonQuality = 'low',
-    this.divergenceLevel,
     this.firstCardKey,
     this.onOpenAnalysis,
     this.status = PerspectivesSectionStatus.ready,
     this.partial = false,
+    this.consensus = const ConsensusBlock.absent(),
+    this.display = const DisplayGates.hidden(),
+    this.readerDomain,
+    this.flashTick = 0,
   });
 
   @override
@@ -1743,13 +1797,11 @@ class _PerspectivesInlineSectionState
     final separatorOffset = index >= knownCount && knownCount < variants.length
         ? _kUnknownSeparatorWidth + _kCoverageCardGap
         : 0.0;
-    // La carte CTA « Analyse Facteur » précède les cartes sources → décalage
-    // fixe (largeur CTA + gap) avant la 1ʳᵉ carte source.
-    final target = (_kAnalysisCtaWidth +
-                _kCoverageCardGap +
-                (_kCoverageCardWidth + _kCoverageCardGap) * index +
-                separatorOffset)
-        .clamp(0.0, maxExtent);
+    // La carte IA est désormais en FIN de carrousel : les cartes sources
+    // démarrent au bord, plus de décalage de tête.
+    final target =
+        ((_kCoverageCardWidth + _kCoverageCardGap) * index + separatorOffset)
+            .clamp(0.0, maxExtent);
     HapticFeedback.selectionClick();
     _carouselScrollController.animateTo(
       target,
@@ -1822,9 +1874,6 @@ class _PerspectivesInlineSectionState
     final isEmpty = widget.status == PerspectivesSectionStatus.empty;
     final isLoading = widget.status == PerspectivesSectionStatus.loading;
     final shouldShowBand = !isEmpty || _emptyStage != _EmptyStage.collapsed;
-    final label = (isLoading || isEmpty)
-        ? 'Comparer les angles'
-        : 'Comparer les angles · $_coverageCount médias';
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 250),
@@ -1845,27 +1894,37 @@ class _PerspectivesInlineSectionState
               // translucide (laisse transparaître le parchemin du reader,
               // reste plus foncée que les cartes) + flou verre + hairline
               // chaude très douce haut/bas (creux secondaire, pas d'ombre).
-              child: _buildFrostedBand(
+              child: _withConsensusFlash(
+                _buildFrostedBand(
                 colors: colors,
                 isDark: isDark,
                 isReady: isReady,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildHeader(colors, textTheme, label, isLoading, isEmpty),
+                    _buildHeader(colors, textTheme, isLoading, isEmpty),
                     if (isReady) ...[
                       AnimatedOpacity(
                         opacity: _carouselFade,
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeInOut,
-                        child: Column(
-                          children: [
-                            _buildCarousel(variants),
-                            // Barre de biais pleine largeur + interactive, sous
-                            // le carrousel (le header porte titre + polarisation).
-                            _buildBandFooter(),
-                          ],
-                        ),
+                        // Ordre 6C : constats → footnote → barre de biais →
+                        // sous-titre → carrousel. Solo : texte seul, sans
+                        // carrousel ni cloche (décision PO 22/08/2026).
+                        child: widget.display.isSolo
+                            ? _buildSoloMessage(colors)
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  ..._buildConsensusBody(colors),
+                                  if (widget.display.hasBar)
+                                    _buildSpectrumBar(),
+                                  if (widget.display.hasCards) ...[
+                                    _buildCarouselSubtitle(colors),
+                                    _buildCarousel(variants),
+                                  ],
+                                ],
+                              ),
                       ),
                     ] else if (isLoading) ...[
                       // Squelette plein-format : la bande garde la stature de
@@ -1877,8 +1936,34 @@ class _PerspectivesInlineSectionState
                   ],
                 ),
               ),
+              ),
             )
           : const SizedBox.shrink(),
+    );
+  }
+
+  /// Flash orangé one-shot joué à l'arrivée par le CTA haut d'article
+  /// (`flashTick` incrémenté par l'écran) : superposé en foreground, aucun
+  /// impact layout. Rejoué à chaque incrément grâce à la Key.
+  Widget _withConsensusFlash(Widget band) {
+    if (widget.flashTick <= 0) return band;
+    return Stack(
+      children: [
+        band,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: TweenAnimationBuilder<double>(
+              key: ValueKey('consensus-flash-${widget.flashTick}'),
+              tween: Tween(begin: 1.0, end: 0.0),
+              duration: const Duration(milliseconds: 750),
+              curve: Curves.easeOut,
+              builder: (_, t, __) => ColoredBox(
+                color: Color.fromRGBO(211, 84, 0, 0.12 * t),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1924,24 +2009,24 @@ class _PerspectivesInlineSectionState
     );
   }
 
-  /// Header : titre à gauche + badge de polarisation et bouton info à droite.
-  /// La barre de biais (interactive) est descendue en pied de bande, pleine
-  /// largeur (cf. [_buildBandFooter]).
+  /// Header : « Analyse des angles ({qualifier}) » à gauche, bouton info à
+  /// droite. Le qualificatif vient du backend (jamais re-dérivé) et n'apparaît
+  /// qu'ici — le badge POLARISÉ du pied de bande est supprimé du Reader.
   Widget _buildHeader(
     FacteurColors colors,
     TextTheme textTheme,
-    String label,
     bool isLoading,
     bool isEmpty,
   ) {
+    final qualifierLabel = consensusQualifierLabel(widget.consensus.qualifier);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Ligne 1 : libellé à gauche (FittedBox scaleDown absorbe les titres
-          // longs sans wrap), badge de polarisation + bouton info épinglés à
-          // droite et centrés verticalement sur le titre.
+          // longs sans wrap), bouton info épinglé à droite et centré
+          // verticalement sur le titre.
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -1949,19 +2034,30 @@ class _PerspectivesInlineSectionState
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: colors.textPrimary,
+                  child: Text.rich(
+                    TextSpan(
+                      text: consensusSectionTitle,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: colors.textPrimary,
+                      ),
+                      children: [
+                        if (qualifierLabel != null)
+                          TextSpan(
+                            text: ' ($qualifierLabel)',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w400,
+                              color: colors.textSecondary,
+                            ),
+                          ),
+                      ],
                     ),
+                    maxLines: 1,
                   ),
                 ),
               ),
-              // Le badge de polarisation est descendu sous la barre de biais
-              // (cf. [_buildBandFooter]) ; le header ne garde que le bouton info.
               if (!isEmpty) ...[
                 const SizedBox(width: 11),
                 if (isLoading)
@@ -1994,41 +2090,179 @@ class _PerspectivesInlineSectionState
     );
   }
 
-  /// Pied de bande, sous le carrousel : la barre de biais **pleine largeur** et
-  /// **interactive** (tap sur un segment → scrolle le carrousel vers le bord
-  /// politique correspondant). Rendu uniquement quand la couverture est prête
-  /// (le `if (isReady)` du parent garantit déjà la condition).
-  Widget _buildBandFooter() {
+  /// Corpus au format attendu par [resolveConsensusRefs] (attribution des
+  /// constats). Dérivé des perspectives affichées, jamais mis en cache.
+  List<PerspectiveData> get _refCorpus => _displayedPerspectives
+      .map(
+        (p) => PerspectiveData(
+          title: p.title,
+          url: p.url,
+          sourceName: p.sourceName,
+          sourceDomain: p.sourceDomain,
+          biasStance: p.biasStance,
+        ),
+      )
+      .toList();
+
+  List<ConsensusSourceRef> _refsFor(
+    ConsensusStatement statement,
+    List<PerspectiveData> corpus,
+  ) {
+    return resolveConsensusRefs(
+      domains: statement.displayDomains,
+      perspectives: corpus,
+      readerDomain: widget.readerDomain,
+      readerSourceName: widget.sourceName,
+      readerBias: widget.sourceBiasStance,
+    );
+  }
+
+  /// Encart source unique (`display.isSolo`) : texte seul, sans carrousel ni
+  /// cloche « Me prévenir » (notification backend hors périmètre).
+  Widget _buildSoloMessage(FacteurColors colors) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
+      child: Text(
+        consensusSoloText(
+          widget.sourceName.isNotEmpty ? widget.sourceName : 'Ce média',
+        ),
+        style: GoogleFonts.dmSans(
+          fontSize: 12.5,
+          height: 1.5,
+          color: colors.textSecondary,
+        ),
+      ),
+    );
+  }
+
+  /// Constats (≤3 accords puis ≤2 désaccords) + footnote d'état.
+  List<Widget> _buildConsensusBody(FacteurColors colors) {
+    final consensus = widget.consensus;
+    // Corpus construit UNE fois par build, pas une fois par constat.
+    final corpus = _refCorpus;
+    final rows = <Widget>[
+      for (final statement in consensus.agreements)
+        ConsensusStatementRow(
+          statement: statement,
+          isAgreement: true,
+          refs: _refsFor(statement, corpus),
+        ),
+      for (final statement in consensus.disagreements)
+        ConsensusStatementRow(
+          statement: statement,
+          isAgreement: false,
+          refs: _refsFor(statement, corpus),
+        ),
+    ];
+
+    // Footnote : sablier tant que l'analyse est en cours, signe égal quand le
+    // backend qualifie de convergent sans désaccord relevé.
+    (IconData, String)? footnote;
+    if (consensus.isPending) {
+      footnote = (
+        PhosphorIcons.hourglass(PhosphorIconsStyle.regular),
+        consensusPendingFootnote(_coverageCount),
+      );
+    } else if (consensus.isAvailable &&
+        consensus.qualifier == 'convergent' &&
+        consensus.disagreements.isEmpty) {
+      footnote = (
+        PhosphorIcons.equals(PhosphorIconsStyle.regular),
+        consensusConvergentFootnote(_coverageCount),
+      );
+    }
+
+    return [
+      if (rows.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            _kCarouselPaddingH,
+            6,
+            _kCarouselPaddingH,
+            0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
+                rows[i],
+              ],
+            ],
+          ),
+        ),
+      if (footnote != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            _kCarouselPaddingH,
+            10,
+            _kCarouselPaddingH,
+            0,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(
+                  footnote.$1,
+                  size: 13,
+                  color: colors.textTertiary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  footnote.$2,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11.5,
+                    height: 1.45,
+                    color: colors.textTertiary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  /// Barre de biais pleine largeur et interactive (tap sur un segment →
+  /// scrolle le carrousel vers le bord politique correspondant), désormais
+  /// AU-DESSUS du carrousel. Gated `display.hasBar`.
+  Widget _buildSpectrumBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         _kCarouselPaddingH,
-        0,
+        14,
         _kCarouselPaddingH,
-        6,
+        0,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          CoverageSpectrumBar(
-            distribution: widget.biasDistribution,
-            onSegmentTap: _onSpectrumSegmentTap,
-            showAnchorLabels: true,
-          ),
-          // Label « niveau de polarisation » posé sous la barre de biais
-          // (déplacé du header) : centré, échelle 1.6 pour la lisibilité (le
-          // label Courier 8 px de base est trop fin sous la barre pleine
-          // largeur).
-          if (widget.divergenceLevel != null) ...[
-            const SizedBox(height: 10),
-            Center(
-              child: DivergenceInlineBadge(
-                divergenceLevel: widget.divergenceLevel,
-                scale: 1.6,
-                prominentMedium: true,
-              ),
-            ),
-          ],
-        ],
+      child: CoverageSpectrumBar(
+        distribution: widget.biasDistribution,
+        onSegmentTap: _onSpectrumSegmentTap,
+        showAnchorLabels: true,
+      ),
+    );
+  }
+
+  /// Sous-titre « {N} médias en parlent », entre la barre et le carrousel.
+  Widget _buildCarouselSubtitle(FacteurColors colors) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        _kCarouselPaddingH,
+        12,
+        _kCarouselPaddingH,
+        0,
+      ),
+      child: Text(
+        consensusCarouselSubtitle(_coverageCount),
+        style: GoogleFonts.dmSans(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+          color: colors.textTertiary,
+        ),
       ),
     );
   }
@@ -2047,15 +2281,21 @@ class _PerspectivesInlineSectionState
     return () => showSourceDetailModal(context, ref, matched);
   }
 
-  /// Carrousel horizontal virtualisé : CTA, biais connus L→R, séparateur, puis
-  /// toutes les sources unknown. Aucune limite arbitraire de cartes.
+  /// Carrousel horizontal virtualisé : biais connus L→R, séparateur, sources
+  /// unknown, puis carte « Analyse complète IA » en FIN (gated
+  /// `display.hasAiCard`, décision PO 22/08/2026). Aucune limite arbitraire
+  /// de cartes.
   Widget _buildCarousel(List<Perspective> variants) {
     // Sources suivies → résolution par domaine pour rendre la pastille cliquable.
     final sources = ref.watch(userSourcesProvider).valueOrNull;
     final known = variants.where((p) => p.biasStance != 'unknown').toList();
     final unknown = variants.where((p) => p.biasStance == 'unknown').toList();
-    final itemCount =
-        1 + known.length + (unknown.isNotEmpty ? 1 : 0) + unknown.length;
+    final hasAiCard = widget.display.hasAiCard;
+    final itemCount = known.length +
+        (unknown.isNotEmpty ? 1 : 0) +
+        unknown.length +
+        (hasAiCard ? 1 : 0);
+    final lastIndex = itemCount - 1;
 
     return SizedBox(
       height: _kCarouselViewportHeight,
@@ -2070,27 +2310,16 @@ class _PerspectivesInlineSectionState
         ),
         itemCount: itemCount,
         itemBuilder: (context, itemIndex) {
-          if (itemIndex == 0) {
-            return Padding(
-              padding: EdgeInsets.only(
-                right: variants.isEmpty ? 0 : _kCoverageCardGap,
-              ),
-              child: _AnalysisCtaCard(
-                onTap: widget.onOpenAnalysis,
-                count: _coverageCount,
-              ),
-            );
-          }
+          final gap = itemIndex == lastIndex ? 0.0 : _kCoverageCardGap;
 
-          final afterCta = itemIndex - 1;
-          if (afterCta < known.length) {
-            final perspective = known[afterCta];
+          if (itemIndex < known.length) {
+            final perspective = known[itemIndex];
             return Padding(
-              padding: const EdgeInsets.only(right: _kCoverageCardGap),
+              padding: EdgeInsets.only(right: gap),
               child: CoverageComparisonCard(
-                key: ValueKey('coverage_${_animationGeneration}_$afterCta'),
+                key: ValueKey('coverage_${_animationGeneration}_$itemIndex'),
                 perspective: perspective,
-                firstCardKey: afterCta == 0 ? widget.firstCardKey : null,
+                firstCardKey: itemIndex == 0 ? widget.firstCardKey : null,
                 onSourceTap: _sourceTapFor(
                   context,
                   sources,
@@ -2101,30 +2330,36 @@ class _PerspectivesInlineSectionState
           }
 
           final separatorIndex = known.length;
-          if (unknown.isNotEmpty && afterCta == separatorIndex) {
+          if (unknown.isNotEmpty && itemIndex == separatorIndex) {
             return const Padding(
               padding: EdgeInsets.only(right: _kCoverageCardGap),
               child: _UnknownSourcesSeparator(),
             );
           }
 
-          final unknownIndex = afterCta - known.length - 1;
-          final perspective = unknown[unknownIndex];
-          final sourceIndex = known.length + unknownIndex;
-          return Padding(
-            padding: EdgeInsets.only(
-              right: unknownIndex == unknown.length - 1 ? 0 : _kCoverageCardGap,
-            ),
-            child: CoverageComparisonCard(
-              key: ValueKey('coverage_${_animationGeneration}_$sourceIndex'),
-              perspective: perspective,
-              firstCardKey: sourceIndex == 0 ? widget.firstCardKey : null,
-              onSourceTap: _sourceTapFor(
-                context,
-                sources,
-                perspective.sourceDomain,
+          final unknownIndex =
+              itemIndex - known.length - (unknown.isNotEmpty ? 1 : 0);
+          if (unknownIndex < unknown.length) {
+            final perspective = unknown[unknownIndex];
+            final sourceIndex = known.length + unknownIndex;
+            return Padding(
+              padding: EdgeInsets.only(right: gap),
+              child: CoverageComparisonCard(
+                key: ValueKey('coverage_${_animationGeneration}_$sourceIndex'),
+                perspective: perspective,
+                firstCardKey: sourceIndex == 0 ? widget.firstCardKey : null,
+                onSourceTap: _sourceTapFor(
+                  context,
+                  sources,
+                  perspective.sourceDomain,
+                ),
               ),
-            ),
+            );
+          }
+
+          return _AnalysisCtaCard(
+            onTap: widget.onOpenAnalysis,
+            count: _coverageCount,
           );
         },
       ),
@@ -2316,10 +2551,10 @@ class _UnknownSourcesSeparator extends StatelessWidget {
               child: Text(
                 'Autres sources',
                 maxLines: 1,
-                style: GoogleFonts.courierPrime(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
+                style: GoogleFonts.dmSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
                   color: colors.textTertiary,
                 ),
               ),
@@ -2478,8 +2713,9 @@ class _PivotWashTitleState extends State<PivotWashTitle>
   }
 }
 
-/// Carte CTA « Analyse Facteur » en tête de carrousel — gabarit gradient ocre.
-/// Tap → ouvre le bottom sheet d'analyse (`onTap`, géré par l'écran parent).
+/// Carte CTA « Analyse complète IA » en FIN de carrousel — gabarit gradient
+/// ocre. Tap → ouvre le bottom sheet d'analyse (`onTap`, géré par l'écran
+/// parent).
 class _AnalysisCtaCard extends StatelessWidget {
   final VoidCallback? onTap;
   final int count;
@@ -2537,7 +2773,7 @@ class _AnalysisCtaCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 9),
                     Text(
-                      'Analyse Facteur',
+                      consensusAiCardTitle,
                       style: GoogleFonts.fraunces(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
@@ -2547,8 +2783,7 @@ class _AnalysisCtaCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 9),
                     Text(
-                      'Une synthèse neutre des $count angles, en quelques '
-                      'secondes.',
+                      consensusAiCardBody(count),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.dmSans(
@@ -2562,7 +2797,7 @@ class _AnalysisCtaCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Lancer',
+                          consensusAiCardAction,
                           style: GoogleFonts.dmSans(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -2722,10 +2957,10 @@ class _AnalysisSheet extends StatelessWidget {
                             const SizedBox(height: 4),
                             Text(
                               'Synthèse neutre · $coverageCount médias au total',
-                              style: GoogleFonts.courierPrime(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.6,
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.4,
                                 color: colors.textTertiary,
                               ),
                             ),
@@ -2830,6 +3065,15 @@ class _AnalysisSheet extends StatelessWidget {
             ),
           ],
         );
+      case PerspectivesAnalysisState.throttled:
+        // Cap quotidien : message seul, sans « Réessayer » ni shimmer.
+        return Text(
+          analysisThrottledText(coverageCount),
+          style: textTheme.bodyMedium?.copyWith(
+            color: colors.textSecondary,
+            height: 1.5,
+          ),
+        );
       case PerspectivesAnalysisState.done:
         final (:essentiel, :divergent) =
             splitAnalysisSections(value.text ?? '');
@@ -2891,10 +3135,10 @@ class _AnalysisSheet extends StatelessWidget {
   Widget _sectionTitle(String text, FacteurColors colors) {
     return Text(
       text,
-      style: GoogleFonts.courierPrime(
-        fontSize: 10,
+      style: GoogleFonts.dmSans(
+        fontSize: 12,
         fontWeight: FontWeight.w700,
-        letterSpacing: 0.7,
+        letterSpacing: 0.4,
         color: colors.primary,
       ),
     );
