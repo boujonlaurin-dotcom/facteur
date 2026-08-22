@@ -5,7 +5,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Facteur · Le mot du jour</title>
-    <meta name="description" content="Ouvre le défi Mot du jour dans l'app Facteur.">
+    <meta name="description" content="Le défi Mot du jour de Facteur. Six essais pour trouver le mot.">
+
+    <!-- Open Graph statique. Limite assumée : les crawlers n'exécutent pas le JS,
+         la preview ne peut donc pas afficher le score du partage. -->
+    <meta property="og:site_name" content="Facteur">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Le mot du jour">
+    <meta property="og:description" content="Six essais pour trouver le mot du jour. Un défi par jour, dans Facteur.">
+    <meta property="og:url" content="https://facteur.app/grille">
+    <!-- Pas d'og:image : aucun visuel 1200x630 de marque n'existe encore
+         (cf. story partage.1). `summary` rend une carte texte propre ;
+         basculer sur `summary_large_image` le jour où l'asset arrive. -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Le mot du jour">
+    <meta name="twitter:description" content="Six essais pour trouver le mot du jour. Un défi par jour, dans Facteur.">
 
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="/css/style.css?v=6">
@@ -50,6 +64,7 @@
             margin-bottom: 1rem;
             cursor: pointer;
             border: none;
+            font-family: inherit;
         }
         .grille-redirect__btn:hover {
             background: #333;
@@ -76,25 +91,24 @@
 <body>
     <header class="section hero legal-page__hero" style="min-height: auto; padding: 2rem 0 1rem;">
         <div class="container">
-            <a href="/" class="section-nav__item" style="font-size:0.9rem;">← Facteur</a>
+            <a href="/" class="section-nav__item" style="font-size:0.9rem;">Facteur</a>
         </div>
     </header>
 
     <main>
         <div class="grille-redirect">
             <div class="grille-redirect__emoji">🔡</div>
-            <h1 class="grille-redirect__title">Le mot du jour</h1>
-            <p class="grille-redirect__subtitle">Ouverture de Facteur en cours…</p>
+            <h1 class="grille-redirect__title" id="title">Le mot du jour</h1>
+            <p class="grille-redirect__subtitle" id="subtitle">Six essais pour trouver le mot du jour.</p>
 
-            <button class="grille-redirect__btn" id="open-btn" onclick="tryOpen()">
+            <button class="grille-redirect__btn" id="open-btn" type="button">
                 Ouvrir dans Facteur
             </button>
 
             <div class="grille-redirect__stores" id="stores">
                 <p style="font-size:0.9rem; color:#555; margin:0">Facteur n'est pas installé ?</p>
-                <!-- TODO: remplacer par les vraies URLs App Store / Play Store une fois les IDs connus -->
-                <a href="https://apps.apple.com/fr/app/facteur" id="ios-link">Télécharger sur l'App Store</a>
-                <a href="https://play.google.com/store/apps/details?id=com.example.facteur" id="android-link">Télécharger sur Google Play</a>
+                <a href="#" id="ios-link" data-store="ios">Télécharger sur l'App Store</a>
+                <a href="#" id="android-link" data-store="android">Télécharger sur Google Play</a>
             </div>
 
             <p class="grille-redirect__status" id="status"></p>
@@ -102,39 +116,113 @@
     </main>
 
     <script>
-        const DEEP_LINK = 'io.supabase.facteur://grille';
-        const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        const ANDROID = /android/i.test(navigator.userAgent);
+        (function () {
+            'use strict';
 
-        function tryOpen() {
-            document.getElementById('status').textContent = 'Tentative d\'ouverture…';
+            var DEEP_LINK = 'io.supabase.facteur://grille';
+            var SURFACE = 'grille_defi';
+            var APP_STORE_ID = '6778094299';
+            var PLAY_PACKAGE = 'facteur.app';
+            var ATTRIB_KEY = 'facteur_attrib_v1';
+            var ATTRIB_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-            // Masquer le bouton, tenter le deep link
-            document.getElementById('open-btn').disabled = true;
-            window.location.href = DEEP_LINK;
+            var IOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            var ANDROID = /android/i.test(navigator.userAgent);
+            var MOBILE = IOS || ANDROID;
 
-            // Si l'app n'est pas installée, la page reste visible après ~1.5s
-            setTimeout(function () {
-                // Si la page est toujours active (pas de changement de focusen arrière-plan),
-                // l'app n'a pas été ouverte → afficher les stores
-                document.getElementById('stores').style.display = 'flex';
-                document.getElementById('status').textContent =
-                    'L\'app ne s\'est pas ouverte automatiquement.';
+            var params = new URLSearchParams(window.location.search);
+
+            // Les trois params du lien de défi. Chacun est re-validé côté client :
+            // tout ce qui arrive de l'URL est hostile par défaut.
+            var numero = (params.get('n') || '').replace(/\D/g, '').slice(0, 6);
+            var rawScore = params.get('s') || '';
+            var score = /^\d{1,2}\/\d{1,2}$/.test(rawScore) ? rawScore : '';
+            var rawRef = params.get('ref') || '';
+            var ref = /^[A-Za-z0-9_-]{1,32}$/.test(rawRef) ? rawRef : '';
+
+            // --- Titre porteur d'état -----------------------------------------
+            // textContent et jamais innerHTML : `numero`/`score` viennent de l'URL.
+            if (score && numero) {
+                document.getElementById('title').textContent =
+                    'Quelqu’un a fait ' + score + ' au Mot du jour N°' + numero;
+                document.getElementById('subtitle').textContent = 'À toi d’essayer.';
+            } else if (numero) {
+                document.getElementById('title').textContent =
+                    'Le Mot du jour N°' + numero;
+            }
+
+            // --- Attribution ---------------------------------------------------
+            function utmQuery() {
+                var q = 'utm_source=app&utm_medium=partage_in_app&utm_content=' + SURFACE;
+                return ref ? q + '&ref=' + ref : q;
+            }
+
+            // Filet 30 j : si l'installation passe par un store sans propager le
+            // referrer (iOS notamment), l'app pourra encore lire l'attribution
+            // depuis le navigateur au premier retour sur le web.
+            function persistAttribution() {
+                if (!ref) return;
+                try {
+                    window.localStorage.setItem(ATTRIB_KEY, JSON.stringify({
+                        ref: ref,
+                        utm_source: 'app',
+                        utm_medium: 'partage_in_app',
+                        utm_content: SURFACE,
+                        expires_at: Date.now() + ATTRIB_TTL_MS
+                    }));
+                } catch (e) { /* mode privé, quota : l'attribution est best-effort */ }
+            }
+
+            var campaign = ref ? 'partage_grille_' + ref : 'partage_grille';
+            document.getElementById('ios-link').href =
+                'https://apps.apple.com/us/app/facteur-ton-algo-ton-info/id' + APP_STORE_ID +
+                '?ct=' + encodeURIComponent(campaign) + '&mt=8';
+            document.getElementById('android-link').href =
+                'https://play.google.com/store/apps/details?id=' + PLAY_PACKAGE + '&hl=fr' +
+                '&referrer=' + encodeURIComponent(utmQuery());
+
+            // --- Ouverture de l'app --------------------------------------------
+            var stores = document.getElementById('stores');
+
+            function revealStores(message) {
+                stores.style.display = 'flex';
+                document.getElementById('status').textContent = message || '';
                 document.getElementById('open-btn').disabled = false;
+                if (IOS) { document.getElementById('android-link').style.display = 'none'; }
+                else if (ANDROID) { document.getElementById('ios-link').style.display = 'none'; }
+            }
 
-                // Masquer le lien store non pertinent
-                if (IOS) {
-                    document.getElementById('android-link').style.display = 'none';
-                } else if (ANDROID) {
-                    document.getElementById('ios-link').style.display = 'none';
-                }
-            }, 1500);
-        }
+            // Scheme custom volontaire (pas l'universal link) : une fois cette page
+            // affichée, iOS court-circuite l'universal link pour un tap sur le même
+            // domaine. L'universal link joue en amont, et la page n'est alors jamais
+            // rendue.
+            function tryOpen() {
+                document.getElementById('open-btn').disabled = true;
+                document.getElementById('status').textContent = 'Ouverture de Facteur…';
+                window.location.href = DEEP_LINK;
+                setTimeout(function () {
+                    revealStores('L’app ne s’est pas ouverte automatiquement.');
+                }, 1500);
+            }
 
-        // Lancer automatiquement au chargement
-        window.addEventListener('load', function () {
-            tryOpen();
-        });
+            document.getElementById('open-btn').addEventListener('click', tryOpen);
+
+            Array.prototype.forEach.call(stores.querySelectorAll('a[data-store]'), function (a) {
+                a.addEventListener('click', function () {
+                    if (window.gtag) {
+                        window.gtag('event', 'store_click', {
+                            store: a.getAttribute('data-store'), surface: SURFACE, ref: ref
+                        });
+                    }
+                });
+            });
+
+            persistAttribution();
+
+            // Sur desktop, le scheme custom ne mène nulle part : proposer
+            // directement les stores plutôt que déclencher un échec de navigation.
+            if (MOBILE) { tryOpen(); } else { revealStores(); }
+        })();
     </script>
     <script src="/js/consent.js?v=1"></script>
 </body>

@@ -1,0 +1,23 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "facteur.app",
+      "sha256_cert_fingerprints": [
+        "25:23:0E:70:63:E7:ED:CF:75:89:13:5B:9F:62:41:20:C5:2E:C3:C8:06:D9:52:40:72:F8:23:9A:9D:C4:00:FE"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.facteur.staging",
+      "sha256_cert_fingerprints": [
+        "D8:36:07:10:52:B9:3B:1D:9C:F7:43:70:21:33:59:5C:0D:07:1D:B1:32:86:06:87:81:87:71:D4:EC:A4:E9:CF",
+        "64:D8:59:57:9E:17:B9:3E:E7:DC:28:A9:6F:CC:88:96:4F:1B:EB:1B:85:75:3B:06:B6:B6:33:5F:F2:B7:6D:AE"
+      ]
+    }
+  }
+]

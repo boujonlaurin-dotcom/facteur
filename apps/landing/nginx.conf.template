@@ -1,3 +1,24 @@
+# Rendu par l'entrypoint nginx dans /etc/nginx/conf.d/default.conf, donc inclus
+# au niveau `http` : les directives http-level (map, proxy_cache_path,
+# limit_req_zone) se posent ici, AVANT le bloc server.
+
+# Cache des cartes de partage d'article. La page est identique pour tous les
+# visiteurs d'un meme (id, ref) : 10 min de cache absorbent le pic d'un lien qui
+# circule sans reveiller l'API a chaque crawler social.
+proxy_cache_path /var/cache/nginx/article_pages levels=1:2 keys_zone=article_pages:2m
+                 max_size=64m inactive=30m use_temp_path=off;
+
+# Railway termine TLS a son edge : $remote_addr est l'IP de l'edge, identique
+# pour tout le trafic. Sans ce map, le rate limit serait global et une simple
+# rafale de partages le declencherait pour tout le monde. On prend la 1ere IP de
+# X-Forwarded-For (le client reel), avec repli sur $remote_addr.
+map $http_x_forwarded_for $facteur_client_ip {
+    default                          $remote_addr;
+    "~^(?P<xff_first_ip>[^,\s]+)"    $xff_first_ip;
+}
+
+limit_req_zone $facteur_client_ip zone=pages_rl:1m rate=10r/s;
+
 server {
     listen ${PORT};
     server_name _;
@@ -15,6 +36,67 @@ server {
 
     location = /soutenir-merci {
         try_files /soutenir-merci.html =404;
+    }
+
+    # Page-pont du defi « Mot du jour ». Sans ce bloc, /grille tombait dans le
+    # `location /` ci-dessous et servait la home.
+    location = /grille {
+        try_files /grille.html =404;
+    }
+
+    # --- Association app <-> domaine (universal links iOS / app links Android) ---
+    # Le fichier Apple n'a pas d'extension : sans `default_type`, nginx le sert
+    # en application/octet-stream.
+    location = /.well-known/apple-app-site-association {
+        default_type application/json;
+        add_header Cache-Control "public, max-age=3600" always;
+        try_files /.well-known/apple-app-site-association =404;
+    }
+
+    # Emplacement historique (pre-iOS 9.3), servi par securite : certains outils
+    # de validation le testent encore.
+    location = /apple-app-site-association {
+        default_type application/json;
+        add_header Cache-Control "public, max-age=3600" always;
+        try_files /.well-known/apple-app-site-association =404;
+    }
+
+    location = /.well-known/assetlinks.json {
+        default_type application/json;
+        add_header Cache-Control "public, max-age=3600" always;
+        try_files /.well-known/assetlinks.json =404;
+    }
+
+    # --- Carte de partage d'un article ---
+    # La page est rendue par l'API mais DOIT etre servie depuis facteur.app :
+    # l'universal link ne couvre que notre domaine (cf. le fichier AASA
+    # ci-dessus). L'API prod n'a pas de domaine custom, d'ou le nom Railway ;
+    # forcer le Host est obligatoire pour le routage a l'edge Railway.
+    location /a/ {
+        limit_req zone=pages_rl burst=20 nodelay;
+
+        proxy_pass https://facteur-production.up.railway.app/api/pages/a/;
+        proxy_set_header Host facteur-production.up.railway.app;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_ssl_server_name on;
+        proxy_ssl_name facteur-production.up.railway.app;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 10s;
+
+        proxy_cache article_pages;
+        # La reponse ne varie que sur `ref` (seul param lu par le handler). La
+        # cle par defaut inclut TOUTE la query : Facebook/Instagram/X collent un
+        # `fbclid`/`igshid` different a chaque clic, ce qui rendrait presque
+        # chaque visite unique et viderait le cache de son interet.
+        proxy_cache_key "$scheme$request_method$host$uri|$arg_ref";
+        proxy_cache_valid 200 10m;
+        proxy_cache_valid 404 1m;
+        proxy_cache_lock on;
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        add_header X-Cache-Status $upstream_cache_status always;
     }
 
     location / {
