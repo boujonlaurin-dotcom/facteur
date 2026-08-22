@@ -1,0 +1,19 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["YSV9476793.app.facteur"],
+        "components": [
+          {
+            "/": "/grille",
+            "comment": "Defi Mot du jour partage entre amis"
+          },
+          {
+            "/": "/a/*",
+            "comment": "Carte de partage d'un article"
+          }
+        ]
+      }
+    ]
+  }
+}

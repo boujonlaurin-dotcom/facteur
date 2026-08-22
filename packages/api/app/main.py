@@ -103,6 +103,7 @@ from app.routers import (
     notification_preferences,
     personalization,
     progress,
+    public_pages,
     push_devices,
     resend_webhooks,
     sources,
@@ -525,6 +526,10 @@ app.include_router(essentiel.router, prefix="/api/essentiel", tags=["Essentiel"]
 app.include_router(contents.router, prefix="/api/contents", tags=["Contents"])
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
 app.include_router(youtube_player.router, prefix="/api/youtube", tags=["YouTube"])
+# Pages HTML publiques (carte de partage). Proxifiées par le nginx de la landing
+# sous `facteur.app/a/<id>` — l'universal link exige que la page vive sur notre
+# domaine, cf. apps/landing/nginx.conf.template.
+app.include_router(public_pages.router, prefix="/api/pages", tags=["PublicPages"])
 app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
 app.include_router(
     subscription.router, prefix="/api/subscription", tags=["Subscription"]
