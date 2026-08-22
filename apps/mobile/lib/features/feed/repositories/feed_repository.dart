@@ -1063,6 +1063,173 @@ class DeepRecommendation {
   }
 }
 
+/// Un constat (accord ou désaccord) du bloc `consensus` 6C (Story 35.3).
+///
+/// `displayDomains` (≤2) est personnalisé par utilisateur côté backend
+/// (sources suivies d'abord) : ne jamais le mettre en cache au-delà de la
+/// session.
+class ConsensusStatement {
+  final String text;
+  final int supportCount;
+  final List<String> displayDomains;
+  final int plusCount;
+
+  const ConsensusStatement({
+    required this.text,
+    this.supportCount = 0,
+    this.displayDomains = const [],
+    this.plusCount = 0,
+  });
+
+  static ConsensusStatement? fromJsonOrNull(dynamic raw) {
+    if (raw is! Map) return null;
+    final text = raw['text'];
+    if (text is! String || text.isEmpty) return null;
+    return ConsensusStatement(
+      text: text,
+      supportCount: (raw['support_count'] as num?)?.toInt() ?? 0,
+      // Le contrat garantit ≤2 : clamp défensif si un backend futur dévie.
+      displayDomains: (raw['display_domains'] is List)
+          ? (raw['display_domains'] as List)
+                .whereType<String>()
+                .take(2)
+                .toList()
+          : const [],
+      plusCount: (raw['plus_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Constats mis en avant dans le CTA haut d'article (`consensus.cta`).
+class ConsensusCta {
+  final ConsensusStatement? agreement;
+  final ConsensusStatement? disagreement;
+
+  const ConsensusCta({this.agreement, this.disagreement});
+}
+
+/// Bloc `consensus` de `GET /contents/{id}/perspectives` — contrat gelé #1109.
+///
+/// `qualifier` est calculé backend (`polarized`/`varied`/`convergent`/null) :
+/// le client ne re-dérive rien. Hors `available`, les listes sont vides.
+class ConsensusBlock {
+  static const String stateAvailable = 'available';
+  static const String statePending = 'pending';
+  static const String stateUnavailable = 'unavailable';
+
+  final String state;
+  final String? qualifier;
+  final List<ConsensusStatement> agreements;
+  final List<ConsensusStatement> disagreements;
+  final ConsensusCta cta;
+  final String? generatedAt;
+
+  const ConsensusBlock({
+    required this.state,
+    this.qualifier,
+    this.agreements = const [],
+    this.disagreements = const [],
+    this.cta = const ConsensusCta(),
+    this.generatedAt,
+  });
+
+  /// Bloc absent (vieux backend ou erreur) : `unavailable`, listes vides.
+  const ConsensusBlock.absent()
+      : state = stateUnavailable,
+        qualifier = null,
+        agreements = const [],
+        disagreements = const [],
+        cta = const ConsensusCta(),
+        generatedAt = null;
+
+  bool get isAvailable => state == stateAvailable;
+  bool get isPending => state == statePending;
+
+  static ConsensusBlock fromJsonOrAbsent(dynamic raw) {
+    if (raw is! Map) return const ConsensusBlock.absent();
+    final qualifier = raw['qualifier'];
+    final rawCta = raw['cta'];
+    return ConsensusBlock(
+      state: (raw['state'] as String?) ?? stateUnavailable,
+      qualifier: qualifier is String ? qualifier : null,
+      // Plafonds du contrat (≤3 accords, ≤2 désaccords), clamp défensif.
+      agreements: _parseStatements(raw['agreements'], max: 3),
+      disagreements: _parseStatements(raw['disagreements'], max: 2),
+      cta: rawCta is Map
+          ? ConsensusCta(
+              agreement: ConsensusStatement.fromJsonOrNull(rawCta['agreement']),
+              disagreement:
+                  ConsensusStatement.fromJsonOrNull(rawCta['disagreement']),
+            )
+          : const ConsensusCta(),
+      generatedAt: raw['generated_at'] as String?,
+    );
+  }
+
+  static List<ConsensusStatement> _parseStatements(
+    dynamic raw, {
+    required int max,
+  }) {
+    if (raw is! List) return const [];
+    return raw
+        .map(ConsensusStatement.fromJsonOrNull)
+        .whereType<ConsensusStatement>()
+        .take(max)
+        .toList();
+  }
+}
+
+/// Gates d'affichage 6C, calculées backend depuis le `coverage_count` servi.
+/// Le client les applique sans les re-dériver (indépendantes de l'analyse).
+class DisplayGates {
+  final bool isSolo;
+  final bool hasCta;
+  final bool hasCards;
+  final bool hasAiCard;
+  final bool hasBar;
+
+  const DisplayGates({
+    required this.isSolo,
+    required this.hasCta,
+    required this.hasCards,
+    required this.hasAiCard,
+    required this.hasBar,
+  });
+
+  /// Tout à false, **y compris `isSolo`** : c'est l'état des chemins d'erreur.
+  /// Une erreur réseau ne doit jamais produire l'encart « seule rédaction ».
+  const DisplayGates.hidden()
+      : isSolo = false,
+        hasCta = false,
+        hasCards = false,
+        hasAiCard = false,
+        hasBar = false;
+
+  factory DisplayGates.fromJson(Map<String, dynamic> json) {
+    return DisplayGates(
+      isSolo: (json['is_solo'] as bool?) ?? false,
+      hasCta: (json['has_cta'] as bool?) ?? false,
+      hasCards: (json['has_cards'] as bool?) ?? false,
+      hasAiCard: (json['has_ai_card'] as bool?) ?? false,
+      hasBar: (json['has_bar'] as bool?) ?? false,
+    );
+  }
+
+  /// Fallback si le bloc `display` est absent d'une réponse 200 (vieux
+  /// backend) — même table que `compute_display_gates` côté API :
+  /// 1 média → solo ; 2 → CTA + carrousel ; 3+ → rendu complet.
+  factory DisplayGates.fromCoverageCount(int coverageCount) {
+    final count = coverageCount < 0 ? 0 : coverageCount;
+    return DisplayGates(
+      isSolo: count <= 1,
+      hasCta: count >= 2,
+      hasCards: count >= 2,
+      hasAiCard: count >= 3,
+      hasBar: count >= 3,
+    );
+  }
+}
+
 /// Response from perspectives API
 class PerspectivesResponse {
   final List<PerspectiveData> perspectives;
@@ -1093,6 +1260,13 @@ class PerspectivesResponse {
   /// doit refetch. `false` = état résolu (objet présent ou `null` définitif).
   final bool deepPending;
 
+  /// Bloc « Analyse des angles » 6C (contrat #1109). `absent()` si le backend
+  /// ne le sert pas encore ou en cas d'erreur.
+  final ConsensusBlock consensus;
+
+  /// Gates d'affichage 6C. `hidden()` (tout false) sur les chemins d'erreur.
+  final DisplayGates display;
+
   PerspectivesResponse({
     required this.perspectives,
     required this.keywords,
@@ -1108,6 +1282,8 @@ class PerspectivesResponse {
     this.referencePivot,
     this.deepRecommendation,
     this.deepPending = false,
+    this.consensus = const ConsensusBlock.absent(),
+    this.display = const DisplayGates.hidden(),
   });
 
   factory PerspectivesResponse.fromJson(Map<String, dynamic> json) {
@@ -1131,11 +1307,12 @@ class PerspectivesResponse {
       });
     }
 
+    final coverageCount =
+        (json['coverage_count'] as num?)?.toInt() ?? perspectivesList.length + 1;
+
     return PerspectivesResponse(
       perspectives: perspectivesList,
-      coverageCount:
-          (json['coverage_count'] as num?)?.toInt() ??
-          perspectivesList.length + 1,
+      coverageCount: coverageCount,
       keywords: keywordsList,
       biasDistribution: biasMap,
       sourceBiasStance: (json['source_bias_stance'] as String?) ?? 'unknown',
@@ -1152,6 +1329,15 @@ class PerspectivesResponse {
             )
           : null,
       deepPending: (json['deep_pending'] as bool?) ?? false,
+      consensus: ConsensusBlock.fromJsonOrAbsent(json['consensus']),
+      // Bloc absent d'une 200 = vieux backend : gates dérivées localement
+      // (même table que `compute_display_gates`). Les chemins d'erreur, eux,
+      // construisent la réponse à la main et héritent de `hidden()`.
+      display: json['display'] is Map
+          ? DisplayGates.fromJson(
+              (json['display'] as Map).cast<String, dynamic>(),
+            )
+          : DisplayGates.fromCoverageCount(coverageCount),
     );
   }
 }
