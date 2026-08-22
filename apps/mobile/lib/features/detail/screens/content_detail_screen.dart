@@ -30,6 +30,7 @@ import '../../feed/providers/feed_provider.dart';
 import '../../../config/routes.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/services/read_sync_service.dart';
+import '../../feed/widgets/consensus_widgets.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../gamification/providers/gamification_preference_provider.dart';
 import '../../gamification/providers/streak_provider.dart';
@@ -600,6 +601,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final ValueNotifier<AnalysisSheetData> _analysisSheetData = ValueNotifier(
     const AnalysisSheetData(),
   );
+
+  // Incrémenté à chaque tap sur le CTA consensus haut d'article : la bande
+  // « Analyse des angles » joue son flash d'arrivée (cf. flashTick).
+  int _consensusFlashTick = 0;
+
+  /// Domaine du média lu (dérivé de `content.url`) — repli d'attribution des
+  /// constats consensus portés par le média en cours de lecture.
+  String? get _readerDomain {
+    final url = _content?.url;
+    if (url == null || url.isEmpty) return null;
+    final host = Uri.tryParse(url)?.host ?? '';
+    return host.isEmpty ? null : host;
+  }
 
   /// `true` lorsqu'on lit une "autre source" (perspective) : URL seule, pas de
   /// Content backend ⇒ pas de fetch / perspectives / tracking.
@@ -2581,6 +2595,78 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  /// CTA « Comparer les angles » haut d'article (6C), partagé par les deux
+  /// branches de layout. Lit le même état `_perspectivesResponse` que la
+  /// section basse : aucun appel réseau supplémentaire, fade-in à l'arrivée.
+  Widget _buildConsensusCta() {
+    final content = _content;
+    if (content == null || _isExternal) return const SizedBox.shrink();
+    return ConsensusCompareCta(
+      response: _perspectivesResponse,
+      readerDomain: _readerDomain,
+      readerSourceName: content.source.name,
+      onTap: _scrollToConsensusSection,
+    );
+  }
+
+  /// Bande « Analyse des angles » du bas d'article — factorisation unique des
+  /// deux branches de layout (mêmes paramètres, RepaintBoundary inclus pour
+  /// isoler ses animations d'intro du corps au-dessus).
+  Widget _buildPerspectivesInlineSection() {
+    return RepaintBoundary(
+      child: PerspectivesInlineSection(
+        key: _perspectivesKey,
+        status: _perspectivesStatus,
+        perspectives: _inlinePerspectives,
+        coverageCount: _perspectivesResponse?.coverageCount ?? 0,
+        biasDistribution: _perspectivesResponse?.biasDistribution ?? const {},
+        keywords: _perspectivesResponse?.keywords ?? const [],
+        sourceBiasStance: _perspectivesResponse?.sourceBiasStance ?? 'unknown',
+        sourceName: _content?.source.name ?? '',
+        contentId: widget.contentId,
+        comparisonQuality: _perspectivesResponse?.comparisonQuality ?? 'low',
+        divergenceLevel: _perspectivesResponse?.divergenceLevel,
+        partial: _perspectivesResponse?.partial ?? false,
+        onOpenAnalysis: _openPerspectivesAnalysis,
+        consensus:
+            _perspectivesResponse?.consensus ?? const ConsensusBlock.absent(),
+        display: _perspectivesResponse?.display ?? const DisplayGates.hidden(),
+        readerDomain: _readerDomain,
+        flashTick: _consensusFlashTick,
+      ),
+    );
+  }
+
+  /// Tap sur le CTA consensus haut d'article → scroll animé vers la bande
+  /// « Analyse des angles » (même géométrie que [_scrollToNudgeTarget]), puis
+  /// flash d'arrivée via [_consensusFlashTick].
+  void _scrollToConsensusSection() {
+    final ScrollController? active = _activeScrollController;
+    final renderObject = _perspectivesKey.currentContext?.findRenderObject();
+    if (active == null ||
+        renderObject is! RenderBox ||
+        !renderObject.attached) {
+      return;
+    }
+
+    HapticFeedback.selectionClick();
+
+    final topY = renderObject.localToGlobal(Offset.zero).dy;
+    final desiredScreenY = _headerHeight + FacteurSpacing.space3;
+    final target = (active.offset + (topY - desiredScreenY)).clamp(
+      0.0,
+      active.position.maxScrollExtent,
+    );
+
+    active.animateTo(
+      target,
+      duration: const Duration(milliseconds: 620),
+      curve: Curves.easeOutCubic,
+    );
+
+    setState(() => _consensusFlashTick++);
+  }
+
   /// Ouvre le bottom sheet « Analyse Facteur ». Si l'état est encore `idle`,
   /// c'est qu'il n'y avait pas d'analyse cachée (sinon le prefill de
   /// [_fetchPerspectives] aurait déjà seedé `done`) → on lance la requête.
@@ -4069,6 +4155,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space3),
                               ],
+                              // CTA « Comparer les angles » (6C) : entre le
+                              // bloc titre/temps de lecture et le corps.
+                              _buildConsensusCta(),
                               const SizedBox(height: FacteurSpacing.space4),
                             ],
                           ),
@@ -4114,37 +4203,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           const SizedBox(height: FacteurSpacing.space8),
                           Container(
                             color: colors.backgroundPrimary,
-                            // RepaintBoundary : isole les animations d'intro de
-                            // la bande perspectives (AnimatedOpacity/AnimatedSize,
-                            // fondu du carrousel) du corps vertical au-dessus, pour
-                            // qu'elles n'invalident pas la peinture du texte.
-                            child: RepaintBoundary(
-                              child: PerspectivesInlineSection(
-                                key: _perspectivesKey,
-                                status: _perspectivesStatus,
-                                perspectives: _inlinePerspectives,
-                                coverageCount:
-                                    _perspectivesResponse?.coverageCount ?? 0,
-                                biasDistribution:
-                                    _perspectivesResponse?.biasDistribution ??
-                                        const {},
-                                keywords:
-                                    _perspectivesResponse?.keywords ?? const [],
-                                sourceBiasStance:
-                                    _perspectivesResponse?.sourceBiasStance ??
-                                        'unknown',
-                                sourceName: _content?.source.name ?? '',
-                                contentId: widget.contentId,
-                                comparisonQuality:
-                                    _perspectivesResponse?.comparisonQuality ??
-                                        'low',
-                                divergenceLevel:
-                                    _perspectivesResponse?.divergenceLevel,
-                                partial:
-                                    _perspectivesResponse?.partial ?? false,
-                                onOpenAnalysis: _openPerspectivesAnalysis,
-                              ),
-                            ),
+                            // RepaintBoundary (dans le helper) : isole les
+                            // animations d'intro de la bande perspectives du
+                            // corps vertical au-dessus, pour qu'elles
+                            // n'invalident pas la peinture du texte.
+                            child: _buildPerspectivesInlineSection(),
                           ),
                           SizedBox(
                             height: _kFooterContentHeight +
@@ -4715,6 +4778,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
                 ),
 
+                // CTA « Comparer les angles » (6C) : entre le bloc titre/temps
+                // de lecture et le corps d'article, comme la branche
+                // scroll-to-site. Hauteur nulle tant que rien à montrer.
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space4,
+                  ),
+                  child: _buildConsensusCta(),
+                ),
+
                 const SizedBox(height: FacteurSpacing.space4),
 
                 // ── Article section ────────────────────────────────────────
@@ -4781,28 +4854,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ? FacteurSpacing.space6
                         : FacteurSpacing.space8,
                   ),
-                  RepaintBoundary(
-                    // Isole les animations d'intro de la bande perspectives du
-                    // corps vertical au-dessus (même motif que le reader natif).
-                    child: PerspectivesInlineSection(
-                      key: _perspectivesKey,
-                      status: _perspectivesStatus,
-                      perspectives: _inlinePerspectives,
-                      coverageCount: _perspectivesResponse?.coverageCount ?? 0,
-                      biasDistribution:
-                          _perspectivesResponse?.biasDistribution ?? const {},
-                      keywords: _perspectivesResponse?.keywords ?? const [],
-                      sourceBiasStance:
-                          _perspectivesResponse?.sourceBiasStance ?? 'unknown',
-                      sourceName: _content?.source.name ?? '',
-                      contentId: widget.contentId,
-                      comparisonQuality:
-                          _perspectivesResponse?.comparisonQuality ?? 'low',
-                      divergenceLevel: _perspectivesResponse?.divergenceLevel,
-                      partial: _perspectivesResponse?.partial ?? false,
-                      onOpenAnalysis: _openPerspectivesAnalysis,
-                    ),
-                  ),
+                  // Isole les animations d'intro de la bande perspectives du
+                  // corps vertical au-dessus (RepaintBoundary dans le helper).
+                  _buildPerspectivesInlineSection(),
                 ],
 
                 // ── Footer clearance ───────────────────────────────────────

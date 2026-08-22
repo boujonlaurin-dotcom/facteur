@@ -303,9 +303,14 @@ class ConsensusCompareCta extends StatelessWidget {
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 250),
         opacity: variant == ConsensusCtaVariant.none ? 0 : 1,
+        // Respiration au-dessus de la carte, DANS l'AnimatedSize : hauteur
+        // strictement nulle tant qu'il n'y a rien à montrer.
         child: variant == ConsensusCtaVariant.none
             ? const SizedBox.shrink()
-            : _buildVariant(context, variant),
+            : Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: _buildVariant(context, variant),
+              ),
       ),
     );
   }
