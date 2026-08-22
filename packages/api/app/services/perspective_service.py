@@ -65,6 +65,192 @@ NON_EDITORIAL_AGGREGATOR_DOMAINS: frozenset[str] = frozenset(
 PERSPECTIVE_DESC_CHARS = 450
 REFERENCE_DESC_CHARS = 900
 
+# --- Prompt v2 : blocs partagés par les deux analyses ---
+
+# Rôle + méthode du prompt v2 — partagés par `analyze_divergences` (markdown,
+# chemin digest historique) et `analyze_consensus` (JSON structuré, 6C). Les
+# garde-fous qui font la qualité de l'analyse vivent ici : test de recevabilité
+# (un constat doit se reformuler en question) et interdiction de fabriquer un
+# désaccord. Cf. docs/maintenance/maintenance-analyse-facteur-prompt-v2.md.
+_ANALYSIS_ROLE_AND_METHOD = (
+    "Analyste média français. À partir de la couverture d'un même sujet "
+    "par plusieurs rédactions, tu produis deux choses : CE QUI EST ÉTABLI "
+    "et CE QUI FAIT DÉBAT.\n\n"
+    "Méthode obligatoire :\n"
+    "1. Lis tous les titres + résumés.\n"
+    "2. ÉTABLI : isole les faits que les couvertures partagent — "
+    "l'événement, les acteurs, les chiffres et les dates repris d'une "
+    "source à l'autre.\n"
+    "3. DÉBAT : identifie 2 à 3 POINTS LITIGIEUX. Un point litigieux est "
+    "une question de fond sur laquelle les couvertures ne répondent pas "
+    "pareil : la cause, la responsabilité, l'ampleur, l'efficacité, la "
+    "légitimité, la suite probable. Pour chacun, dis quelle position tient "
+    "quel média.\n"
+    "4. TEST DE RECEVABILITÉ : si un constat ne peut pas se reformuler en "
+    "question (« Qui est responsable ? », « Quelle ampleur ? », « Est-ce "
+    "que ça marche ? », « Et après ? »), c'est une variation de style — "
+    "écarte-le. Ne retiens jamais un constat dont le seul contenu est le "
+    "choix d'un mot.\n"
+    "5. Si les couvertures convergent vraiment, ne fabrique pas de "
+    "désaccord : dis-le et nomme ce qui reste inconnu ou non vérifié "
+    "(divergence_level: low).\n\n"
+)
+
+# Clés de sortie propres au markdown legacy (`analyze_divergences`).
+# Spécification des deux clés rédigées (`analysis` markdown + `divergence_level`).
+# `analyze_consensus` les reprend à l'identique : le bloc « Analyse Facteur » du
+# digest continue de lire exactement le même contrat (séparateur `\n\n` entre la
+# section « établi » et la section « en débat », cf. splitAnalysisSections côté
+# mobile), avec les constats structurés en plus.
+_ANALYSIS_MARKDOWN_KEYS = (
+    '- "analysis": texte structuré ainsi :\n'
+    "  1. CE QUI EST ÉTABLI : 2 à 3 phrases (45-75 mots), les faits "
+    "partagés. Aucun nom de média ici, aucun commentaire sur les "
+    "formulations.\n"
+    "  2. Saut de ligne double (\\n\\n).\n"
+    '  3. CE QUI FAIT DÉBAT : 2 à 3 lignes préfixées "→ ", 35-55 mots '
+    "chacune :\n"
+    "     • l'objet du désaccord en **gras** "
+    "(« **la responsabilité du déficit** », "
+    "« **l'ampleur réelle des économies** »),\n"
+    "     • la position A et les médias qui la tiennent (noms en **gras**),\n"
+    "     • la position opposée et les médias qui la tiennent,\n"
+    "     • au plus UN terme cité entre guillemets, en appui du désaccord, "
+    "jamais comme sujet de la ligne.\n"
+    "  Si divergence_level = low : une seule ligne « → », qui constate la "
+    "convergence et nomme ce qui reste en suspens.\n"
+    "  Max 5 segments en gras par ligne. Aucun titre de section "
+    "(l'app les ajoute).\n"
+    '- "divergence_level": "low" (mêmes faits, mêmes conclusions), '
+    '"medium" (désaccords d\'interprétation ou de priorité), "high" '
+    "(conclusions contradictoires sur un même fait).\n\n"
+)
+
+_DIVERGENCE_JSON_KEYS = "Réponds en JSON avec deux clés :\n" + _ANALYSIS_MARKDOWN_KEYS
+
+# Interdits lexicaux et verbes de position — partagés par les deux prompts.
+_ANALYSIS_RULES = (
+    "RÈGLES :\n"
+    "- Uniquement les titres/résumés fournis. Zéro fait inventé, zéro "
+    "intention prêtée à un média sans appui textuel.\n"
+    "- Position inférée d'un titre seul : nuance avec « semble » ou "
+    "« laisse entendre ». Pas de formule répétée en fin de ligne.\n"
+    "- Verbes de position : attribue(nt) à, impute(nt) à, chiffre(nt) à, "
+    "juge(nt), conteste(nt), relativise(nt), tient/tiennent pour, "
+    "avance(nt), doute(nt) de, lie(nt) à.\n"
+    '- Interdits : "met en lumière", "soulève des questions", '
+    '"révèle la fragilité", "fait écho", "interroge", "questionne", '
+    '"d\'après leurs titres".\n'
+    "- Ton assertif, phrases denses, pas de précautions inutiles. "
+    "Français impeccable.\n\n"
+)
+
+# Exemple de sortie markdown legacy (`analyze_divergences`).
+_DIVERGENCE_EXAMPLE = (
+    "EXEMPLE :\n"
+    "« Bercy a présenté le 14 octobre un budget 2026 prévoyant 12 milliards "
+    "d'euros d'économies, dont 4 sur l'assurance maladie et 2 sur les "
+    "collectivités. Le texte arrive à l'Assemblée en novembre, sans "
+    "majorité acquise. Toutes les rédactions donnent les mêmes montants et "
+    "le même calendrier.\\n\\n"
+    "→ **L'origine du déficit** : **Les Échos** et **Le Figaro** "
+    "l'imputent à la dérive des dépenses sociales et chiffrent à 2 points "
+    "de PIB le décrochage ; **Mediapart** et **Libération** l'attribuent "
+    "aux baisses d'impôts consenties depuis 2017, jamais compensées.\\n"
+    "→ **L'ampleur réelle de l'effort** : **Le Monde** rappelle que les "
+    "12 milliards portent sur une hausse tendancielle, soit une "
+    "quasi-stabilité en euros constants ; **Le Point** présente le même "
+    "chiffre comme la coupe la plus forte depuis 2011.\\n"
+    "→ **Les chances d'adoption** : **Politico** et **L'Opinion** jugent "
+    "le 49.3 probable dès décembre ; **La Croix** croit à un compromis "
+    "avec les socialistes sur le volet santé. »"
+)
+
+# --- Analyse des angles 6C (Story 35.1) ---
+
+# Modèle des deux analyses de couverture (legacy markdown et 6C), tracé dans
+# `coverage_analyses.model_version` avec la version de prompt : une régression
+# de ton doit pouvoir être datée sans relire les logs.
+CONSENSUS_MODEL = "mistral-large-latest"
+CONSENSUS_PROMPT_VERSION = "consensus_v1"
+# Budgets annoncés au modèle. Ils sont plus serrés que les plafonds appliqués
+# par `normalize_consensus` (130 / 84) : la troncature Python est un filet, pas
+# la règle — un constat coupé à la phrase est toujours moins bon qu'un constat
+# écrit court.
+CONSENSUS_STATEMENT_PROMPT_CHARS = 120
+CONSENSUS_CTA_PROMPT_CHARS = 75
+
+_CONSENSUS_JSON_KEYS = (
+    "Réponds en JSON avec six clés.\n\n"
+    "Les deux premières sont l'analyse rédigée :\n"
+    + _ANALYSIS_MARKDOWN_KEYS
+    + (
+        "Les quatre suivantes sont les constats structurés. Un constat est un "
+        'objet {"text": "…", "source_domains": ["…"]} où `source_domains` liste '
+        "les domaines — repris **à l'identique entre crochets** dans la "
+        "couverture ci-dessous — des médias qui portent ce constat. Un domaine "
+        "inventé fait écarter le constat entier.\n"
+        '- "agreements" : 1 à 3 accords. `text` est une phrase complète à '
+        f"l'indicatif, {CONSENSUS_STATEMENT_PROMPT_CHARS} caractères maximum, "
+        "sans « selon les médias », sans nom de rédaction dans la phrase.\n"
+        '- "disagreements" : 0 à 2 désaccords, formulés **en axe** et jamais en '
+        "verdict : deux positions nommées, reliées par « ou » "
+        "(« Sa portée : recomposition durable ou retour de l'UMP »), "
+        f"{CONSENSUS_STATEMENT_PROMPT_CHARS} caractères maximum. Liste vide si "
+        "les couvertures convergent : on ne fabrique pas de désaccord.\n"
+        '- "cta_agreement" et "cta_disagreement" : la version courte du premier '
+        f"accord et du premier désaccord, {CONSENSUS_CTA_PROMPT_CHARS} "
+        "caractères maximum, même forme. Ce n'est pas une troncature mais une "
+        "reformulation qui tient debout seule ; `null` si la liste est vide.\n\n"
+    )
+)
+
+_CONSENSUS_RULES_EXTRA = (
+    "- Dans `agreements` / `disagreements` / `cta_*` : texte brut, aucun "
+    "markdown, aucun gras, aucun tiret cadratin.\n"
+    "- Un accord n'est un accord que si au moins deux médias de la couverture "
+    "le portent. Un constat porté par un seul média n'a pas sa place.\n\n"
+)
+
+_CONSENSUS_EXAMPLE = (
+    "EXEMPLE de constats structurés (le même sujet que ci-dessus) :\n"
+    '"agreements": [\n'
+    '  {"text": "Le budget 2026 prévoit 12 milliards d\'économies, dont 4 sur '
+    'l\'assurance maladie.", "source_domains": ["lesechos.fr", "lemonde.fr", '
+    '"lefigaro.fr"]},\n'
+    '  {"text": "Le texte arrive à l\'Assemblée en novembre sans majorité '
+    'acquise.", "source_domains": ["lemonde.fr", "liberation.fr"]}\n'
+    "],\n"
+    '"disagreements": [\n'
+    '  {"text": "L\'origine du déficit : dérive des dépenses sociales ou '
+    'baisses d\'impôts non compensées.", "source_domains": ["lesechos.fr", '
+    '"lefigaro.fr", "mediapart.fr", "liberation.fr"]}\n'
+    "],\n"
+    '"cta_agreement": {"text": "12 milliards d\'économies, dont 4 sur la '
+    'santé."},\n'
+    '"cta_disagreement": {"text": "L\'origine du déficit : dépenses ou '
+    'recettes."}'
+)
+
+# Prompts système complets, assemblés une fois à l'import : aucune part n'est
+# variable d'un appel à l'autre.
+_DIVERGENCE_SYSTEM_PROMPT = (
+    _ANALYSIS_ROLE_AND_METHOD
+    + _DIVERGENCE_JSON_KEYS
+    + _ANALYSIS_RULES
+    + _DIVERGENCE_EXAMPLE
+)
+
+_CONSENSUS_SYSTEM_PROMPT = (
+    _ANALYSIS_ROLE_AND_METHOD
+    + _CONSENSUS_JSON_KEYS
+    + _ANALYSIS_RULES
+    + _CONSENSUS_RULES_EXTRA
+    + _DIVERGENCE_EXAMPLE
+    + "\n\n"
+    + _CONSENSUS_EXAMPLE
+)
+
 
 def _parse_entity_names(
     entities: list[str] | None, types: set[str] | None = None
@@ -528,125 +714,156 @@ class PerspectiveService:
         - "divergence_level": str — "low", "medium", or "high"
         Or None on failure.
         """
-        from app.services.editorial.llm_client import EditorialLLMClient
-
         if not perspectives:
             return None
 
-        client = EditorialLLMClient()
-        if not client.is_ready:
+        result = await self._run_coverage_prompt(
+            system=_DIVERGENCE_SYSTEM_PROMPT,
+            user_message=self._build_coverage_user_message(
+                article_title=article_title,
+                pivot_label=source_name,
+                source_bias=source_bias,
+                article_description=article_description,
+                perspectives=perspectives,
+                with_domains=False,
+            ),
+            max_tokens=900,
+            log_event="analyze_divergences_error",
+        )
+        # Contrat historique : sans `analysis`, le bloc « Analyse Facteur » du
+        # digest n'a rien à afficher — None plutôt qu'un dict incomplet.
+        return result if result and "analysis" in result else None
+
+    async def analyze_consensus(
+        self,
+        article_title: str,
+        source_name: str,
+        source_bias: str,
+        source_domain: str,
+        perspectives: list[dict],  # [{title, source_name, source_domain, ...}]
+        article_description: str | None = None,
+        call_site: str = "editorial",
+    ) -> dict | None:
+        """Analyse des angles 6C — un seul appel LLM, sortie structurée.
+
+        Superset de `analyze_divergences` : le JSON porte les **deux clés
+        historiques** (`analysis` markdown + `divergence_level`, le contrat que
+        le bloc du digest lit via `splitAnalysisSections` côté mobile) **et**
+        les constats attribués dont le Reader 6C a besoin (`agreements`,
+        `disagreements`, `cta_agreement`, `cta_disagreement`).
+
+        C'est volontairement le même appel, au même endroit (étape 3C du
+        pipeline) : le lot ne change pas le nombre d'appels `mistral-large`,
+        seulement ~250 tokens de sortie en plus. Les variantes du CTA sont
+        générées ici plutôt que tronquées à l'affichage : « on coupe la phrase
+        côté génération, pas côté CSS ».
+
+        La sortie n'est **jamais** persistée telle quelle : `normalize_consensus`
+        recalcule `support_count` sur le corpus réel, tronque à la phrase et
+        écarte les domaines hallucinés.
+
+        Returns le dict brut du modèle, ou None si l'appel échoue.
+        """
+        if not perspectives:
             return None
 
-        perspectives_lines = []
+        pivot_domain = normalize_domain(source_domain)
+        pivot_label = f"{source_name} [{pivot_domain}]" if pivot_domain else source_name
+        return await self._run_coverage_prompt(
+            system=_CONSENSUS_SYSTEM_PROMPT,
+            user_message=self._build_coverage_user_message(
+                article_title=article_title,
+                pivot_label=pivot_label,
+                source_bias=source_bias,
+                article_description=article_description,
+                perspectives=perspectives,
+                with_domains=True,
+            ),
+            # 900 suffisait au seul markdown ; les constats structurés ajoutent
+            # ~250 tokens de sortie (plan §D2).
+            max_tokens=1400,
+            log_event="analyze_consensus_error",
+            # "reader_consensus" sur le chemin paresseux (Story 35.2) : le
+            # garde-fou de budget quotidien compte ce call site seul, sans
+            # confondre avec la pré-génération du pipeline ("editorial").
+            call_site=call_site,
+        )
+
+    @staticmethod
+    def _build_coverage_user_message(
+        *,
+        article_title: str,
+        pivot_label: str,
+        source_bias: str,
+        article_description: str | None,
+        perspectives: list[dict],
+        with_domains: bool,
+    ) -> str:
+        """Message utilisateur des deux analyses : pivot + couverture.
+
+        `with_domains` ajoute le domaine entre crochets (`Le Monde
+        [lemonde.fr]`) : c'est la seule clé d'attribution de l'analyse 6C —
+        celle que le modèle doit recopier dans `source_domains` et que
+        `normalize_consensus` recroise avec le corpus. Le prompt legacy ne la
+        mentionne pas, donc on ne la lui envoie pas.
+        """
+        lines = []
         for p in perspectives:
             stance = STANCE_LABELS.get(
                 p.get("bias_stance", "unknown"), p.get("bias_stance", "?")
             )
-            line = f'- "{p["title"]}" ({p["source_name"]}, {stance})'
+            label = p["source_name"]
+            if with_domains:
+                domain = normalize_domain(p.get("source_domain"))
+                if domain:
+                    label = f"{label} [{domain}]"
+            line = f'- "{p["title"]}" ({label}, {stance})'
             desc = p.get("description")
             if desc:
                 line += f" — {desc[:PERSPECTIVE_DESC_CHARS]}"
-            perspectives_lines.append(line)
-        perspectives_text = "\n".join(perspectives_lines)
-
-        system = (
-            "Analyste média français. À partir de la couverture d'un même sujet "
-            "par plusieurs rédactions, tu produis deux choses : CE QUI EST ÉTABLI "
-            "et CE QUI FAIT DÉBAT.\n\n"
-            "Méthode obligatoire :\n"
-            "1. Lis tous les titres + résumés.\n"
-            "2. ÉTABLI : isole les faits que les couvertures partagent — "
-            "l'événement, les acteurs, les chiffres et les dates repris d'une "
-            "source à l'autre.\n"
-            "3. DÉBAT : identifie 2 à 3 POINTS LITIGIEUX. Un point litigieux est "
-            "une question de fond sur laquelle les couvertures ne répondent pas "
-            "pareil : la cause, la responsabilité, l'ampleur, l'efficacité, la "
-            "légitimité, la suite probable. Pour chacun, dis quelle position tient "
-            "quel média.\n"
-            "4. TEST DE RECEVABILITÉ : si un constat ne peut pas se reformuler en "
-            "question (« Qui est responsable ? », « Quelle ampleur ? », « Est-ce "
-            "que ça marche ? », « Et après ? »), c'est une variation de style — "
-            "écarte-le. Ne retiens jamais un constat dont le seul contenu est le "
-            "choix d'un mot.\n"
-            "5. Si les couvertures convergent vraiment, ne fabrique pas de "
-            "désaccord : dis-le et nomme ce qui reste inconnu ou non vérifié "
-            "(divergence_level: low).\n\n"
-            "Réponds en JSON avec deux clés :\n"
-            '- "analysis": texte structuré ainsi :\n'
-            "  1. CE QUI EST ÉTABLI : 2 à 3 phrases (45-75 mots), les faits "
-            "partagés. Aucun nom de média ici, aucun commentaire sur les "
-            "formulations.\n"
-            "  2. Saut de ligne double (\\n\\n).\n"
-            '  3. CE QUI FAIT DÉBAT : 2 à 3 lignes préfixées "→ ", 35-55 mots '
-            "chacune :\n"
-            "     • l'objet du désaccord en **gras** "
-            "(« **la responsabilité du déficit** », "
-            "« **l'ampleur réelle des économies** »),\n"
-            "     • la position A et les médias qui la tiennent (noms en **gras**),\n"
-            "     • la position opposée et les médias qui la tiennent,\n"
-            "     • au plus UN terme cité entre guillemets, en appui du désaccord, "
-            "jamais comme sujet de la ligne.\n"
-            "  Si divergence_level = low : une seule ligne « → », qui constate la "
-            "convergence et nomme ce qui reste en suspens.\n"
-            "  Max 5 segments en gras par ligne. Aucun titre de section "
-            "(l'app les ajoute).\n"
-            '- "divergence_level": "low" (mêmes faits, mêmes conclusions), '
-            '"medium" (désaccords d\'interprétation ou de priorité), "high" '
-            "(conclusions contradictoires sur un même fait).\n\n"
-            "RÈGLES :\n"
-            "- Uniquement les titres/résumés fournis. Zéro fait inventé, zéro "
-            "intention prêtée à un média sans appui textuel.\n"
-            "- Position inférée d'un titre seul : nuance avec « semble » ou "
-            "« laisse entendre ». Pas de formule répétée en fin de ligne.\n"
-            "- Verbes de position : attribue(nt) à, impute(nt) à, chiffre(nt) à, "
-            "juge(nt), conteste(nt), relativise(nt), tient/tiennent pour, "
-            "avance(nt), doute(nt) de, lie(nt) à.\n"
-            '- Interdits : "met en lumière", "soulève des questions", '
-            '"révèle la fragilité", "fait écho", "interroge", "questionne", '
-            '"d\'après leurs titres".\n'
-            "- Ton assertif, phrases denses, pas de précautions inutiles. "
-            "Français impeccable.\n\n"
-            "EXEMPLE :\n"
-            "« Bercy a présenté le 14 octobre un budget 2026 prévoyant 12 milliards "
-            "d'euros d'économies, dont 4 sur l'assurance maladie et 2 sur les "
-            "collectivités. Le texte arrive à l'Assemblée en novembre, sans "
-            "majorité acquise. Toutes les rédactions donnent les mêmes montants et "
-            "le même calendrier.\\n\\n"
-            "→ **L'origine du déficit** : **Les Échos** et **Le Figaro** "
-            "l'imputent à la dérive des dépenses sociales et chiffrent à 2 points "
-            "de PIB le décrochage ; **Mediapart** et **Libération** l'attribuent "
-            "aux baisses d'impôts consenties depuis 2017, jamais compensées.\\n"
-            "→ **L'ampleur réelle de l'effort** : **Le Monde** rappelle que les "
-            "12 milliards portent sur une hausse tendancielle, soit une "
-            "quasi-stabilité en euros constants ; **Le Point** présente le même "
-            "chiffre comme la coupe la plus forte depuis 2011.\\n"
-            "→ **Les chances d'adoption** : **Politico** et **L'Opinion** jugent "
-            "le 49.3 probable dès décembre ; **La Croix** croit à un compromis "
-            "avec les socialistes sur le volet santé. »"
-        )
+            lines.append(line)
 
         source_stance = STANCE_LABELS.get(source_bias, source_bias)
-        user_message = (
+        message = (
             "Sujet d'actualité couvert par plusieurs médias.\n\n"
-            f'Article de référence : "{article_title}" ({source_name}, {source_stance})'
+            f'Article de référence : "{article_title}" ({pivot_label}, {source_stance})'
         )
         if article_description:
-            user_message += f"\nRésumé : {article_description[:REFERENCE_DESC_CHARS]}"
-        user_message += f"\n\nCouverture par d'autres médias :\n{perspectives_text}"
+            message += f"\nRésumé : {article_description[:REFERENCE_DESC_CHARS]}"
+        return message + "\n\nCouverture par d'autres médias :\n" + "\n".join(lines)
 
+    @staticmethod
+    async def _run_coverage_prompt(
+        *,
+        system: str,
+        user_message: str,
+        max_tokens: int,
+        log_event: str,
+        call_site: str = "editorial",
+    ) -> dict | None:
+        """Un appel `mistral-large` sur la couverture d'un sujet.
+
+        Cycle de vie du client centralisé ici : les deux analyses ouvrent puis
+        ferment le leur, il n'y en a plus qu'une copie à corriger le jour où on
+        voudra réutiliser le client long du pipeline.
+        """
+        from app.services.editorial.llm_client import EditorialLLMClient
+
+        client = EditorialLLMClient()
+        if not client.is_ready:
+            return None
         try:
             result = await client.chat_json(
                 system=system,
                 user_message=user_message,
-                model="mistral-large-latest",
+                model=CONSENSUS_MODEL,
                 temperature=0.3,
-                max_tokens=900,
+                max_tokens=max_tokens,
+                call_site=call_site,
             )
-            if isinstance(result, dict) and "analysis" in result:
-                return result
-            return None
+            return result if isinstance(result, dict) else None
         except Exception as e:
-            logger.error("analyze_divergences_error", error=str(e))
+            logger.error(log_event, error=str(e))
             return None
         finally:
             await client.close()

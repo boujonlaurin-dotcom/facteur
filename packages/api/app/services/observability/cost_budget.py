@@ -45,22 +45,24 @@ def _month_start_utc() -> datetime:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
-async def monthly_call_count(
-    provider: str, *, call_site: str | None = None, force_refresh: bool = False
-) -> int:
-    """Nombre d'appels (status != error) ce mois calendaire (UTC).
+def _day_start_utc() -> datetime:
+    return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    Si `call_site` est fourni, compte uniquement ce call site — sinon tout le
-    provider. **Important** pour les caps : le provider `mistral` couvre
-    classif + éditorial + veille + recherche ; ne plafonner que le call site
-    voulu (ex. `smart_search_mistral`) évite que le trafic système ne consomme
-    le budget du fallback recherche.
+
+async def _call_count_since(
+    provider: str,
+    since: datetime,
+    *,
+    cache_key: str,
+    call_site: str | None,
+    force_refresh: bool,
+) -> int:
+    """COUNT des appels (status != error) depuis ``since``, caché par clé.
 
     Caché `cost_budget_cache_ttl_s` secondes. Best-effort : en cas d'erreur DB,
     renvoie la dernière valeur connue (ou 0), pour ne jamais bloquer un appel
     métier sur une panne d'observabilité.
     """
-    cache_key = provider if call_site is None else f"{provider}:{call_site}"
     ttl = get_settings().cost_budget_cache_ttl_s
     now = time.monotonic()
     cached = _cache.get(cache_key)
@@ -71,7 +73,7 @@ async def monthly_call_count(
         async with safe_async_session() as session:
             conditions = [
                 ApiUsageEvent.provider == provider,
-                ApiUsageEvent.created_at >= _month_start_utc(),
+                ApiUsageEvent.created_at >= since,
                 ApiUsageEvent.status != "error",
             ]
             if call_site is not None:
@@ -93,11 +95,63 @@ async def monthly_call_count(
         return cached[0] if cached is not None else 0
 
 
+async def monthly_call_count(
+    provider: str, *, call_site: str | None = None, force_refresh: bool = False
+) -> int:
+    """Nombre d'appels (status != error) ce mois calendaire (UTC).
+
+    Si `call_site` est fourni, compte uniquement ce call site — sinon tout le
+    provider. **Important** pour les caps : le provider `mistral` couvre
+    classif + éditorial + veille + recherche ; ne plafonner que le call site
+    voulu (ex. `smart_search_mistral`) évite que le trafic système ne consomme
+    le budget du fallback recherche.
+    """
+    cache_key = provider if call_site is None else f"{provider}:{call_site}"
+    return await _call_count_since(
+        provider,
+        _month_start_utc(),
+        cache_key=cache_key,
+        call_site=call_site,
+        force_refresh=force_refresh,
+    )
+
+
+async def daily_call_count(
+    provider: str, *, call_site: str | None = None, force_refresh: bool = False
+) -> int:
+    """Nombre d'appels (status != error) depuis minuit UTC.
+
+    Même mécanique persistante que le compteur mensuel (survit aux restarts, là
+    où un compteur en mémoire repartait de zéro à chaque déploiement). Sert le
+    garde-fou quotidien du chemin paresseux 6C (`reader_consensus`, Story 35.2).
+    Clé de cache distincte du mensuel : les deux fenêtres coexistent.
+    """
+    cache_key = (
+        f"{provider}:day" if call_site is None else f"{provider}:{call_site}:day"
+    )
+    return await _call_count_since(
+        provider,
+        _day_start_utc(),
+        cache_key=cache_key,
+        call_site=call_site,
+        force_refresh=force_refresh,
+    )
+
+
 async def is_over_cap(provider: str, cap: int, *, call_site: str | None = None) -> bool:
     """True si le call site (ou le provider) a atteint son cap mensuel."""
     if cap <= 0:
         return False
     return await monthly_call_count(provider, call_site=call_site) >= cap
+
+
+async def is_over_daily_cap(
+    provider: str, cap: int, *, call_site: str | None = None
+) -> bool:
+    """True si le call site (ou le provider) a atteint son cap quotidien."""
+    if cap <= 0:
+        return False
+    return await daily_call_count(provider, call_site=call_site) >= cap
 
 
 def invalidate_cache() -> None:

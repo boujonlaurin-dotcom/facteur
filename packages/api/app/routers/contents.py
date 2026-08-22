@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.content import Content
@@ -23,8 +24,15 @@ from app.schemas.content import (
     NoteUpsertRequest,
 )
 from app.services.collection_service import CollectionService
+from app.services.consensus_reader import (
+    READER_CONSENSUS_CALL_SITE,
+    attach_consensus_blocks,
+    write_through_analysis,
+)
 from app.services.content_service import ContentService
+from app.services.editorial.consensus import coerce_analysis_text
 from app.services.feed_cache import FEED_CACHE
+from app.services.observability.cost_budget import is_over_daily_cap
 from app.services.perspective_service import normalize_domain, perspective_to_dict
 from app.services.title_annotation_service import (
     ClusterAnnotations,
@@ -1413,7 +1421,15 @@ async def get_perspectives(
         # Refresh the pre-computed deep reco (cheap PK lookup): the editorial
         # batch may have filled the store after this body was first cached.
         await _attach_deep_from_store(db, cached_response, content_id)
-        return cached_response
+        # Blocs 6C résolus PAR utilisateur à chaque requête (Story 35.2) : le
+        # corps caché est partagé entre users, l'attribution des logos ne doit
+        # jamais y entrer — d'où une copie renvoyée, jamais le corps muté.
+        return await attach_consensus_blocks(
+            db,
+            cached_response,
+            content_id=content_id,
+            user_id=UUID(current_user_id),
+        )
 
     # Track perspective open (Story 19.1 — Lettres du Facteur, action 4).
     # It must never delay the reader, and cache hits stay DB-free.
@@ -1549,7 +1565,13 @@ async def get_perspectives(
             bias_groups=bias_groups,
             bias_sum=sum(stored_bias.values()),
         )
-        return response_body
+        # Copie par-user : le corps mis en cache ci-dessus reste sans blocs 6C.
+        return await attach_consensus_blocks(
+            db,
+            response_body,
+            content_id=content_id,
+            user_id=UUID(current_user_id),
+        )
 
     # Live path (non-digest content_id, or stored snapshot missing).
     # Mirrors the editorial pipeline: include cluster's own sources so the
@@ -1674,7 +1696,13 @@ async def get_perspectives(
         current_user_id,
     )
 
-    return response_body
+    # Copie par-user : le corps mis en cache ci-dessus reste sans blocs 6C.
+    return await attach_consensus_blocks(
+        db,
+        response_body,
+        content_id=content_id,
+        user_id=UUID(current_user_id),
+    )
 
 
 @router.post("/{content_id}/perspectives/analyze", status_code=status.HTTP_200_OK)
@@ -1684,7 +1712,14 @@ async def analyze_perspectives(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Analyse LLM des divergences éditoriales entre perspectives.
+    Analyse LLM des angles éditoriaux entre perspectives (chemin paresseux 6C).
+
+    Story 35.2 : `analyze_consensus` (JSON superset) remplace
+    `analyze_divergences`. La réponse reste compatible (`analysis` markdown) ;
+    les constats structurés sont écrits en write-through dans
+    `coverage_analyses` + liens, servis ensuite par GET /perspectives.
+    Garde-fou de budget quotidien (`consensus_lazy_daily_cap`) : réponse
+    `throttled` sans appel LLM une fois le cap atteint.
     Persiste en DB pour réutilisation inter-utilisateurs.
     Cache in-memory L1 (2h TTL) pour éviter des hits DB répétés.
     """
@@ -1746,19 +1781,78 @@ async def analyze_perspectives(
 
     source_name = content.source.name if content.source else "Unknown"
     source_bias = perspectives_data.get("source_bias_stance", "unknown")
+    source_domain, _ = _extract_source_context(content)
 
+    # Garde-fou de budget quotidien (Story 35.2) : ce chemin est le seul appel
+    # `mistral-large` déclenchable par un tap utilisateur — un pic d'ouvertures
+    # Reader ne doit pas faire dériver la facture. Compteur persistant sur
+    # `api_usage_events` (survit aux restarts, même motif que le cap mensuel
+    # PR-S3). Réponse volontairement NON cachée : on retente à la prochaine
+    # fenêtre, et le COUNT est lui-même caché 120 s — un tap répété ne martèle
+    # pas la DB.
+    daily_cap = get_settings().consensus_lazy_daily_cap
+    if await is_over_daily_cap(
+        "mistral", daily_cap, call_site=READER_CONSENSUS_CALL_SITE
+    ):
+        logger.warning(
+            "perspective_analysis_daily_cap_reached",
+            content_id=cache_key,
+            cap=daily_cap,
+        )
+        return {
+            "content_id": cache_key,
+            "analysis": None,
+            "divergence_level": None,
+            "cached": False,
+            "throttled": True,
+        }
+
+    # Story 35.2 : `analyze_consensus` remplace `analyze_divergences` — même
+    # appel, JSON superset. Le markdown `analysis` alimente la réponse legacy
+    # et `perspective_analyses` (parc installé) ; les constats structurés
+    # partent en write-through dans `coverage_analyses` pour le Reader 6C.
     service = PerspectiveService(db=db)
-    analysis = await service.analyze_divergences(
+    analysis = await service.analyze_consensus(
         article_title=content.title,
         source_name=source_name,
         source_bias=source_bias,
+        source_domain=source_domain or "",
         perspectives=perspectives_list,
         article_description=content.description,
+        call_site=READER_CONSENSUS_CALL_SITE,
     )
 
-    # Extract fields from dict returned by analyze_divergences()
-    analysis_text = analysis.get("analysis") if analysis else None
+    analysis_text = coerce_analysis_text(analysis.get("analysis")) if analysis else None
     divergence_level = analysis.get("divergence_level") if analysis else None
+
+    # Write-through sujet + liens (best-effort, comme la pré-génération : un
+    # échec DB ne prive pas l'utilisateur du markdown qu'il vient de payer).
+    # On persiste aussi une sortie inexploitable (`state=unavailable`) : sans
+    # cette trace, le Reader afficherait « analyse en cours » indéfiniment.
+    if isinstance(analysis, dict):
+        try:
+            payload = await write_through_analysis(
+                db,
+                raw_result=analysis,
+                pivot_content_id=content_id,
+                pivot_domain=source_domain,
+                pivot_bias=source_bias,
+                perspectives=perspectives_list,
+                coverage_count=int(
+                    perspectives_data.get("coverage_count")
+                    or (len(perspectives_list) + 1)
+                ),
+            )
+            await db.commit()
+            logger.info(
+                "coverage_analysis_write_through",
+                content_id=cache_key,
+                state=payload.state,
+                qualifier=payload.qualifier,
+            )
+        except Exception as e:
+            logger.error("coverage_analysis_write_through_error", error=str(e))
+            await db.rollback()
 
     # Persist to DB for future users (ON CONFLICT DO NOTHING for concurrent requests)
     if analysis_text:
