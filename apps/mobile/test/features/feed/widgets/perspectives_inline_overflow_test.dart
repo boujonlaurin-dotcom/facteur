@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/feed/repositories/feed_repository.dart'
+    show DisplayGates;
+import 'package:facteur/features/feed/widgets/consensus_widgets.dart';
 import 'package:facteur/features/feed/widgets/coverage_spectrum_bar.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
@@ -49,6 +52,7 @@ void main() {
                 },
                 contentId: 'test',
                 divergenceLevel: 'medium',
+                display: DisplayGates.fromCoverageCount(6),
               ),
             ),
           ),
@@ -73,7 +77,7 @@ void main() {
       );
 
       final titleRender = tester.renderObject<RenderParagraph>(
-        find.text('Comparer les angles · 6 médias'),
+        find.textContaining(consensusSectionTitle, findRichText: true),
       );
       expect(titleRender.didExceedMaxLines, isFalse);
 
@@ -107,6 +111,7 @@ void main() {
                 coverageCount: 11,
                 biasDistribution: const {'left': 9, 'right': 1},
                 contentId: 'many-sources',
+                display: DisplayGates.fromCoverageCount(11),
               ),
             ),
           ),
@@ -165,6 +170,7 @@ void main() {
               coverageCount: 4,
               biasDistribution: const {'center': 1},
               contentId: 'mixed',
+              display: DisplayGates.fromCoverageCount(4),
             ),
           ),
         ),
@@ -218,6 +224,7 @@ void main() {
               ],
               coverageCount: 3,
               contentId: 'all-unknown',
+              display: DisplayGates.fromCoverageCount(3),
             ),
           ),
         ),

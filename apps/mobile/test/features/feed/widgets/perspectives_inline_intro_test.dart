@@ -5,6 +5,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/widgets/divergence_inline_badge.dart';
+import 'package:facteur/features/feed/repositories/feed_repository.dart'
+    show ConsensusBlock, DisplayGates;
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
 Perspective _p(String name, {String bias = 'center'}) => Perspective(
@@ -20,6 +22,7 @@ Future<void> _pumpInline(
   required List<Perspective> perspectives,
   PerspectivesSectionStatus status = PerspectivesSectionStatus.ready,
   String? divergenceLevel,
+  ConsensusBlock consensus = const ConsensusBlock.absent(),
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -38,6 +41,10 @@ Future<void> _pumpInline(
                 sourceBiasStance: 'center',
                 sourceName: 'Test',
                 divergenceLevel: divergenceLevel,
+                consensus: consensus,
+                display: DisplayGates.fromCoverageCount(
+                  perspectives.length + 1,
+                ),
               ),
             ),
           ),
@@ -78,7 +85,9 @@ void main() {
     expect(find.textContaining(infoSnippet), findsNothing);
   });
 
-  testWidgets('ready high divergence → badge POLARISÉ', (tester) async {
+  testWidgets(
+      'badge POLARISÉ supprimé du Reader, même avec divergenceLevel fourni',
+      (tester) async {
     await _pumpInline(
       tester,
       perspectives: [_p('A'), _p('B', bias: 'right')],
@@ -86,33 +95,29 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 1));
 
-    expect(find.text('POLARISÉ'), findsOneWidget);
+    // « polarisé » ne vient plus que du qualifier backend (header) — ici
+    // absent → aucune mention, et plus jamais de badge.
+    expect(find.byType(DivergenceInlineBadge), findsNothing);
+    expect(find.text('POLARISÉ'), findsNothing);
+    expect(find.textContaining('polarisé', findRichText: true), findsNothing);
   });
 
-  testWidgets('ready low divergence → badge TRAITEMENTS SIMILAIRES',
-      (tester) async {
+  testWidgets('qualifier backend → suffixe unique au header', (tester) async {
     await _pumpInline(
       tester,
       perspectives: [_p('A'), _p('B', bias: 'right')],
-      divergenceLevel: 'low',
+      divergenceLevel: 'high',
+      consensus: const ConsensusBlock(
+        state: ConsensusBlock.stateAvailable,
+        qualifier: 'polarized',
+      ),
     );
     await tester.pump(const Duration(seconds: 1));
 
-    expect(find.text('TRAITEMENTS SIMILAIRES'), findsOneWidget);
-  });
-
-  testWidgets('badge de polarisation en en-tête à l’échelle 1.0',
-      (tester) async {
-    await _pumpInline(
-      tester,
-      perspectives: [_p('A'), _p('B', bias: 'right')],
-      divergenceLevel: 'medium',
+    expect(
+      find.textContaining('(polarisé)', findRichText: true),
+      findsOneWidget,
     );
-    await tester.pump(const Duration(seconds: 1));
-
-    final badge = tester.widget<DivergenceInlineBadge>(
-      find.byType(DivergenceInlineBadge),
-    );
-    expect(badge.scale, 1.0);
+    expect(find.byType(DivergenceInlineBadge), findsNothing);
   });
 }

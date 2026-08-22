@@ -4,8 +4,17 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/detail/screens/content_detail_screen.dart';
+import 'package:facteur/features/digest/widgets/divergence_inline_badge.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart'
-    show PerspectiveData, PerspectivesResponse, TokenSpan;
+    show
+        ConsensusBlock,
+        ConsensusCta,
+        ConsensusStatement,
+        DisplayGates,
+        PerspectiveData,
+        PerspectivesResponse,
+        TokenSpan;
+import 'package:facteur/features/feed/widgets/consensus_widgets.dart';
 import 'package:facteur/features/feed/widgets/coverage_comparison_card.dart';
 import 'package:facteur/features/feed/widgets/coverage_spectrum_bar.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
@@ -26,6 +35,8 @@ Future<void> _pumpInline(
   int coverageCount = 0,
   String? divergenceLevel,
   VoidCallback? onOpenAnalysis,
+  ConsensusBlock consensus = const ConsensusBlock.absent(),
+  DisplayGates? display,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -44,6 +55,13 @@ Future<void> _pumpInline(
                 sourceName: 'Test',
                 divergenceLevel: divergenceLevel,
                 onOpenAnalysis: onOpenAnalysis,
+                consensus: consensus,
+                display: display ??
+                    DisplayGates.fromCoverageCount(
+                      coverageCount > 0
+                          ? coverageCount
+                          : perspectives.length + 1,
+                    ),
               ),
             ),
           ),
@@ -59,7 +77,7 @@ void main() {
       (tester) async {
     await _pumpInline(tester, status: PerspectivesSectionStatus.loading);
 
-    expect(find.text('Comparer les angles'), findsOneWidget);
+    expect(find.text(consensusSectionTitle, findRichText: true), findsOneWidget);
     expect(find.byType(CoverageSpectrumBarShimmer), findsOneWidget);
     // Squelette : le carrousel garde sa hauteur (pas un mince filet), sans
     // vraies cartes ni CTA, et sans message « … ».
@@ -73,7 +91,7 @@ void main() {
       223,
     );
     expect(find.byType(CoverageComparisonCard), findsNothing);
-    expect(find.text('Analyse Facteur'), findsNothing);
+    expect(find.text(consensusAiCardTitle), findsNothing);
     expect(find.textContaining('Recherche'), findsNothing);
   });
 
@@ -125,8 +143,8 @@ void main() {
       (tester) async {
     await _pumpInline(tester, status: PerspectivesSectionStatus.empty);
 
-    // Titre sans count + message explicite, lisibles pendant la pause.
-    expect(find.text('Comparer les angles'), findsOneWidget);
+    // Titre + message explicite, lisibles pendant la pause.
+    expect(find.text(consensusSectionTitle, findRichText: true), findsOneWidget);
     expect(find.text("Pas d'autre source trouvée"), findsOneWidget);
     expect(find.byType(CoverageSpectrumBarShimmer), findsNothing);
     expect(
@@ -151,32 +169,82 @@ void main() {
     expect(find.text("Pas d'autre source trouvée"), findsNothing);
   });
 
-  testWidgets('ready : carrousel de cartes + carte CTA, pas de caret',
+  testWidgets(
+      'ready complet : qualifier au header, constats > barre > sous-titre > '
+      'carrousel, badge POLARISÉ absent', (tester) async {
+    await _pumpInline(
+      tester,
+      status: PerspectivesSectionStatus.ready,
+      perspectives: [_p('A'), _p('B', bias: 'left')],
+      coverageCount: 3,
+      divergenceLevel: 'high',
+      consensus: const ConsensusBlock(
+        state: ConsensusBlock.stateAvailable,
+        qualifier: 'polarized',
+        agreements: [ConsensusStatement(text: 'Un accord partagé.')],
+        disagreements: [ConsensusStatement(text: 'Un axe de désaccord.')],
+        cta: ConsensusCta(),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    // Header : « Analyse des angles (polarisé) » — le qualificatif vient du
+    // backend et n'apparaît qu'une fois (badge POLARISÉ supprimé du Reader).
+    expect(
+      find.textContaining('(polarisé)', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.byType(DivergenceInlineBadge), findsNothing);
+
+    // Constats présents.
+    final agreement =
+        find.textContaining('Un accord partagé.', findRichText: true);
+    final disagreement =
+        find.textContaining('Un axe de désaccord.', findRichText: true);
+    expect(agreement, findsOneWidget);
+    expect(disagreement, findsOneWidget);
+
+    // Ordre vertical : constats > barre > sous-titre > carrousel.
+    final bar = find.byType(CoverageSpectrumBar);
+    final subtitle = find.text(consensusCarouselSubtitle(3));
+    final carousel = find.byType(ListView);
+    expect(bar, findsOneWidget);
+    expect(subtitle, findsOneWidget);
+    expect(carousel, findsOneWidget);
+    expect(
+      tester.getRect(agreement).top,
+      lessThan(tester.getRect(disagreement).top),
+    );
+    expect(
+      tester.getRect(disagreement).bottom,
+      lessThanOrEqualTo(tester.getRect(bar).top),
+    );
+    expect(
+      tester.getRect(bar).bottom,
+      lessThanOrEqualTo(tester.getRect(subtitle).top),
+    );
+    expect(
+      tester.getRect(subtitle).bottom,
+      lessThanOrEqualTo(tester.getRect(carousel).top),
+    );
+    expect(tester.getSize(carousel).height, 223);
+  });
+
+  testWidgets('ready : carte IA en DERNIER, après les cartes sources',
       (tester) async {
     await _pumpInline(
       tester,
       status: PerspectivesSectionStatus.ready,
       perspectives: [_p('A'), _p('B', bias: 'left')],
+      coverageCount: 3,
     );
     await tester.pump(const Duration(seconds: 1));
 
-    expect(
-      find.text('Comparer les angles · 3 médias'),
-      findsOneWidget,
-    );
-    expect(find.byType(CoverageSpectrumBar), findsOneWidget);
-    // Carte CTA Analyse en tête du carrousel.
-    expect(find.text('Analyse Facteur'), findsOneWidget);
-    // La ListView virtualise : seule la première carte est montée au départ,
-    // mais la deuxième doit rester atteignable par scroll.
-    expect(find.byType(CoverageComparisonCard), findsOneWidget);
-    final secondCard = find.byWidgetPredicate(
-      (widget) =>
-          widget is CoverageComparisonCard &&
-          widget.perspective.sourceName == 'A',
-    );
+    // La ListView virtualise : la carte IA (dernier item) se rejoint par
+    // scroll, après TOUTES les cartes sources.
+    final aiCard = find.text(consensusAiCardTitle);
     await tester.scrollUntilVisible(
-      secondCard,
+      aiCard,
       300,
       scrollable: find
           .descendant(
@@ -185,31 +253,106 @@ void main() {
           )
           .first,
     );
-    expect(secondCard, findsOneWidget);
-    expect(
-      tester.getSize(find.byType(CoverageComparisonCard).first).height,
-      192,
-    );
-    final horizontalCarousel = tester.widget<ListView>(find.byType(ListView));
-    expect(horizontalCarousel.scrollDirection, Axis.horizontal);
-    expect(tester.getSize(find.byType(ListView)).height, 223);
-    // Le disclaimer Mistral n'est plus inline (il vit dans le bottom sheet).
-    expect(find.textContaining('Mistral'), findsNothing);
+    expect(aiCard, findsOneWidget);
+    final cardRects = find
+        .byType(CoverageComparisonCard)
+        .evaluate()
+        .map((e) => tester.getRect(find.byWidget(e.widget)))
+        .toList();
+    for (final rect in cardRects) {
+      expect(rect.left, lessThan(tester.getRect(aiCard).left));
+    }
   });
 
-  testWidgets('ready : tap sur la carte CTA déclenche onOpenAnalysis',
+  testWidgets('gates 2 médias : cartes sans barre ni carte IA',
+      (tester) async {
+    await _pumpInline(
+      tester,
+      status: PerspectivesSectionStatus.ready,
+      perspectives: [_p('A')],
+      coverageCount: 2,
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.byType(CoverageComparisonCard), findsOneWidget);
+    expect(find.byType(CoverageSpectrumBar), findsNothing);
+    expect(find.text(consensusAiCardTitle), findsNothing);
+    expect(find.text(consensusCarouselSubtitle(2)), findsOneWidget);
+  });
+
+  testWidgets('pending : footnote sablier, pas de constats', (tester) async {
+    await _pumpInline(
+      tester,
+      status: PerspectivesSectionStatus.ready,
+      perspectives: [_p('A'), _p('B')],
+      coverageCount: 3,
+      consensus: const ConsensusBlock(state: ConsensusBlock.statePending),
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text(consensusPendingFootnote(3)), findsOneWidget);
+    expect(find.byType(ConsensusStatementRow), findsNothing);
+  });
+
+  testWidgets('convergent sans désaccord : footnote égalité', (tester) async {
+    await _pumpInline(
+      tester,
+      status: PerspectivesSectionStatus.ready,
+      perspectives: [_p('A'), _p('B')],
+      coverageCount: 3,
+      consensus: const ConsensusBlock(
+        state: ConsensusBlock.stateAvailable,
+        qualifier: 'convergent',
+        agreements: [ConsensusStatement(text: 'Tout le monde est d\'accord.')],
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text(consensusConvergentFootnote(3)), findsOneWidget);
+    expect(
+      find.textContaining('(avis convergents)', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('solo : texte seul, sans carrousel ni cloche', (tester) async {
+    await _pumpInline(
+      tester,
+      status: PerspectivesSectionStatus.ready,
+      perspectives: [_p('A')],
+      coverageCount: 1,
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text(consensusSoloText('Test')), findsOneWidget);
+    expect(find.byType(ListView), findsNothing);
+    expect(find.byType(CoverageComparisonCard), findsNothing);
+    expect(find.textContaining('Me prévenir'), findsNothing);
+  });
+
+  testWidgets('ready : tap sur la carte IA déclenche onOpenAnalysis',
       (tester) async {
     var opened = 0;
     await _pumpInline(
       tester,
       status: PerspectivesSectionStatus.ready,
-      perspectives: [_p('A')],
+      perspectives: [_p('A'), _p('B')],
+      coverageCount: 3,
       onOpenAnalysis: () => opened++,
     );
     await tester.pump(const Duration(seconds: 1));
 
-    await tester.ensureVisible(find.text('Lancer'));
-    await tester.tap(find.text('Lancer'));
+    await tester.scrollUntilVisible(
+      find.text(consensusAiCardAction),
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.tap(find.text(consensusAiCardAction));
     expect(opened, 1);
   });
 
