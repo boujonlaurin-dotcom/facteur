@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import '../../../core/api/api_client.dart';
 import '../models/content_model.dart';
 import '../services/read_sync_service.dart' show CompletionSource;
@@ -829,20 +830,26 @@ class FeedRepository {
     }
   }
 
-  /// Analyze perspectives divergences via LLM
-  Future<String?> analyzePerspectives(String contentId) async {
+  /// Analyze perspectives divergences via LLM.
+  ///
+  /// Depuis #1109, le POST peut renvoyer `"throttled": true` (cap global
+  /// quotidien atteint) : résultat structuré pour que le sheet distingue le
+  /// throttle (message, pas de retry) de l'erreur (bouton « Réessayer »).
+  Future<PerspectiveAnalysisResult> analyzePerspectives(
+    String contentId,
+  ) async {
     try {
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
         'contents/$contentId/perspectives/analyze',
       );
 
       if (response.statusCode == 200 && response.data != null) {
-        return response.data!['analysis'] as String?;
+        return parseAnalyzeResponse(response.data!);
       }
-      return null;
+      return const PerspectiveAnalysisResult();
     } catch (e) {
       print('FeedRepository: [ERROR] analyzePerspectives: $e');
-      return null;
+      return const PerspectiveAnalysisResult();
     }
   }
 
@@ -1061,6 +1068,27 @@ class DeepRecommendation {
       description: json['description'] as String?,
     );
   }
+}
+
+/// Résultat structuré de `POST /contents/{id}/perspectives/analyze`.
+///
+/// `throttled` = cap global quotidien atteint (#1109) : pas d'analyse
+/// aujourd'hui, mais ce n'est pas une erreur — le sheet affiche un message
+/// dédié sans bouton « Réessayer ».
+class PerspectiveAnalysisResult {
+  final String? analysis;
+  final bool throttled;
+
+  const PerspectiveAnalysisResult({this.analysis, this.throttled = false});
+}
+
+/// Parsing pur du corps 200 du POST analyze (extrait pour les tests).
+@visibleForTesting
+PerspectiveAnalysisResult parseAnalyzeResponse(Map<String, dynamic> json) {
+  return PerspectiveAnalysisResult(
+    analysis: json['analysis'] as String?,
+    throttled: (json['throttled'] as bool?) ?? false,
+  );
 }
 
 /// Un constat (accord ou désaccord) du bloc `consensus` 6C (Story 35.3).

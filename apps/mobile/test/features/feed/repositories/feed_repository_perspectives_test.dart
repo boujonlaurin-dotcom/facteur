@@ -469,6 +469,26 @@ void main() {
     });
   });
 
+  group('parseAnalyzeResponse', () {
+    test('analysis présent, throttled absent → done implicite', () {
+      final r = parseAnalyzeResponse({'analysis': 'Synthèse.'});
+      expect(r.analysis, 'Synthèse.');
+      expect(r.throttled, isFalse);
+    });
+
+    test('throttled true → pas d\'analyse, flag levé', () {
+      final r = parseAnalyzeResponse({'analysis': null, 'throttled': true});
+      expect(r.analysis, isNull);
+      expect(r.throttled, isTrue);
+    });
+
+    test('payload vide → ni analyse ni throttle (erreur côté appelant)', () {
+      final r = parseAnalyzeResponse(<String, dynamic>{});
+      expect(r.analysis, isNull);
+      expect(r.throttled, isFalse);
+    });
+  });
+
   group('TokenSpan.fromJsonOrNull', () {
     test('retourne null pour input non-Map', () {
       expect(TokenSpan.fromJsonOrNull(null), isNull);

@@ -2565,10 +2565,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       final result = await repository.analyzePerspectives(contentId);
       if (!mounted) return;
       _analysisSheetData.value = AnalysisSheetData(
-        state: result != null
-            ? PerspectivesAnalysisState.done
-            : PerspectivesAnalysisState.error,
-        text: result,
+        state: result.throttled
+            ? PerspectivesAnalysisState.throttled
+            : result.analysis != null
+                ? PerspectivesAnalysisState.done
+                : PerspectivesAnalysisState.error,
+        text: result.analysis,
       );
     } catch (e) {
       debugPrint('Error requesting perspectives analysis: $e');

@@ -263,8 +263,18 @@ String _toBarGroup(String stance) {
   }
 }
 
-/// Analysis workflow state
-enum PerspectivesAnalysisState { idle, loading, done, error }
+/// Analysis workflow state.
+///
+/// `throttled` = cap global quotidien du POST analyze atteint (#1109) :
+/// message dédié, sans « Réessayer » ni shimmer — réessayer aujourd'hui ne
+/// donnera rien.
+enum PerspectivesAnalysisState { idle, loading, done, error, throttled }
+
+/// Message du sheet quand l'analyse est throttlée (cap quotidien).
+/// `{N}` = `coverageCount` servi (invariant #1104).
+String analysisThrottledText(int coverageCount) =>
+    "Beaucoup de demandes aujourd'hui : l'analyse sera de nouveau disponible "
+    'demain. Les $coverageCount articles restent consultables.';
 
 enum PerspectivesSectionStatus { loading, empty, ready }
 
@@ -416,10 +426,12 @@ class _PerspectivesBottomSheetState
       if (!mounted) return;
 
       setState(() {
-        _analysisText = result;
-        _analysisState = result != null
-            ? PerspectivesAnalysisState.done
-            : PerspectivesAnalysisState.error;
+        _analysisText = result.analysis;
+        _analysisState = result.throttled
+            ? PerspectivesAnalysisState.throttled
+            : result.analysis != null
+                ? PerspectivesAnalysisState.done
+                : PerspectivesAnalysisState.error;
       });
     } catch (e) {
       if (!mounted) return;
@@ -671,6 +683,7 @@ class _PerspectivesBottomSheetState
                       child: PerspectivesAnalysisZone(
                         state: _analysisState,
                         text: _analysisText,
+                        coverageCount: widget.coverageCount,
                         onRequestAnalysis: _requestAnalysis,
                         colors: colors,
                         textTheme: textTheme,
@@ -1272,6 +1285,9 @@ class PerspectivesBiasBar extends StatelessWidget {
 class PerspectivesAnalysisZone extends StatefulWidget {
   final PerspectivesAnalysisState state;
   final String? text;
+
+  /// `coverage_count` servi — alimente le message throttled (invariant #1104).
+  final int coverageCount;
   final VoidCallback? onRequestAnalysis;
   final FacteurColors colors;
   final TextTheme textTheme;
@@ -1285,6 +1301,7 @@ class PerspectivesAnalysisZone extends StatefulWidget {
     super.key,
     required this.state,
     this.text,
+    this.coverageCount = 0,
     required this.onRequestAnalysis,
     required this.colors,
     required this.textTheme,
@@ -1322,6 +1339,16 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
         PerspectivesAnalysisState.loading => _buildAnalysisSkeleton(),
         PerspectivesAnalysisState.done => _buildAnalysisResult(),
         PerspectivesAnalysisState.error => _buildAnalysisError(),
+        // Cap quotidien : message seul, sans « Réessayer » ni shimmer.
+        PerspectivesAnalysisState.throttled => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              analysisThrottledText(widget.coverageCount),
+              style: widget.textTheme.bodyMedium?.copyWith(
+                color: widget.colors.textSecondary,
+              ),
+            ),
+          ),
       },
     );
   }
@@ -2829,6 +2856,15 @@ class _AnalysisSheet extends StatelessWidget {
               ),
             ),
           ],
+        );
+      case PerspectivesAnalysisState.throttled:
+        // Cap quotidien : message seul, sans « Réessayer » ni shimmer.
+        return Text(
+          analysisThrottledText(coverageCount),
+          style: textTheme.bodyMedium?.copyWith(
+            color: colors.textSecondary,
+            height: 1.5,
+          ),
         );
       case PerspectivesAnalysisState.done:
         final (:essentiel, :divergent) =
