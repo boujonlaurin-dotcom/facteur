@@ -1,5 +1,6 @@
 """Service utilisateur."""
 
+from typing import Literal
 from uuid import UUID, uuid4
 
 import structlog
@@ -24,6 +25,15 @@ from app.schemas.user import OnboardingAnswers, UserProfileUpdate, UserStatsResp
 from app.services.ml.classification_service import SLUG_TO_LABEL
 
 logger = structlog.get_logger(__name__)
+
+
+ACQUISITION_SOURCE_KEY = "acquisition_source"
+"""Clé `user_preferences` portant le canal d'acquisition (Story 14.1)."""
+
+AcquisitionSource = Literal["waitlist", "invite", "creator", "organic", "referral"]
+"""Canaux d'acquisition. `referral` est posé automatiquement par
+`POST /api/referral/attribution` ; les autres sont taggés à la main via
+`PATCH /api/admin/users/{id}/cohorts`."""
 
 
 ALLOWED_PREFERENCE_KEYS: frozenset[str] = frozenset(
@@ -488,8 +498,20 @@ class UserService:
         )
         return list(result.scalars().all())
 
-    async def upsert_preference(self, user_id: str, key: str, value: str) -> None:
-        """Upsert une préférence clé-valeur pour l'utilisateur."""
+    async def upsert_preference(
+        self,
+        user_id: str,
+        key: str,
+        value: str,
+        *,
+        only_if_absent: bool = False,
+    ) -> bool:
+        """Upsert une préférence clé-valeur. Retourne `True` si la base a changé.
+
+        `only_if_absent` laisse la valeur existante intacte — utilisé par
+        l'attribution de parrainage, où une source déjà connue (waitlist,
+        creator…) est plus spécifique que « referral ».
+        """
         if key not in ALLOWED_PREFERENCE_KEYS:
             logger.warning(
                 "upsert_preference_rejected_unknown_key",
@@ -506,6 +528,8 @@ class UserService:
         )
         existing = result.scalar_one_or_none()
         if existing:
+            if only_if_absent or existing.preference_value == value:
+                return False
             existing.preference_value = value
         else:
             pref = UserPreference(
@@ -516,6 +540,7 @@ class UserService:
             )
             self.db.add(pref)
         await self.db.flush()
+        return True
 
     async def get_stats(self, user_id: str) -> UserStatsResponse:
         """Récupère les statistiques utilisateur."""
