@@ -23,6 +23,7 @@ from app.services.recommendation.carousel_catalog import (
     PHASE_B_ORDER,
     CarouselBuildContext,
     fetch_consumed_ids,
+    fetch_triaged_ids,
 )
 from app.services.recommendation.carousel_selection_service import (
     build_phase_b,
@@ -1459,8 +1460,13 @@ class RecommendationService:
         # T2: Fetch consumed content IDs to exclude from carousels (règle partagée
         # avec l'Essentiel — cf. `carousel_catalog.fetch_consumed_ids`).
         consumed_ids: set[UUID] = set()
+        # Mémoire de triage Essentiel, réservée aux carrousels Phase B de
+        # découverte — ne PAS la fusionner dans `consumed_ids` : ce set sert
+        # aussi la Phase A, et `saved` doit pouvoir re-servir un `later`.
+        carousel_triaged_ids: set[UUID] = set()
         if user_id is not None:
             consumed_ids = await fetch_consumed_ids(self.session, user_id)
+            carousel_triaged_ids = await fetch_triaged_ids(self.session, user_id)
 
         # Daily seed for deterministic randomization (stable within a day per user)
         daily_seed: int | None = None
@@ -1686,6 +1692,7 @@ class RecommendationService:
                 session_maker=self._session_maker,
                 user_id=user_id,
                 consumed_ids=consumed_ids,
+                triaged_ids=carousel_triaged_ids,
             )
             phase_b_contents = await build_phase_b(ctx)
             # Le seed de rotation est daté en heure de Paris (comme l'Essentiel)

@@ -18,14 +18,17 @@ import pytest
 
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, InterestState, SourceType
+from app.models.essentiel_triage import EssentielTriageDecision
 from app.models.source import Source, UserSource
 from app.services.recommendation.carousel_catalog import (
     CarouselBuildContext,
     build_community,
     build_new_source,
     build_saved,
+    fetch_triaged_ids,
 )
 from app.services.recommendation.carousel_selection_service import build_phase_b
+from app.utils.time import today_paris
 
 
 def _now():
@@ -62,12 +65,15 @@ def _make_content(
     )
 
 
-def _ctx(db_session, session_maker, user_id, consumed_ids=None) -> CarouselBuildContext:
+def _ctx(
+    db_session, session_maker, user_id, consumed_ids=None, triaged_ids=None
+) -> CarouselBuildContext:
     return CarouselBuildContext(
         session=db_session,
         session_maker=session_maker,
         user_id=user_id,
         consumed_ids=consumed_ids or set(),
+        triaged_ids=triaged_ids or set(),
     )
 
 
@@ -186,6 +192,33 @@ async def test_build_new_source_excludes_consumed(db_session, fake_session_maker
     consumed = {arts[0].id, arts[1].id}
     content = await build_new_source(
         _ctx(db_session, fake_session_maker, user_id, consumed_ids=consumed)
+    )
+    assert content is None
+
+
+@pytest.mark.asyncio
+async def test_build_new_source_excludes_triaged(db_session, fake_session_maker):
+    """La mémoire de triage Essentiel exclut aussi de `new_source` (Volet B)."""
+    user_id = uuid4()
+    source = _make_source("Triaged")
+    db_session.add(source)
+    db_session.add(
+        UserSource(
+            user_id=user_id,
+            source_id=source.id,
+            state=InterestState.FOLLOWED,
+            added_at=_now() - datetime.timedelta(days=2),
+        )
+    )
+    arts = [_make_content(source, days_ago=1 + i, title=f"art {i}") for i in range(3)]
+    for a in arts:
+        db_session.add(a)
+    await db_session.commit()
+
+    # Trie 2 des 3 → sous le seuil MIN_NEW_SOURCE_ITEMS (2).
+    triaged = {arts[0].id, arts[1].id}
+    content = await build_new_source(
+        _ctx(db_session, fake_session_maker, user_id, triaged_ids=triaged)
     )
     assert content is None
 
@@ -359,6 +392,65 @@ async def test_build_community_excludes_consumed(db_session, fake_session_maker)
     assert content is None
 
 
+@pytest.mark.asyncio
+async def test_build_community_excludes_triaged(db_session, fake_session_maker):
+    """La mémoire de triage Essentiel exclut aussi de `community` (Volet B)."""
+    user_id = uuid4()
+    source = _make_source("TriagedCommunity")
+    db_session.add(source)
+    arts = [_make_content(source, days_ago=1 + i) for i in range(3)]
+    for a in arts:
+        db_session.add(a)
+    await db_session.flush()
+    for a in arts:
+        await _like(db_session, a.id, n=2)
+    await db_session.commit()
+
+    # Trie 1 des 3 → 2 restants < seuil.
+    content = await build_community(
+        _ctx(db_session, fake_session_maker, user_id, triaged_ids={arts[0].id})
+    )
+    assert content is None
+
+
+# --------------------------------------------------------------------------
+# fetch_triaged_ids (mémoire d'exclusion des carrousels de découverte)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_triaged_ids_windowed(db_session, fake_session_maker):
+    """Toutes les décisions (keep/later/pass) comptent, mais seulement dans la
+    fenêtre de 90 j : une décision plus ancienne redevient proposable."""
+    user_id = uuid4()
+    source = _make_source("TriageMemory")
+    db_session.add(source)
+    arts = [_make_content(source, days_ago=1 + i) for i in range(4)]
+    for a in arts:
+        db_session.add(a)
+    await db_session.flush()
+    for a, decision, days_ago in (
+        (arts[0], "keep", 0),
+        (arts[1], "later", 10),
+        (arts[2], "pass", 89),
+        (arts[3], "pass", 120),  # hors fenêtre
+    ):
+        db_session.add(
+            EssentielTriageDecision(
+                user_id=user_id,
+                content_id=a.id,
+                digest_date=today_paris() - datetime.timedelta(days=days_ago),
+                decision=decision,
+            )
+        )
+    await db_session.commit()
+
+    ids = await fetch_triaged_ids(db_session, user_id)
+    assert ids == {arts[0].id, arts[1].id, arts[2].id}
+    # Les décisions d'un autre utilisateur ne fuient pas.
+    assert await fetch_triaged_ids(db_session, uuid4()) == set()
+
+
 # --------------------------------------------------------------------------
 # build_phase_b (agrégateur)
 # --------------------------------------------------------------------------
@@ -370,7 +462,9 @@ async def test_build_phase_b_returns_eligible_types(db_session, fake_session_mak
     source = _make_source("Both")
     db_session.add(source)
     saved_arts = [_make_content(source, days_ago=1 + i) for i in range(3)]
-    comm_arts = [_make_content(source, days_ago=1 + i, title=f"cm{i}") for i in range(3)]
+    comm_arts = [
+        _make_content(source, days_ago=1 + i, title=f"cm{i}") for i in range(3)
+    ]
     for a in saved_arts + comm_arts:
         db_session.add(a)
     await db_session.flush()

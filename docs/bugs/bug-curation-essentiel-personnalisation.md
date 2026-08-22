@@ -107,6 +107,7 @@ pondère de la redondance ; A sans C pondère du bruit.
 | 4 | PR 4 | **A** score mixte, `is_multi` retiré, poids en env, bump `editorial_v4` | ✅ **cette PR** |
 | 5 | PR 5 | **A** pool personnalisé rebranché (`digest_selector.py:406-407`) | à venir |
 | 6 | PR 6 | **C-2** taux appris lissés vers le prior population | à venir |
+| B | Volet B | **Grief n°2** — carrousel « sources discrètes » en dernier recours (backend + mobile, sans migration) | ✅ **cette PR** |
 
 ---
 
@@ -305,3 +306,65 @@ Livré par cette PR (aucun DDL, aucun changement mobile) :
   → **v3 ne matchait déjà plus** (fallback live silencieux, logos CTA ≠ bottom
   sheet). Passés en préfixe `startswith("editorial_")`, aligné sur
   `digest_content_refs.py` / `push_dispatcher.py`.
+
+---
+
+## Volet B — carrousel « sources discrètes » en dernier recours
+
+Grief PO n°2 : les articles de sources discrètes **arrivaient trop tôt dans la
+pile, trop nombreux, et revenaient tous les jours**. Une seule PR backend +
+mobile, aucune migration (la table `essentiel_triage_decisions` existait déjà).
+
+### Causes racines vérifiées
+
+1. **Répétition quotidienne** : `build_quiet_sources` n'excluait que
+   `consumed_ids` ; un « pass » dans la pile n'écrit jamais CONSUMED ⇒ le même
+   article revenait chaque jour.
+2. **Trop nombreux** : jusqu'à `MAX_CAROUSEL_ITEMS = 5` d'un coup.
+3. **Instabilité intra-journée** : seed `hourly` ; et même « daily »,
+   `randomization.compute_seed` repose sur le `hash()` builtin **randomisé par
+   `PYTHONHASHSEED`** ⇒ instable entre workers et à chaque redéploiement
+   (découverte de l'exploration — vaut pour tous les appelants de
+   `compute_seed` ; leur migration vers le seed md5 est un follow-up).
+4. **Arrivent trop tôt** (mobile) : `_refreshPoolMemo` fusionnait le carrousel
+   dans la pile dès la première frame, AVANT les articles réseau, et le
+   comptait dans `pendingPoolIds` ⇒ `remainingToTriage` restait haut et
+   `/essentiel/more` ne se déclenchait jamais.
+5. **Articles vieux (31-60 j)** : fenêtre de service 60 j vs sonde
+   d'éligibilité 30 j — le fallback « article récent consommé/trié » servait du
+   31-60 j.
+
+### Décisions livrées
+
+- **B1 — mémoire de triage** : `fetch_triaged_ids` (90 j) sur
+  `essentiel_triage_decisions`, appliquée aux 3 carrousels de découverte
+  (`quiet_sources`, `new_source`, `community`) et **jamais** à `saved`
+  (`later` ⇒ article sauvegardé, « Plus tard, c'est maintenant ! » doit le
+  re-servir). Champ additif `CarouselBuildContext.triaged_ids`, peuplé
+  symétriquement côté Essentiel et Flâner (surface-indépendance conservée).
+- **B2 — volume** : `QUIET_SOURCES_MAX_ITEMS = 3` dans le builder.
+- **B3 — seed** : `compute_stable_seed` (md5, pattern `_rotation_order`) sur
+  `today_paris()` ⇒ sous-ensemble stable la journée, tournant d'un jour à
+  l'autre.
+- **B4 — fenêtre** : service 60 j → 30 j, alignée sur la sonde. Sûr uniquement
+  parce que la mémoire de triage arrive dans la même PR.
+- **Mobile — injection différée (tous types de carrousel uniformément)** :
+  split pool complet (résolution, exclusions `/more`) / pool syncable (slate) ;
+  latch `_carouselReleased` qui ne verse le carrousel en **queue** de slate que
+  quand la pile est basse ET `/more` à sec (budget épuisé ou cooldown, jamais
+  un fetch en vol) ; `pendingPoolIds` ne compte plus le carrousel non versé ⇒
+  `/more` se déclenche vraiment. `essentielTriagePools` (ex-miroir
+  `essentiel_deck.dart`) est devenu la source unique, la carte délègue.
+
+### Limite connue (assumée)
+
+Après un tri terminé par objectif atteint, si l'utilisateur tape « Plus
+d'articles ? » et que le backend est à sec, le carrousel non versé reste en
+réserve (le latch ne s'évalue que pendant le tri actif). Cas rare ; à revoir
+avec PR 5 (pool perso) / PR 6-bis (moteur sur `/more`).
+
+### Hors PR
+
+PR 5 (pool perso rebranché — vrai plafond de M2/M4) et PR 6-bis (moteur sur
+`/more`) restent à cadrer séparément ; migration des autres appelants de
+`compute_seed` vers le seed stable md5.

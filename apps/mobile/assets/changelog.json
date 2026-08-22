@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "Ton Essentiel",
+      "summary": "Les articles de tes sources discrètes savent rester à leur place : ils n'arrivent dans ta pile de tri que lorsque les articles du jour et les propositions fraîches sont épuisés, trois au maximum, et un article déjà trié ne revient plus te solliciter le lendemain. La sélection reste la même toute la journée et tourne d'un jour à l'autre, sans rien te servir de plus vieux qu'un mois."
+    },
+    {
+      "tag": "Ton Essentiel",
       "summary": "Ta sélection du jour équilibre enfin les deux choses qu'on lui demande : l'importance d'un sujet (combien de rédactions le traitent, sa fraîcheur) et ce qui compte pour toi (tes sources et tes centres d'intérêt). Jusqu'ici seul le premier critère décidait de l'ordre : un sujet suivi par toi mais couvert par peu de médias restait coincé sous la pile. Il peut maintenant passer devant une actualité très reprise mais qui ne te concerne pas, tandis qu'une vraie grande actualité garde sa place en tête."
     },
     {

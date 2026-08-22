@@ -2096,11 +2096,12 @@ void main() {
     });
 
     testWidgets(
-        'le carrousel entre dans le slate d\'emblée : la pile continue de '
-        'proposer sans que rien ne soit à « injecter »', (tester) async {
-      // Renversement de la 33.3 : il n'y a plus de « réserve locale » à
-      // injecter au tap. Le carrousel fait partie du slate dès le premier
-      // rendu, donc le tri de 3 articles ne termine rien.
+        'le carrousel n\'entre PLUS dans le slate d\'emblée : trier le slate '
+        'du jour termine la pile, le carrousel reste en réserve',
+        (tester) async {
+      // Volet B (renverse la 33.3-bis) : le carrousel est un filet de dernier
+      // recours. Il ne prolonge plus la pile d'office — seul le latch de
+      // versement (pile basse ET `/more` à sec) peut l'y faire entrer.
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: articlesUpTo(3),
@@ -2117,9 +2118,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.byType(EssentielTriageStack), findsOneWidget);
-      expect(find.text('Carrousel x-1'), findsWidgets);
-      expect(find.text('Plus d\'articles ?'), findsNothing);
+      expect(find.byType(EssentielTriageStack), findsNothing);
+      expect(find.text('Carrousel x-1'), findsNothing);
+      expect(find.text('Plus d\'articles ?'), findsOneWidget);
     });
 
     testWidgets(
@@ -2128,6 +2129,8 @@ void main() {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: articlesUpTo(3),
+          // Slate pré-rempli `x-*` = état légitime post-versement (la veille du
+          // reboot, latch retombé) : la résolution passe par le pool complet.
           carousel: _carousel(const ['x-1', 'x-2']),
           onTapArticle: (_) {},
         ),
@@ -2966,6 +2969,206 @@ void main() {
             excludeIds: any(named: 'excludeIds'),
             limit: any(named: 'limit'),
           )).called(1);
+    });
+
+    // ── Volet B — le carrousel en dernier recours ────────────────────────
+
+    testWidgets(
+        'le carrousel ne bloque plus le prefetch : pile basse + carrousel '
+        'présent ⇒ `/more` part quand même, carrousel exclu', (tester) async {
+      final repo = _MockEssentielRepository();
+      when(() => repo.fetchMore(
+            excludeIds: any(named: 'excludeIds'),
+            limit: any(named: 'limit'),
+          )).thenAnswer((_) async => [moreJson('n-1')]);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: articlesUpTo(3),
+          carousel: _carousel(const ['x-1', 'x-2']),
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          essentielRepositoryProvider.overrideWithValue(repo),
+          // 1 décidé sur 3 ⇒ 2 restants = ligne de flottaison.
+          triageWith(
+            slate: const ['c-1', 'c-2', 'c-3'],
+            decisions: decisionsKeeping(1, 1),
+          ),
+        ],
+      ));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Avant le Volet B, les 2 items carrousel comptaient dans la réserve :
+      // `remainingToTriage` restait au-dessus de la ligne de flottaison et ce
+      // prefetch ne partait jamais.
+      final captured = verify(() => repo.fetchMore(
+            excludeIds: captureAny(named: 'excludeIds'),
+            limit: kTriagePrefetchBatch,
+          )).captured.single as List<String>;
+      // Le carrousel non versé reste EXCLU de `/more` (sinon doublons au
+      // versement).
+      expect(captured, containsAll(<String>['x-1', 'x-2']));
+    });
+
+    testWidgets(
+        'le carrousel se verse quand `/more` est sec : items appendés en '
+        'queue du slate gelé', (tester) async {
+      final repo = _MockEssentielRepository();
+      // `/more` à sec : retour vide ⇒ cooldown « pool sec ».
+      when(() => repo.fetchMore(
+            excludeIds: any(named: 'excludeIds'),
+            limit: any(named: 'limit'),
+          )).thenAnswer((_) async => const []);
+      when(() => repo.postTriage(
+            digestDate: any(named: 'digestDate'),
+            slateSize: any(named: 'slateSize'),
+            decisions: any(named: 'decisions'),
+          )).thenAnswer((_) async => true);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: articlesUpTo(3),
+          carousel: _carousel(const ['x-1', 'x-2']),
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          essentielRepositoryProvider.overrideWithValue(repo),
+          triageWith(
+            slate: const ['c-1', 'c-2', 'c-3'],
+            decisions: decisionsKeeping(1, 1),
+          ),
+        ],
+      ));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Le prefetch est parti et n'a rien rapporté : `/more` est sec.
+      verify(() => repo.fetchMore(
+            excludeIds: any(named: 'excludeIds'),
+            limit: any(named: 'limit'),
+          )).called(1);
+
+      // Le rebuild suivant (une décision) constate l'assèchement : le latch
+      // flippe et le carrousel entre en queue du slate — jamais en préfixe.
+      await tester.tap(find.text('Je garde'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        tester
+            .widget<EssentielTriageStack>(find.byType(EssentielTriageStack))
+            .triage
+            .slate,
+        const ['c-1', 'c-2', 'c-3', 'x-1', 'x-2'],
+      );
+      expect(find.byType(EssentielTriageStack), findsOneWidget);
+    });
+
+    testWidgets(
+        'un fetch `/more` en vol n\'est pas « sec » : pas de versement avant '
+        'le retour du lot', (tester) async {
+      final repo = _MockEssentielRepository();
+      final gate = Completer<List<Map<String, dynamic>>?>();
+      when(() => repo.fetchMore(
+            excludeIds: any(named: 'excludeIds'),
+            limit: any(named: 'limit'),
+          )).thenAnswer((_) => gate.future);
+      when(() => repo.postTriage(
+            digestDate: any(named: 'digestDate'),
+            slateSize: any(named: 'slateSize'),
+            decisions: any(named: 'decisions'),
+          )).thenAnswer((_) async => true);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: articlesUpTo(3),
+          carousel: _carousel(const ['x-1']),
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          essentielRepositoryProvider.overrideWithValue(repo),
+          triageWith(
+            slate: const ['c-1', 'c-2', 'c-3'],
+            decisions: decisionsKeeping(1, 1),
+          ),
+        ],
+      ));
+      await tester.pump();
+      await tester.pump();
+
+      // Fetch en vol : une décision (rebuild) ne verse PAS le carrousel — les
+      // résultats du lot arrivent peut-être.
+      await tester.tap(find.text('Je garde'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        tester
+            .widget<EssentielTriageStack>(find.byType(EssentielTriageStack))
+            .triage
+            .slate,
+        const ['c-1', 'c-2', 'c-3'],
+      );
+
+      gate.complete([moreJson('n-1')]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Le lot rapatrié entre en queue — le carrousel, lui, reste en réserve
+      // (`/more` vient de prouver qu'il n'était pas sec).
+      expect(
+        tester
+            .widget<EssentielTriageStack>(find.byType(EssentielTriageStack))
+            .triage
+            .slate,
+        const ['c-1', 'c-2', 'c-3', 'n-1'],
+      );
+    });
+
+    testWidgets(
+        'cold-boot : un slate persisté avec des ids carrousel versés reste '
+        'résolvable — ni prune ni silhouette, latch retombé', (tester) async {
+      final repo = _MockEssentielRepository();
+      when(() => repo.fetchMore(
+            excludeIds: any(named: 'excludeIds'),
+            limit: any(named: 'limit'),
+          )).thenAnswer((_) async => const []);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: articlesUpTo(2),
+          carousel: _carousel(const ['x-1']),
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          essentielRepositoryProvider.overrideWithValue(repo),
+          // La veille du reboot, le latch avait versé `x-1` : le slate
+          // persisté le porte, et c'est lui le haut de pile au boot.
+          triageWith(
+            slate: const ['c-1', 'c-2', 'x-1'],
+            decisions: decisionsKeeping(1, 2),
+          ),
+        ],
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Le pool COMPLET résout `x-1` même latch bas : la pile rend l'article,
+      // pas la silhouette, et le slate n'est pas élagué.
+      expect(find.byType(EssentielTriageStack), findsOneWidget);
+      expect(find.text('Carrousel x-1'), findsWidgets);
+      expect(find.byType(TriageStackSkeleton), findsNothing);
+      expect(
+        tester
+            .widget<EssentielTriageStack>(find.byType(EssentielTriageStack))
+            .triage
+            .slate,
+        const ['c-1', 'c-2', 'x-1'],
+      );
     });
 
     testWidgets('au plancher, le rond « − » n\'est plus actionnable',

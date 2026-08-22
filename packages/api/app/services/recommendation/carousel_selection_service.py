@@ -19,9 +19,9 @@ coordonnent le carrousel mis en avant **sans état DB** :
 from __future__ import annotations
 
 import datetime
-import hashlib
 from uuid import UUID
 
+from app.services.recommendation import randomization
 from app.services.recommendation.carousel_catalog import (
     PHASE_B_ORDER,
     PHASE_B_SPECS,
@@ -39,8 +39,8 @@ def _rotation_order(user_id: UUID | str, target_date: datetime.date) -> tuple[st
     fixe (longueur constante = 4), pas sur `len(eligible)`, pour rester stable dans
     la journée malgré une éligibilité qui varierait (consommation d'articles).
     """
-    digest = hashlib.md5(f"{user_id}|{target_date.isoformat()}".encode()).hexdigest()
-    offset = int(digest, 16) % len(PHASE_B_ORDER)
+    seed = randomization.compute_stable_seed(str(user_id), target_date.isoformat())
+    offset = seed % len(PHASE_B_ORDER)
     return PHASE_B_ORDER[offset:] + PHASE_B_ORDER[:offset]
 
 

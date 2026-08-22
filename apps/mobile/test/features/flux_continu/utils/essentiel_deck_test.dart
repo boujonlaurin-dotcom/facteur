@@ -72,16 +72,60 @@ EssentielTriageState _triage({
     );
 
 void main() {
-  group('essentielTriagePool', () {
-    test('slate, puis carrousel inédit, puis rapatriés — dédupés', () {
-      final pool = essentielTriagePool(
+  group('essentielTriagePools', () {
+    test('full : slate, puis rapatriés, puis carrousel inédit — dédupés', () {
+      final pools = essentielTriagePools(
         articles: [_article('e0'), _article('e1')],
-        // `e1` est déjà dans le slate : il ne doit pas entrer deux fois.
-        carousel: _carousel([_content('e1'), _content('k0')]),
+        // `e1` est déjà dans le slate, `k0` déjà rapatrié : pas de doublons —
+        // et `k0` compte comme rapatrié (article réellement rendu par `/more`).
+        carousel: _carousel([_content('e1'), _content('k0'), _content('c0')]),
         fetched: [_article('f0'), _article('k0')],
       );
 
-      expect(pool.map((a) => a.contentId), ['e0', 'e1', 'k0', 'f0']);
+      expect(
+        pools.full.map((a) => a.contentId),
+        ['e0', 'e1', 'f0', 'k0', 'c0'],
+      );
+    });
+
+    test('rangs du carrousel en queue, après slate + rapatriés', () {
+      final pools = essentielTriagePools(
+        articles: [_article('e0'), _article('e1')],
+        carousel: _carousel([_content('c0'), _content('c1')]),
+        fetched: [_article('f0')],
+      );
+
+      expect(pools.full.map((a) => a.contentId), ['e0', 'e1', 'f0', 'c0', 'c1']);
+      // baseRank = 2 (slate) + 1 (rapatrié) → c0 = 4, c1 = 5.
+      expect(pools.full[3].rank, 4);
+      expect(pools.full[4].rank, 5);
+    });
+
+    test('syncable : le carrousel n’y entre qu’une fois versé (Volet B)', () {
+      final articles = [_article('e0'), _article('e1')];
+      final carousel = _carousel([_content('c0')]);
+      final fetched = [_article('f0')];
+
+      final held = essentielTriagePools(
+        articles: articles,
+        carousel: carousel,
+        fetched: fetched,
+      );
+      // Latch bas : le carrousel est résolvable (full) mais pas syncable.
+      expect(held.syncable.map((a) => a.contentId), ['e0', 'e1', 'f0']);
+      expect(held.full.map((a) => a.contentId), ['e0', 'e1', 'f0', 'c0']);
+
+      final released = essentielTriagePools(
+        articles: articles,
+        carousel: carousel,
+        fetched: fetched,
+        carouselReleased: true,
+      );
+      // Versé : en queue du pool syncable, le préfixe ne bouge pas.
+      expect(
+        released.syncable.map((a) => a.contentId),
+        ['e0', 'e1', 'f0', 'c0'],
+      );
     });
   });
 

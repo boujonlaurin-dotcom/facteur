@@ -20,6 +20,11 @@ Pourquoi une table neuve plutôt que `article_feedback` :
 source entière à `UserPersonalization.muted_sources` sans expiration
 (`digest_service.py:_trigger_personalization_mute`), ce qui ferait taire un média
 parce qu'un seul papier n'a pas plu.
+
+**Lecture** (Volet B carrousels) : `carousel_catalog.fetch_triaged_ids` relit ces
+décisions comme **mémoire d'exclusion** des carrousels de découverte — un article
+trié ne doit pas être re-proposé chaque jour. C'est une exclusion, pas un poids
+de reco : l'invariant « Collecte seule » reste vrai côté écriture.
 """
 
 import uuid

@@ -5,9 +5,10 @@ Story 32.1 — extraction (quasi verbatim) de la logique de
 `saved`, `quiet_sources`, `new_source`, `community`.
 
 Chaque type = une coroutine `build_<type>(ctx) -> CarouselContent | None`. Les
-builds n'appliquent QUE l'exclusion des articles *consommés* (`consumed_ids`) —
-jamais les `promoted_ids` propres à Flâner — pour que l'ensemble éligible soit
-**surface-indépendant** (complémentarité déterministe entre Flâner et l'Essentiel,
+builds n'appliquent QUE des exclusions **surface-indépendantes** — articles
+*consommés* (`consumed_ids`) et, pour les carrousels de découverte, articles
+déjà *triés* dans la pile Essentiel (`triaged_ids`) — jamais les `promoted_ids`
+propres à Flâner (complémentarité déterministe entre Flâner et l'Essentiel,
 cf. `carousel_selection_service.pick_essentiel_type`).
 
 Le carrousel `community` est **unifié** : il passe désormais par
@@ -19,7 +20,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from uuid import UUID
 
 import structlog
@@ -30,6 +31,7 @@ from sqlalchemy.orm import selectinload
 from app.database import SessionMaker
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, InterestState
+from app.models.essentiel_triage import EssentielTriageDecision
 from app.models.source import Source, UserSource
 
 # Sérialisation vers le schéma API partagé (même mapping que routers/feed.py).
@@ -42,6 +44,7 @@ from app.services.community_recommendation_service import (
 # `randomization.compute_seed` atteignent bien les appels ci-dessous — le
 # rebinding par-nom au load figerait la référence avant le patch.
 from app.services.recommendation import randomization
+from app.utils.time import today_paris
 
 logger = structlog.get_logger()
 
@@ -51,6 +54,10 @@ FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 MIN_CAROUSEL_ITEMS = 3  # community / saved
 MIN_DISPLAY_ITEMS = 2  # quiet_sources / new_source
 MAX_CAROUSEL_ITEMS = 5
+# « Tes sources discrètes » est un filet de dernier recours (Volet B, grief PO
+# n°2) : 3 items max, jamais plus vieux que la fenêtre de la sonde d'éligibilité.
+QUIET_SOURCES_MAX_ITEMS = 3
+QUIET_SOURCE_WINDOW_DAYS = 30
 
 
 @dataclass
@@ -103,6 +110,21 @@ class CarouselBuildContext:
     session_maker: SessionMaker
     user_id: UUID
     consumed_ids: set[UUID]
+    # Articles déjà triés dans la pile Essentiel (keep/later/pass) — exclus des
+    # carrousels de découverte, jamais de `saved` (cf. `fetch_triaged_ids`).
+    # Default additif : les call sites existants restent valides sans lui.
+    triaged_ids: set[UUID] = field(default_factory=set)
+
+    @property
+    def discovery_excluded_ids(self) -> set[UUID]:
+        """Exclusions des carrousels de DÉCOUVERTE : consommés ∪ triés.
+
+        La règle vit ici, pas dans chaque builder : `quiet_sources`,
+        `new_source` et `community` l'appliquent ; `build_saved` s'en passe
+        volontairement (`later` = article sauvegardé, que « Plus tard, c'est
+        maintenant ! » doit re-servir).
+        """
+        return self.consumed_ids | self.triaged_ids
 
 
 async def fetch_consumed_ids(session: AsyncSession, user_id: UUID) -> set[UUID]:
@@ -118,6 +140,36 @@ async def fetch_consumed_ids(session: AsyncSession, user_id: UUID) -> set[UUID]:
                 select(UserContentStatus.content_id).where(
                     UserContentStatus.user_id == user_id,
                     UserContentStatus.status == ContentStatus.CONSUMED,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(rows)
+
+
+async def fetch_triaged_ids(
+    session: AsyncSession, user_id: UUID, days: int = 90
+) -> set[UUID]:
+    """Articles déjà triés (keep/later/pass) dans la pile Essentiel.
+
+    Mémoire d'exclusion des carrousels de découverte (`quiet_sources`,
+    `new_source`, `community`) : un « pass » n'écrit jamais le statut CONSUMED,
+    donc sans elle le même article revenait chaque jour. Surface-indépendante,
+    comme `fetch_consumed_ids` (même exigence de complémentarité déterministe).
+
+    `build_saved` ne l'applique PAS : `decision=later` marque l'article sauvegardé
+    (`set_save_status`), et « Plus tard, c'est maintenant ! » doit précisément
+    pouvoir le re-servir.
+    """
+    since = today_paris() - datetime.timedelta(days=days)
+    rows = (
+        (
+            await session.execute(
+                select(EssentielTriageDecision.content_id).where(
+                    EssentielTriageDecision.user_id == user_id,
+                    EssentielTriageDecision.digest_date >= since,
                 )
             )
         )
@@ -157,10 +209,11 @@ async def build_new_source(ctx: CarouselBuildContext) -> CarouselContent | None:
     MAX_NEW_SOURCE_PROBES = 8
     now = datetime.datetime.now(datetime.UTC)
     candidates: list[tuple] = []
+    excluded_ids = ctx.discovery_excluded_ids
     for src_row in new_src_rows[:MAX_NEW_SOURCE_PROBES]:
         exclusions = []
-        if ctx.consumed_ids:
-            exclusions.append(Content.id.notin_(ctx.consumed_ids))
+        if excluded_ids:
+            exclusions.append(Content.id.notin_(excluded_ids))
         items = list(
             (
                 await session.scalars(
@@ -203,14 +256,20 @@ async def build_new_source(ctx: CarouselBuildContext) -> CarouselContent | None:
 async def build_quiet_sources(ctx: CarouselBuildContext) -> CarouselContent | None:
     """« Tes sources discrètes » — dernier article des sources suivies peu actives.
 
-    Sonde LATERAL ... LIMIT 3 sur une short session capée 8s/5s (PYTHON-5N), puis
-    round-robin seedé à l'heure. Tout le bloc est fail-soft : une erreur DB SKIP
-    le carrousel (renvoie None) au lieu de remonter.
+    Filet de **dernier recours** (Volet B) : 3 items max, sous-ensemble stable la
+    journée (seed daily md5), tournant d'un jour à l'autre, jamais un article déjà
+    consommé ou trié, jamais plus vieux que la fenêtre de la sonde (30 j).
+
+    Sonde LATERAL ... LIMIT 3 sur une short session capée 8s/5s (PYTHON-5N). Tout
+    le bloc est fail-soft : une erreur DB SKIP le carrousel (renvoie None) au lieu
+    de remonter.
     """
     QUIET_SOURCE_MAX_RECENT = 3  # < 3 articles en 30 jours = « discrète »
     now = datetime.datetime.now(datetime.UTC)
-    thirty_days_ago = now - datetime.timedelta(days=30)
-    sixty_days_ago = now - datetime.timedelta(days=60)
+    # Fenêtre unique sonde + service : une source dont les 1-2 articles récents
+    # sont tous consommés/triés sort du carrousel au lieu de servir un article
+    # de 45 j (l'ancienne fenêtre de service à 60 j servait du 31-60 j).
+    window_start = now - datetime.timedelta(days=QUIET_SOURCE_WINDOW_DAYS)
 
     quiet_articles: list[Content] = []
     try:
@@ -218,7 +277,7 @@ async def build_quiet_sources(ctx: CarouselBuildContext) -> CarouselContent | No
             select(Content.id)
             .where(
                 Content.source_id == UserSource.source_id,
-                Content.published_at >= thirty_days_ago,
+                Content.published_at >= window_start,
             )
             .limit(QUIET_SOURCE_MAX_RECENT)
             .lateral()
@@ -243,10 +302,11 @@ async def build_quiet_sources(ctx: CarouselBuildContext) -> CarouselContent | No
             if quiet_source_ids:
                 conds = [
                     Content.source_id.in_(quiet_source_ids),
-                    Content.published_at >= sixty_days_ago,
+                    Content.published_at >= window_start,
                 ]
-                if ctx.consumed_ids:
-                    conds.append(Content.id.notin_(ctx.consumed_ids))
+                excluded_ids = ctx.discovery_excluded_ids
+                if excluded_ids:
+                    conds.append(Content.id.notin_(excluded_ids))
                 latest_per_source = (
                     select(Content)
                     .options(selectinload(Content.source))
@@ -255,9 +315,14 @@ async def build_quiet_sources(ctx: CarouselBuildContext) -> CarouselContent | No
                     .order_by(Content.source_id, Content.published_at.desc())
                 )
                 quiet_articles = list((await quiet_s.scalars(latest_per_source)).all())
-        seed = randomization.compute_seed(str(ctx.user_id), "hourly")
+        # Seed daily ET stable inter-process (md5) : le sous-ensemble ne bouge
+        # ni dans la journée, ni entre workers/redéploiements — `compute_seed`
+        # repose sur `hash()`, randomisé par PYTHONHASHSEED.
+        seed = randomization.compute_stable_seed(
+            str(ctx.user_id), today_paris().isoformat()
+        )
         quiet_articles = randomization.seeded_shuffle(quiet_articles, seed)[
-            :MAX_CAROUSEL_ITEMS
+            :QUIET_SOURCES_MAX_ITEMS
         ]
     except Exception as exc:
         logger.warning(
@@ -289,9 +354,10 @@ async def build_community(ctx: CarouselBuildContext) -> CarouselContent | None:
     « 🌻 N » si ≥ 2 tournesols, sinon « Reco communauté ».
     """
     service = CommunityRecommendationService(ctx.session)
+    excluded_ids = ctx.discovery_excluded_ids
     recs = await service.get_top_recommendations(
         limit=MAX_CAROUSEL_ITEMS,
-        exclude_ids=ctx.consumed_ids or None,
+        exclude_ids=excluded_ids or None,
     )
     if len(recs) < MIN_CAROUSEL_ITEMS:
         return None
