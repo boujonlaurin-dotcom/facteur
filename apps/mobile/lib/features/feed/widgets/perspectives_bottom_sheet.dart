@@ -1532,7 +1532,6 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   final String sourceName;
   final String contentId;
   final String comparisonQuality;
-  final String? divergenceLevel;
 
   /// Key attached to the first perspective card so the parent can detect
   /// when the user has scrolled past it.
@@ -1576,7 +1575,6 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     this.sourceBiasStance = 'unknown',
     this.sourceName = '',
     this.comparisonQuality = 'low',
-    this.divergenceLevel,
     this.firstCardKey,
     this.onOpenAnalysis,
     this.status = PerspectivesSectionStatus.ready,
@@ -2106,10 +2104,13 @@ class _PerspectivesInlineSectionState
       )
       .toList();
 
-  List<ConsensusSourceRef> _refsFor(ConsensusStatement statement) {
+  List<ConsensusSourceRef> _refsFor(
+    ConsensusStatement statement,
+    List<PerspectiveData> corpus,
+  ) {
     return resolveConsensusRefs(
       domains: statement.displayDomains,
-      perspectives: _refCorpus,
+      perspectives: corpus,
       readerDomain: widget.readerDomain,
       readerSourceName: widget.sourceName,
       readerBias: widget.sourceBiasStance,
@@ -2137,18 +2138,20 @@ class _PerspectivesInlineSectionState
   /// Constats (≤3 accords puis ≤2 désaccords) + footnote d'état.
   List<Widget> _buildConsensusBody(FacteurColors colors) {
     final consensus = widget.consensus;
+    // Corpus construit UNE fois par build, pas une fois par constat.
+    final corpus = _refCorpus;
     final rows = <Widget>[
       for (final statement in consensus.agreements)
         ConsensusStatementRow(
           statement: statement,
           isAgreement: true,
-          refs: _refsFor(statement),
+          refs: _refsFor(statement, corpus),
         ),
       for (final statement in consensus.disagreements)
         ConsensusStatementRow(
           statement: statement,
           isAgreement: false,
-          refs: _refsFor(statement),
+          refs: _refsFor(statement, corpus),
         ),
     ];
 

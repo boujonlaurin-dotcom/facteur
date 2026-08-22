@@ -51,7 +51,6 @@ void main() {
                   'right': 1,
                 },
                 contentId: 'test',
-                divergenceLevel: 'medium',
                 display: DisplayGates.fromCoverageCount(6),
               ),
             ),

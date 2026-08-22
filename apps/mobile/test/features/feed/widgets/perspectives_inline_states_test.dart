@@ -33,7 +33,6 @@ Future<void> _pumpInline(
   required PerspectivesSectionStatus status,
   List<Perspective> perspectives = const [],
   int coverageCount = 0,
-  String? divergenceLevel,
   VoidCallback? onOpenAnalysis,
   ConsensusBlock consensus = const ConsensusBlock.absent(),
   DisplayGates? display,
@@ -53,7 +52,6 @@ Future<void> _pumpInline(
                 biasDistribution: const {'left': 1, 'center': 1, 'right': 1},
                 contentId: 'test-content-id',
                 sourceName: 'Test',
-                divergenceLevel: divergenceLevel,
                 onOpenAnalysis: onOpenAnalysis,
                 consensus: consensus,
                 display: display ??
@@ -177,7 +175,6 @@ void main() {
       status: PerspectivesSectionStatus.ready,
       perspectives: [_p('A'), _p('B', bias: 'left')],
       coverageCount: 3,
-      divergenceLevel: 'high',
       consensus: const ConsensusBlock(
         state: ConsensusBlock.stateAvailable,
         qualifier: 'polarized',

@@ -2625,7 +2625,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         sourceName: _content?.source.name ?? '',
         contentId: widget.contentId,
         comparisonQuality: _perspectivesResponse?.comparisonQuality ?? 'low',
-        divergenceLevel: _perspectivesResponse?.divergenceLevel,
         partial: _perspectivesResponse?.partial ?? false,
         onOpenAnalysis: _openPerspectivesAnalysis,
         consensus:

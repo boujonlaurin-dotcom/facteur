@@ -21,7 +21,6 @@ Future<void> _pumpInline(
   WidgetTester tester, {
   required List<Perspective> perspectives,
   PerspectivesSectionStatus status = PerspectivesSectionStatus.ready,
-  String? divergenceLevel,
   ConsensusBlock consensus = const ConsensusBlock.absent(),
 }) async {
   await tester.pumpWidget(
@@ -40,7 +39,6 @@ Future<void> _pumpInline(
                 contentId: 'test-content-id',
                 sourceBiasStance: 'center',
                 sourceName: 'Test',
-                divergenceLevel: divergenceLevel,
                 consensus: consensus,
                 display: DisplayGates.fromCoverageCount(
                   perspectives.length + 1,
@@ -86,12 +84,11 @@ void main() {
   });
 
   testWidgets(
-      'badge POLARISÉ supprimé du Reader, même avec divergenceLevel fourni',
+      'badge POLARISÉ supprimé du Reader (le param n\'existe plus)',
       (tester) async {
     await _pumpInline(
       tester,
       perspectives: [_p('A'), _p('B', bias: 'right')],
-      divergenceLevel: 'high',
     );
     await tester.pump(const Duration(seconds: 1));
 
@@ -106,7 +103,6 @@ void main() {
     await _pumpInline(
       tester,
       perspectives: [_p('A'), _p('B', bias: 'right')],
-      divergenceLevel: 'high',
       consensus: const ConsensusBlock(
         state: ConsensusBlock.stateAvailable,
         qualifier: 'polarized',
