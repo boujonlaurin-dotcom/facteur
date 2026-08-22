@@ -2257,10 +2257,10 @@ class _PerspectivesInlineSectionState
       ),
       child: Text(
         consensusCarouselSubtitle(_coverageCount),
-        style: GoogleFonts.courierPrime(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.6,
+        style: GoogleFonts.dmSans(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
           color: colors.textTertiary,
         ),
       ),
@@ -2551,10 +2551,10 @@ class _UnknownSourcesSeparator extends StatelessWidget {
               child: Text(
                 'Autres sources',
                 maxLines: 1,
-                style: GoogleFonts.courierPrime(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
+                style: GoogleFonts.dmSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
                   color: colors.textTertiary,
                 ),
               ),
@@ -2957,10 +2957,10 @@ class _AnalysisSheet extends StatelessWidget {
                             const SizedBox(height: 4),
                             Text(
                               'Synthèse neutre · $coverageCount médias au total',
-                              style: GoogleFonts.courierPrime(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.6,
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.4,
                                 color: colors.textTertiary,
                               ),
                             ),
@@ -3135,10 +3135,10 @@ class _AnalysisSheet extends StatelessWidget {
   Widget _sectionTitle(String text, FacteurColors colors) {
     return Text(
       text,
-      style: GoogleFonts.courierPrime(
-        fontSize: 10,
+      style: GoogleFonts.dmSans(
+        fontSize: 12,
         fontWeight: FontWeight.w700,
-        letterSpacing: 0.7,
+        letterSpacing: 0.4,
         color: colors.primary,
       ),
     );
