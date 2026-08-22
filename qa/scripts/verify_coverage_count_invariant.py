@@ -104,7 +104,9 @@ async def seed(user_id: uuid.UUID) -> None:
                     url=f"https://{domain}",
                     feed_url=f"https://{domain}/rss-qa-coverage",
                     type=SourceType.ARTICLE,
-                    theme="politique",
+                    # "politics" : seule forme admise par `ck_source_theme_valid`
+                    # (le CHECK n'existait pas quand ce seed a été écrit).
+                    theme="politics",
                     is_curated=True,
                     is_active=True,
                 )
@@ -119,7 +121,9 @@ async def seed(user_id: uuid.UUID) -> None:
                     description="Les délégations ont annoncé un accord sur le climat.",
                     published_at=published,
                     content_type=ContentType.ARTICLE,
-                    theme="politique",
+                    # "politics" : seule forme admise par `ck_source_theme_valid`
+                    # (le CHECK n'existait pas quand ce seed a été écrit).
+                    theme="politics",
                     language="fr",
                     topics=["climat"],
                     # `contents.entities` est un ARRAY(Text) de JSON sérialisé

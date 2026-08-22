@@ -1,17 +1,19 @@
 #!/bin/bash
-# Vérification live de l'invariant `coverage_count` sur un vrai serveur HTTP.
+# Vérification live du contrat `consensus` + `display` sur un vrai serveur HTTP.
 #
-# Bug : docs/bugs/bug-couverture-medias-disponibles.md
-# Invariant : pour chaque article d'un même sujet,
-#   GET /contents/{id}/perspectives  →  coverage_count == len(perspectives) + 1
-#   et le domaine de l'article ouvert n'apparaît jamais dans ses alternatives.
+# Story : docs/stories/core/35.2.reader-analyse-des-angles-exposition-reader.md
+# Contrat : pour GET /contents/{id}/perspectives,
+#   - plafonds servis ≤ 3 accords / ≤ 2 désaccords / CTA ≤ 1+1 ;
+#   - display_domains ⊆ corpus servi, plus_count == max(0, support-2) ;
+#   - états available/pending/unavailable, qualificatif absent hors available ;
+#   - gates `display` dérivées du même coverage_count que la réponse.
 #
 # Prérequis :
 #   - Postgres local avec la base `facteur_test` migrée (`alembic upgrade head`)
 #   - QA_EMAIL / QA_PASSWORD : compte de test Supabase (hors dépôt, cf. mémoire
 #     agent `reference_qa_staging_account`)
 #
-# Usage : QA_EMAIL=… QA_PASSWORD=… bash docs/qa/scripts/verify_coverage_count_invariant.sh
+# Usage : QA_EMAIL=… QA_PASSWORD=… bash docs/qa/scripts/verify_consensus_contract.sh
 
 set -euo pipefail
 
@@ -19,7 +21,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 API_DIR="$PROJECT_ROOT/packages/api"
 PY="$API_DIR/.venv/bin/python"
-# Workspaces sans venv locale (worktrees Conductor) : python3 de l'env courant.
 [ -x "$PY" ] || PY="$(command -v python3)"
 
 : "${DATABASE_URL:=postgresql+psycopg://$(whoami)@localhost:5432/facteur_test}"
@@ -49,12 +50,12 @@ EOF
 export QA_ACCESS_TOKEN QA_USER_ID
 echo "   ✅ user_id=${QA_USER_ID}"
 
-echo "2/5 · Jeu d'essai : 14 domaines sur le même sujet, un seul biais connu"
-"$PY" "$SCRIPT_DIR/verify_coverage_count_invariant.py" seed
+echo "2/5 · Jeu d'essai : sujet nominal (analyse), sujet sans analyse, sujet solo"
+"$PY" "$SCRIPT_DIR/verify_consensus_contract.py" seed
 
 cleanup() {
   [ -n "${UVICORN_PID:-}" ] && kill "$UVICORN_PID" 2>/dev/null || true
-  "$PY" "$SCRIPT_DIR/verify_coverage_count_invariant.py" cleanup || true
+  "$PY" "$SCRIPT_DIR/verify_consensus_contract.py" cleanup || true
 }
 trap cleanup EXIT
 
@@ -68,7 +69,7 @@ done
 curl -sf "http://127.0.0.1:${API_PORT}/api/health" >/dev/null || { echo "   ❌ API non démarrée"; exit 1; }
 echo "   ✅ API up"
 
-echo "4/5 · Appels réels sur les 14 articles du sujet"
-"$PY" "$SCRIPT_DIR/verify_coverage_count_invariant.py" verify
+echo "4/5 · Contrat consensus/display sur les 3 sujets (x2, cache compris)"
+"$PY" "$SCRIPT_DIR/verify_consensus_contract.py" verify
 
 echo "5/5 · Nettoyage"
