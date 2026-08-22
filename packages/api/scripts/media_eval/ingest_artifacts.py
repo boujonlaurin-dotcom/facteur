@@ -39,22 +39,20 @@ from app.database import async_session_maker, engine
 from app.models.media_eval import (
     MediaEvalDebunkage,
     MediaEvalMedia,
+    MediaEvalRun,
     MediaEvalSignal,
     StatutSignal,
     VoieCollecte,
 )
 from scripts.cleanup_orphan_sources import _is_test_db
 from scripts.media_eval.schemas import (
-    TYPE_SIGNAUX,
+    VERSION_METHODO,
     DebunkageArtifact,
     DebunkageBatchArtifact,
     SignalArtifact,
     SignalBatchArtifact,
+    grille,
 )
-
-# Couverture attendue de la voie B gouvernance : le silence est interdit, chaque
-# type de signal doit être adressé (present/partiel/absent_verifie/bloque_acces).
-CRITERES_GOUVERNANCE: tuple[str, ...] = ("C5", "C7", "C8", "C9", "C11")
 
 
 class IngestError(Exception):
@@ -249,12 +247,23 @@ async def rapport_couverture(session, batches: list) -> list[str]:
     WARNING (non bloquant). Lu sur l'état de session courant (voie A + voie B),
     donc valable en dry-run comme en ``--apply``.
     """
-    cibles = {
-        (item.media_domaine, batch.run_id) for batch in batches for item in batch.items
-    }
+    cibles: dict[tuple[str, str], str] = {}
+    for batch in batches:
+        # DebunkageBatchArtifact ne porte pas de version (registre C1 commun).
+        version = getattr(batch, "version_methodo", VERSION_METHODO)
+        for item in batch.items:
+            cibles.setdefault((item.media_domaine, batch.run_id), version)
     manquants: list[str] = []
-    for domaine, run_id in sorted(cibles):
+    for (domaine, run_id), version_batch in sorted(cibles.items()):
         media = await resoudre_media(session, domaine)
+        # La version du run (DB) fait foi ; repli sur celle du batch si le run
+        # n'est pas enregistré (ingestion avant create_run).
+        run_row = (
+            await session.execute(
+                select(MediaEvalRun).where(MediaEvalRun.run_id == run_id)
+            )
+        ).scalar_one_or_none()
+        g = grille(run_row.version_methodo if run_row else version_batch)
         rows = await session.execute(
             select(MediaEvalSignal.critere, MediaEvalSignal.type_signal).where(
                 MediaEvalSignal.media_id == media.id,
@@ -262,8 +271,8 @@ async def rapport_couverture(session, batches: list) -> list[str]:
             )
         )
         presents = {(c, t) for c, t in rows.all()}
-        for critere in CRITERES_GOUVERNANCE:
-            for type_signal in TYPE_SIGNAUX[critere]:
+        for critere in g.criteres_gouvernance:
+            for type_signal in g.type_signaux[critere]:
                 if (critere, type_signal) not in presents:
                     manquants.append(f"{domaine} · {critere}/{type_signal}")
     return manquants
