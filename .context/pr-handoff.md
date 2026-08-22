@@ -40,8 +40,17 @@ design gelé « Reader consensus 6C export » (`ReaderPhone6C`).
       54322 + compte QA) : nominal available/polarized (3 accords + 2
       désaccords), pending sans qualificatif, solo `is_solo`, stabilité cache
       x2 — OK.
-- [x] `/simplify` passé.
-- [ ] QA web (`/validate-feature`, handoff : `.context/qa-handoff.md`).
+- [x] `/simplify` passé (corpus refs 1x/build, param `divergenceLevel` mort retiré).
+- [x] Smoke Playwright (build web local branché sur staging, compte QA,
+      390x844) : article réel 13 sources → CTA haut « Comparer les 13
+      angles » (pile de logos + ligne sablier pending), tap CTA → scroll
+      animé jusqu'à la section ; section : footnote pending, barre de biais
+      Gauche/Droite AU-DESSUS du carrousel, « 13 médias en parlent »,
+      cartes ; 1 seul GET perspectives par article ; aucun 4xx/5xx ni erreur
+      console imputable à la feature (404 `/veille/config` + proxys d'images
+      pré-existants). Carte IA en fin + tap « Lancer » couverts par widget
+      tests (drag canvas non simulable via le CLI).
+- [ ] QA web complète (`/validate-feature`, handoff : `.context/qa-handoff.md`).
 
 ## Zones à risque
 
