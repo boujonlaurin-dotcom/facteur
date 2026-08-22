@@ -1,7 +1,8 @@
 """Endpoint admin pour tagger les utilisateurs dans des cohortes PostHog.
 
 Story 14.1 — permet à Laurin de marquer un user comme `waitlist`, `invite`,
-`creator` ou `organic` sans toucher à la base via psql.
+`creator` ou `organic` sans toucher à la base via psql. `referral` s'ajoute à la
+liste mais est posé automatiquement par `/api/referral/attribution`.
 Stocke l'info dans `user_preferences` (clé `acquisition_source`) et
 propage immédiatement vers PostHog via `identify()`.
 """
@@ -9,7 +10,6 @@ propage immédiatement vers PostHog via `identify()`.
 from __future__ import annotations
 
 import hmac
-from typing import Literal
 from uuid import UUID
 
 import structlog
@@ -22,13 +22,11 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.user import UserPreference
 from app.services.posthog_client import derive_cohort_properties, get_posthog_client
+from app.services.user_service import ACQUISITION_SOURCE_KEY, AcquisitionSource
 
 logger = structlog.get_logger()
 
 router = APIRouter()
-
-ACQUISITION_SOURCE_KEY = "acquisition_source"
-AcquisitionSource = Literal["waitlist", "invite", "creator", "organic"]
 
 
 class CohortUpdateRequest(BaseModel):
@@ -36,7 +34,7 @@ class CohortUpdateRequest(BaseModel):
 
     acquisition_source: AcquisitionSource = Field(
         ...,
-        description="Canal d'acquisition (waitlist, invite, creator, organic)",
+        description="Canal d'acquisition",
     )
     email: EmailStr | None = Field(
         None,

@@ -104,6 +104,7 @@ from app.routers import (
     personalization,
     progress,
     push_devices,
+    referral,
     resend_webhooks,
     sources,
     streaks,
@@ -582,6 +583,7 @@ app.include_router(
     tags=["UserSourcesState"],
 )
 app.include_router(feedback.router, prefix="/api/feedback", tags=["Feedback"])
+app.include_router(referral.router, prefix="/api/referral", tags=["Referral"])
 
 
 @app.exception_handler(Exception)

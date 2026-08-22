@@ -33,6 +33,7 @@ from app.models.media_eval import (
 from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
 from app.models.push_notification import PushDelivery, PushDevice
+from app.models.referral import ReferralAttribution, ReferralCode
 from app.models.serene_report import SereneReport
 from app.models.source import Source, UserSource
 from app.models.source_search_log import SourceSearchLog
@@ -156,6 +157,9 @@ __all__ = [
     # User Feedback System (Epic 13)
     "DigestSentiment",
     "FeedbackInvite",
+    # Parrainage / attribution (Story partage.2)
+    "ReferralCode",
+    "ReferralAttribution",
     # Évaluation des médias C1-C11 (media-eval.0)
     "MediaEvalMedia",
     "MediaEvalSnapshot",
