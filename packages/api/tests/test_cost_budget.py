@@ -117,3 +117,36 @@ async def test_log_budget_projection_returns_snapshot():
     ):
         result = await cost_budget.log_budget_projection(projection_factor=2.0)
     assert result == snapshot
+
+
+@pytest.mark.asyncio
+async def test_daily_call_count_uses_a_distinct_cache_key():
+    """Fenêtre jour et fenêtre mois coexistent sans se servir l'une l'autre
+    (Story 35.2 : garde-fou quotidien du chemin paresseux 6C)."""
+    maker, session = _session_returning(4)
+    with patch("app.services.observability.cost_budget.safe_async_session", maker):
+        monthly = await cost_budget.monthly_call_count(
+            "mistral", call_site="reader_consensus"
+        )
+        daily = await cost_budget.daily_call_count(
+            "mistral", call_site="reader_consensus"
+        )
+    assert monthly == 4
+    assert daily == 4
+    assert session.execute.await_count == 2  # deux COUNT distincts, pas un cache commun
+    assert "mistral:reader_consensus" in cost_budget._cache
+    assert "mistral:reader_consensus:day" in cost_budget._cache
+
+
+@pytest.mark.asyncio
+async def test_is_over_daily_cap():
+    maker, _ = _session_returning(30)
+    with patch("app.services.observability.cost_budget.safe_async_session", maker):
+        assert await cost_budget.is_over_daily_cap(
+            "mistral", 30, call_site="reader_consensus"
+        )
+        assert not await cost_budget.is_over_daily_cap(
+            "mistral", 31, call_site="reader_consensus"
+        )
+    # cap <= 0 = garde-fou désactivé, jamais un blocage total
+    assert not await cost_budget.is_over_daily_cap("mistral", 0)

@@ -17,10 +17,13 @@ from sqlalchemy import func, select
 from app.models.content import Content
 from app.models.coverage_analysis import CoverageAnalysis, CoverageAnalysisArticle
 from app.models.enums import ContentType
-from app.services.editorial.consensus import ConsensusPayload, normalize_consensus
+from app.services.editorial.consensus import (
+    ConsensusPayload,
+    coerce_analysis_text,
+    normalize_consensus,
+)
 from app.services.editorial.pipeline import (
     EditorialPipelineService,
-    _coerce_analysis_text,
     _collect_subject_content_ids,
 )
 from app.services.perspective_service import Perspective
@@ -115,14 +118,14 @@ class TestCollectContentIds:
 class TestCoerceAnalysisText:
     def test_nested_dict_is_flattened(self):
         """Sentry PYTHON-R : un dict imbriqué ferait un 500 sur /digest/both."""
-        result = _coerce_analysis_text({"contexte": "x", "liens": [1]})
+        result = coerce_analysis_text({"contexte": "x", "liens": [1]})
 
         assert isinstance(result, str)
         assert "contexte" in result
 
     def test_string_and_none_pass_through(self):
-        assert _coerce_analysis_text("texte") == "texte"
-        assert _coerce_analysis_text(None) is None
+        assert coerce_analysis_text("texte") == "texte"
+        assert coerce_analysis_text(None) is None
 
 
 # --- Câblage étape 3C -----------------------------------------------------

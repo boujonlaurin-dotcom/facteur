@@ -13,7 +13,11 @@ from app.services.editorial.consensus import (
     ConsensusStatement,
     build_corpus_index,
     compute_angle_qualifier,
+    compute_display_gates,
+    empty_consensus_block,
     normalize_consensus,
+    pick_display_domains,
+    serve_consensus_block,
     truncate_to_sentence,
 )
 
@@ -397,3 +401,208 @@ class TestCorpusIndex:
         _, bias = build_corpus_index([{"source_domain": "lemonde.fr"}])
 
         assert bias == {"lemonde.fr": "unknown"}
+
+
+# --- Service au Reader (Story 35.2) ----------------------------------------
+
+
+class TestDisplayGates:
+    """Seuils du hand-off : 1 → rien ; 2 → CTA + carrousel sans carte IA ;
+    3+ → rendu complet. Dérivés du `coverage_count` servi, jamais du front."""
+
+    def test_solo_hides_everything(self):
+        gates = compute_display_gates(1)
+        assert gates == {
+            "is_solo": True,
+            "has_cta": False,
+            "has_cards": False,
+            "has_ai_card": False,
+            "has_bar": False,
+        }
+
+    def test_two_media_show_cta_and_cards_without_ai(self):
+        gates = compute_display_gates(2)
+        assert gates["is_solo"] is False
+        assert gates["has_cta"] is True
+        assert gates["has_cards"] is True
+        assert gates["has_ai_card"] is False
+        assert gates["has_bar"] is False
+
+    def test_three_media_render_everything(self):
+        gates = compute_display_gates(3)
+        assert all(gates[k] for k in ("has_cta", "has_cards", "has_ai_card", "has_bar"))
+        assert gates["is_solo"] is False
+
+    def test_nominal_six_media(self):
+        assert compute_display_gates(6) == compute_display_gates(3)
+
+    def test_zero_and_none_are_solo(self):
+        assert compute_display_gates(0)["is_solo"] is True
+        assert compute_display_gates(None)["is_solo"] is True
+
+
+NOTORIETY = {
+    "lemonde.fr": (120, True),
+    "lefigaro.fr": (80, True),
+    "mediapart.fr": (40, True),
+    "lesechos.fr": (40, False),
+    "liberation.fr": (10, True),
+}
+
+
+class TestPickDisplayDomains:
+    def test_followed_sources_come_first(self):
+        """Une source suivie peu notoire passe devant la plus notoire (D3)."""
+        picked = pick_display_domains(
+            ["lemonde.fr", "lefigaro.fr", "liberation.fr"],
+            followed={"liberation.fr"},
+            notoriety=NOTORIETY,
+        )
+        assert picked == ["liberation.fr", "lemonde.fr"]
+
+    def test_notoriety_fallback_orders_by_followers_then_curated(self):
+        picked = pick_display_domains(
+            ["lesechos.fr", "mediapart.fr", "lemonde.fr"],
+            followed=frozenset(),
+            notoriety=NOTORIETY,
+        )
+        # 120 > 40=40, et à followers égaux le curé passe devant.
+        assert picked == ["lemonde.fr", "mediapart.fr"]
+
+    def test_unknown_domain_ranks_last_but_keeps_corpus_order(self):
+        picked = pick_display_domains(
+            ["inconnu.fr", "autre-inconnu.fr", "lemonde.fr"],
+            notoriety=NOTORIETY,
+        )
+        assert picked == ["lemonde.fr", "inconnu.fr"]
+
+    def test_disagreement_forces_one_domain_per_side(self):
+        """Deux médias du même bord raconteraient une fausse symétrie."""
+        picked = pick_display_domains(
+            ["lemonde.fr", "liberation.fr", "lefigaro.fr"],
+            followed={"lemonde.fr", "liberation.fr"},
+            notoriety=NOTORIETY,
+            bias_by_domain=BIAS,
+            opposing=True,
+        )
+        assert picked == ["lemonde.fr", "lefigaro.fr"]
+
+    def test_disagreement_without_both_sides_keeps_ranking(self):
+        picked = pick_display_domains(
+            ["lemonde.fr", "liberation.fr", "mediapart.fr"],
+            notoriety=NOTORIETY,
+            bias_by_domain=BIAS,
+            opposing=True,
+        )
+        assert picked == ["lemonde.fr", "mediapart.fr"]
+
+    def test_two_or_fewer_candidates_are_returned_ranked(self):
+        assert pick_display_domains(
+            ["lesechos.fr", "lemonde.fr"], notoriety=NOTORIETY
+        ) == ["lemonde.fr", "lesechos.fr"]
+        assert pick_display_domains([], notoriety=NOTORIETY) == []
+
+
+class TestServeConsensusBlock:
+    STORED = {
+        "state": "available",
+        "qualifier": "polarized",
+        "agreements": [
+            {
+                "text": "Le fait établi par tous les médias du corpus.",
+                "source_domains": [
+                    "lemonde.fr",
+                    "lefigaro.fr",
+                    "mediapart.fr",
+                    "lesechos.fr",
+                ],
+                "support_count": 4,
+            }
+        ],
+        "disagreements": [
+            {
+                "text": "Sa portée : recomposition durable ou parenthèse.",
+                "source_domains": ["liberation.fr", "lefigaro.fr"],
+                "support_count": 2,
+            }
+        ],
+        "cta": {
+            "agreement": {
+                "text": "Fait établi, version courte.",
+                "source_domains": [
+                    "lemonde.fr",
+                    "lefigaro.fr",
+                    "mediapart.fr",
+                    "lesechos.fr",
+                ],
+                "support_count": 4,
+            },
+            "disagreement": None,
+        },
+    }
+
+    def test_statements_carry_display_domains_and_plus_count(self):
+        block = serve_consensus_block(
+            self.STORED, generated_at="2026-08-21T07:30:00+00:00", notoriety=NOTORIETY
+        )
+        agreement = block["agreements"][0]
+        assert agreement["display_domains"] == ["lemonde.fr", "lefigaro.fr"]
+        assert agreement["support_count"] == 4
+        assert agreement["plus_count"] == 2
+        assert block["state"] == "available"
+        assert block["qualifier"] == "polarized"
+        assert block["generated_at"] == "2026-08-21T07:30:00+00:00"
+
+    def test_plus_count_absent_at_two_sources(self):
+        """« +N » seulement au-delà de 2 sources (hand-off)."""
+        block = serve_consensus_block(self.STORED, generated_at=None)
+        assert block["disagreements"][0]["plus_count"] == 0
+
+    def test_cta_agreement_served_and_missing_disagreement_stays_none(self):
+        block = serve_consensus_block(self.STORED, generated_at=None)
+        assert block["cta"]["agreement"]["text"] == "Fait établi, version courte."
+        assert block["cta"]["agreement"]["plus_count"] == 2
+        assert block["cta"]["disagreement"] is None
+
+    def test_support_count_is_clamped_to_the_stored_domains(self):
+        """Une ligne corrompue ne peut pas afficher un « +N » supérieur à
+        l'attribution qu'elle porte réellement."""
+        stored = {
+            "agreements": [
+                {
+                    "text": "Constat avec un compteur gonflé par corruption.",
+                    "source_domains": ["lemonde.fr"],
+                    "support_count": 9,
+                }
+            ]
+        }
+        block = serve_consensus_block(stored, generated_at=None)
+        assert block["agreements"][0]["support_count"] == 1
+        assert block["agreements"][0]["plus_count"] == 0
+
+    def test_caps_are_applied_when_serving(self):
+        stored = {
+            "agreements": [
+                {"text": f"Accord numéro {i} assez long.", "source_domains": ["a.fr"]}
+                for i in range(5)
+            ],
+            "disagreements": [
+                {"text": f"Désaccord numéro {i} en axe.", "source_domains": ["a.fr"]}
+                for i in range(4)
+            ],
+        }
+        block = serve_consensus_block(stored, generated_at=None)
+        assert len(block["agreements"]) == 3
+        assert len(block["disagreements"]) == 2
+
+    def test_empty_block_shape_matches_the_nominal_contract(self):
+        """Le front ne doit jamais distinguer « clé absente » de « liste vide »."""
+        block = empty_consensus_block("pending")
+        assert block == {
+            "state": "pending",
+            "qualifier": None,
+            "agreements": [],
+            "disagreements": [],
+            "cta": {"agreement": None, "disagreement": None},
+            "generated_at": None,
+        }

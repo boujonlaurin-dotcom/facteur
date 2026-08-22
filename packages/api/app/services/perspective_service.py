@@ -742,6 +742,7 @@ class PerspectiveService:
         source_domain: str,
         perspectives: list[dict],  # [{title, source_name, source_domain, ...}]
         article_description: str | None = None,
+        call_site: str = "editorial",
     ) -> dict | None:
         """Analyse des angles 6C — un seul appel LLM, sortie structurée.
 
@@ -782,6 +783,10 @@ class PerspectiveService:
             # ~250 tokens de sortie (plan §D2).
             max_tokens=1400,
             log_event="analyze_consensus_error",
+            # "reader_consensus" sur le chemin paresseux (Story 35.2) : le
+            # garde-fou de budget quotidien compte ce call site seul, sans
+            # confondre avec la pré-génération du pipeline ("editorial").
+            call_site=call_site,
         )
 
     @staticmethod
@@ -829,7 +834,12 @@ class PerspectiveService:
 
     @staticmethod
     async def _run_coverage_prompt(
-        *, system: str, user_message: str, max_tokens: int, log_event: str
+        *,
+        system: str,
+        user_message: str,
+        max_tokens: int,
+        log_event: str,
+        call_site: str = "editorial",
     ) -> dict | None:
         """Un appel `mistral-large` sur la couverture d'un sujet.
 
@@ -849,6 +859,7 @@ class PerspectiveService:
                 model=CONSENSUS_MODEL,
                 temperature=0.3,
                 max_tokens=max_tokens,
+                call_site=call_site,
             )
             return result if isinstance(result, dict) else None
         except Exception as e:

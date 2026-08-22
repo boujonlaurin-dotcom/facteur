@@ -14,25 +14,22 @@ cleanup. Deep matching is preserved in `deep_matcher.py` for the next
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlparse
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import structlog
 from sqlalchemy import case as sa_case
 from sqlalchemy import or_, select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.models.content import Content
-from app.models.coverage_analysis import CoverageAnalysis, CoverageAnalysisArticle
 from app.models.enums import SourceType
 from app.models.source import Source
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
@@ -41,6 +38,7 @@ from app.services.editorial.config import load_editorial_config
 from app.services.editorial.consensus import (
     ConsensusPayload,
     build_corpus_index,
+    coerce_analysis_text,
     normalize_consensus,
 )
 from app.services.editorial.curation import CurationService, _cluster_to_une_topic
@@ -56,8 +54,6 @@ from app.services.editorial.schemas import (
 )
 from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
 from app.services.perspective_service import (
-    CONSENSUS_MODEL,
-    CONSENSUS_PROMPT_VERSION,
     PerspectiveService,
     normalize_domain,
     perspective_to_dict,
@@ -161,20 +157,6 @@ def _collect_subject_content_ids(
             seen.add(content_id)
             ids.append(content_id)
     return ids
-
-
-def _coerce_analysis_text(raw: object) -> str | None:
-    """Ramène le champ `analysis` du LLM à une string plate.
-
-    Round 3 fix (Sentry PYTHON-R) : le modèle peut renvoyer un dict imbriqué
-    (ex: {"contexte": "...", "liens": [...]}) au lieu d'une string. Pydantic
-    rejette → 500 sur /digest/both.
-    """
-    if raw is None or isinstance(raw, str):
-        return raw
-    if isinstance(raw, dict):
-        return json.dumps(raw, ensure_ascii=False)
-    return str(raw)
 
 
 # Curation oversample : on demande +buffer sujets de plus que la cible pour
@@ -900,7 +882,7 @@ class EditorialPipelineService:
                         article_description=representative.description,
                     )
                     if isinstance(consensus_result, dict):
-                        subject.divergence_analysis = _coerce_analysis_text(
+                        subject.divergence_analysis = coerce_analysis_text(
                             consensus_result.get("analysis")
                         )
                         subject.divergence_level = consensus_result.get(
@@ -1070,36 +1052,28 @@ class EditorialPipelineService:
         coverage_count: int,
         content_ids: list[UUID],
     ) -> UUID:
-        """Upsert de la ligne sujet, puis des liens articles. Retourne son id."""
-        stmt = pg_insert(CoverageAnalysis).values(
-            id=uuid4(),
-            subject_key=subject_key,
-            consensus=payload.model_dump(mode="json"),
-            qualifier=payload.qualifier,
-            state=payload.state,
-            model_version=f"{CONSENSUS_MODEL}/{CONSENSUS_PROMPT_VERSION}",
-            corpus_domains=corpus_domains,
-            coverage_count=coverage_count,
-            generated_at=datetime.now(UTC),
+        """Upsert de la ligne sujet, puis des liens articles. Retourne son id.
+
+        SQL délégué au store partagé `consensus_reader` (Story 35.2) : le
+        write-through du chemin paresseux écrit les mêmes lignes, une seule
+        copie de l'upsert à maintenir. Import paresseux : `consensus_reader`
+        importe `editorial.consensus`, dont le package importe ce module — un
+        import de tête refermerait le cycle.
+        """
+        from app.services.consensus_reader import (
+            insert_analysis_links,
+            upsert_coverage_analysis,
         )
-        # `excluded` = la ligne qu'on tentait d'insérer (même motif que
-        # `_upsert_deep_recommendations`) : les valeurs ne sont écrites qu'une
-        # fois, le conflit ne fait que les réutiliser.
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[CoverageAnalysis.subject_key],
-            set_={
-                "consensus": stmt.excluded.consensus,
-                "qualifier": stmt.excluded.qualifier,
-                "state": stmt.excluded.state,
-                "model_version": stmt.excluded.model_version,
-                "corpus_domains": stmt.excluded.corpus_domains,
-                "coverage_count": stmt.excluded.coverage_count,
-                "generated_at": stmt.excluded.generated_at,
-            },
-        ).returning(CoverageAnalysis.id)
+
         async with self._short_session() as session:
-            analysis_id = (await session.execute(stmt)).scalar_one()
-            await self._insert_analysis_links(session, analysis_id, content_ids)
+            analysis_id = await upsert_coverage_analysis(
+                session,
+                subject_key=subject_key,
+                payload=payload,
+                corpus_domains=corpus_domains,
+                coverage_count=coverage_count,
+            )
+            await insert_analysis_links(session, analysis_id, content_ids)
             await session.commit()
         return analysis_id
 
@@ -1107,37 +1081,17 @@ class EditorialPipelineService:
         self, analysis_id: UUID, content_ids: list[UUID]
     ) -> None:
         """Rattache des articles à une analyse existante (cache inter-modes)."""
+        from app.services.consensus_reader import insert_analysis_links
+
         try:
             async with self._short_session() as session:
-                await self._insert_analysis_links(session, analysis_id, content_ids)
+                await insert_analysis_links(session, analysis_id, content_ids)
                 await session.commit()
         except Exception:
             logger.warning(
                 "editorial_pipeline.consensus_link_failed",
                 analysis_id=str(analysis_id),
             )
-
-    @staticmethod
-    async def _insert_analysis_links(
-        session: AsyncSession, analysis_id: UUID, content_ids: list[UUID]
-    ) -> None:
-        if not content_ids:
-            return
-        await session.execute(
-            pg_insert(CoverageAnalysisArticle)
-            .values(
-                [
-                    {"coverage_analysis_id": analysis_id, "content_id": content_id}
-                    for content_id in content_ids
-                ]
-            )
-            .on_conflict_do_nothing(
-                index_elements=[
-                    CoverageAnalysisArticle.coverage_analysis_id,
-                    CoverageAnalysisArticle.content_id,
-                ]
-            )
-        )
 
     async def _precompute_deep_recommendations(
         self, subjects: list[EditorialSubject]

@@ -15,6 +15,7 @@ vers `perspective_service` ne concerne que le chemin consensus — pas les dix
 modules éditoriaux qui importent `schemas`.
 """
 
+import json
 import re
 from collections.abc import Mapping
 
@@ -325,3 +326,214 @@ def normalize_consensus(
             disagreement=_resolve_cta(payload.get("cta_disagreement"), disagreements),
         ),
     )
+
+
+def coerce_analysis_text(raw: object) -> str | None:
+    """Ramène le champ `analysis` du LLM à une string plate.
+
+    Round 3 fix (Sentry PYTHON-R) : le modèle peut renvoyer un dict imbriqué
+    (ex: {"contexte": "...", "liens": [...]}) au lieu d'une string. Pydantic
+    rejette → 500 sur /digest/both.
+    """
+    if raw is None or isinstance(raw, str):
+        return raw
+    if isinstance(raw, dict):
+        return json.dumps(raw, ensure_ascii=False)
+    return str(raw)
+
+
+# --------------------------------------------------------------------------- #
+# Service au Reader (Story 35.2) — tout ce qui suit décide de ce que VOIT un  #
+# utilisateur donné : gates d'affichage dérivées du corpus servi, et choix    #
+# des ≤ 2 logos par constat (suivies > notoriété, biais opposés sur un        #
+# désaccord). Rien ici n'est persisté : `source_domains` reste exhaustif en   #
+# base, la sélection se rejoue à chaque requête.                              #
+# --------------------------------------------------------------------------- #
+
+# 2 logos max par constat (hand-off 6C) ; « +N » au-delà.
+CONSENSUS_DISPLAY_DOMAINS_MAX = 2
+
+
+def compute_display_gates(coverage_count: int) -> dict:
+    """Gates d'affichage 6C, dérivées du `coverage_count` **servi** (D5).
+
+    Le front applique, ne dérive pas — c'est le même `coverage_count` que
+    « Comparer les N angles » et « N médias en parlent ». Seuils du hand-off :
+    1 média → ni CTA ni barre ni carrousel ; 2 → CTA + carrousel sans carte
+    IA ; 3+ → rendu complet. Volontairement indépendantes de l'analyse : une
+    analyse absente ne fait jamais disparaître le carrousel.
+    """
+    count = max(0, int(coverage_count or 0))
+    return {
+        "is_solo": count <= 1,
+        "has_cta": count >= 2,
+        "has_cards": count >= 2,
+        "has_ai_card": count >= 3,
+        "has_bar": count >= 3,
+    }
+
+
+def _domain_side(stance: str | None) -> str | None:
+    if stance in _LEFT_STANCES:
+        return "left"
+    if stance in _RIGHT_STANCES:
+        return "right"
+    return None
+
+
+def pick_display_domains(
+    source_domains: list[str],
+    *,
+    followed: frozenset[str] | set[str] = frozenset(),
+    notoriety: Mapping[str, tuple[int, bool]] | None = None,
+    bias_by_domain: Mapping[str, str] | None = None,
+    opposing: bool = False,
+) -> list[str]:
+    """Les ≤ 2 domaines affichés pour ce constat, pour cet utilisateur (D3).
+
+    Ordre : sources suivies d'abord, puis notoriété — nombre de followers
+    (`count(user_sources)`) puis `is_curated`, puis ordre du constat (stable).
+    `source_tier` est explicitement écarté (E8 : faux signal).
+
+    Sur un **désaccord** (`opposing=True`), si les domaines candidats couvrent
+    les deux côtés du spectre, on force un domaine de chaque côté (le
+    meilleur-classé de chacun) : montrer le désaccord porté par deux médias du
+    même bord raconterait une fausse symétrie.
+    """
+    notoriety = notoriety or {}
+    bias_by_domain = bias_by_domain or {}
+
+    def rank(item: tuple[int, str]) -> tuple:
+        index, domain = item
+        followers, is_curated = notoriety.get(domain, (0, False))
+        return (domain not in followed, -followers, not is_curated, index)
+
+    ordered = [d for _, d in sorted(enumerate(source_domains), key=rank)]
+    if len(ordered) <= CONSENSUS_DISPLAY_DOMAINS_MAX:
+        return ordered
+
+    if opposing:
+        by_side: dict[str, str] = {}
+        for domain in ordered:
+            side = _domain_side(bias_by_domain.get(domain))
+            if side and side not in by_side:
+                by_side[side] = domain
+        if len(by_side) == 2:
+            picked = [d for d in ordered if d in by_side.values()]
+            return picked[:CONSENSUS_DISPLAY_DOMAINS_MAX]
+
+    return ordered[:CONSENSUS_DISPLAY_DOMAINS_MAX]
+
+
+def _serve_statement(
+    statement: Mapping,
+    *,
+    followed: frozenset[str] | set[str],
+    notoriety: Mapping[str, tuple[int, bool]] | None,
+    bias_by_domain: Mapping[str, str] | None,
+    opposing: bool,
+) -> dict | None:
+    text = statement.get("text")
+    if not isinstance(text, str) or not text:
+        return None
+    domains = [
+        d for d in (statement.get("source_domains") or []) if isinstance(d, str) and d
+    ]
+    # `support_count` a été recalculé à l'écriture (= |domaines ∩ corpus|) ;
+    # on le resserre sur la liste réellement portée par la ligne, jamais plus.
+    support_count = min(
+        int(statement.get("support_count") or len(domains)), len(domains)
+    )
+    return {
+        "text": text,
+        "support_count": support_count,
+        "display_domains": pick_display_domains(
+            domains,
+            followed=followed,
+            notoriety=notoriety,
+            bias_by_domain=bias_by_domain,
+            opposing=opposing,
+        ),
+        # « +N » seulement au-delà de 2 sources (hand-off) — jamais négatif.
+        "plus_count": max(0, support_count - CONSENSUS_DISPLAY_DOMAINS_MAX),
+    }
+
+
+def empty_consensus_block(state: str) -> dict:
+    """Bloc `consensus` servi quand il n'y a rien à montrer (pending/unavailable).
+
+    Toujours la même forme que le cas nominal : le front 6C ne doit jamais
+    avoir à distinguer « clé absente » de « liste vide ». Pas de qualificatif
+    hors `available` — on ne qualifie pas un débat qu'on n'a pas lu.
+    """
+    return {
+        "state": state,
+        "qualifier": None,
+        "agreements": [],
+        "disagreements": [],
+        "cta": {"agreement": None, "disagreement": None},
+        "generated_at": None,
+    }
+
+
+def serve_consensus_block(
+    stored: Mapping,
+    *,
+    generated_at: str | None,
+    followed: frozenset[str] | set[str] = frozenset(),
+    notoriety: Mapping[str, tuple[int, bool]] | None = None,
+    bias_by_domain: Mapping[str, str] | None = None,
+) -> dict:
+    """Le JSONB `coverage_analyses.consensus` → le bloc servi à CET utilisateur.
+
+    La partie invariante (textes, `support_count`, plafonds) vient de la ligne ;
+    la partie par-user (`display_domains`, donc l'ordre des logos) est résolue
+    ici et n'est **jamais** mise en cache partagé ni persistée.
+    """
+
+    def _serve_list(raw: object, *, limit: int, opposing: bool) -> list[dict]:
+        served = []
+        for item in raw if isinstance(raw, list) else []:
+            if not isinstance(item, Mapping):
+                continue
+            statement = _serve_statement(
+                item,
+                followed=followed,
+                notoriety=notoriety,
+                bias_by_domain=bias_by_domain,
+                opposing=opposing,
+            )
+            if statement is not None:
+                served.append(statement)
+        return served[:limit]
+
+    def _serve_cta(raw: object, *, opposing: bool) -> dict | None:
+        if not isinstance(raw, Mapping):
+            return None
+        return _serve_statement(
+            raw,
+            followed=followed,
+            notoriety=notoriety,
+            bias_by_domain=bias_by_domain,
+            opposing=opposing,
+        )
+
+    cta = stored.get("cta") if isinstance(stored.get("cta"), Mapping) else {}
+    qualifier = stored.get("qualifier")
+    return {
+        "state": CONSENSUS_STATE_AVAILABLE,
+        "qualifier": qualifier if isinstance(qualifier, str) else None,
+        "agreements": _serve_list(
+            stored.get("agreements"), limit=CONSENSUS_MAX_AGREEMENTS, opposing=False
+        ),
+        "disagreements": _serve_list(
+            stored.get("disagreements"),
+            limit=CONSENSUS_MAX_DISAGREEMENTS,
+            opposing=True,
+        ),
+        "cta": {
+            "agreement": _serve_cta(cta.get("agreement"), opposing=False),
+            "disagreement": _serve_cta(cta.get("disagreement"), opposing=True),
+        },
+        "generated_at": generated_at,
+    }

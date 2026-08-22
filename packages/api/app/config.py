@@ -203,6 +203,17 @@ class Settings(BaseSettings):
     # via `DIVERGENCE_LLM_MIN_PERSPECTIVES=4` sur Railway.
     divergence_llm_min_perspectives: int = 2
 
+    # Analyse des angles 6C, exposition Reader (Story 35.2).
+    # Fenêtre de fraîcheur de la résolution `content_id → coverage_analyses` :
+    # au-delà, un article re-clusterisé dans un nouveau sujet ne doit pas servir
+    # les constats d'un événement précédent. 72 h = l'échelle du cycle news (le
+    # lookback digest est 48 h). Trop de `pending` en prod ⇒ bump env.
+    consensus_reader_freshness_hours: int = 72
+    # Plafond quotidien du chemin paresseux (POST /perspectives/analyze) : un
+    # pic d'ouvertures Reader ne peut pas faire dériver la facture mistral-large
+    # (plan 6C §D6 : ~51 ouvertures/jour observées, dédupliquées par sujet).
+    consensus_lazy_daily_cap: int = 30
+
     # Observabilité scaling (enabler WP-E) — instrumentation API externes +
     # sonde pool. Purement additif : ne change aucun comportement métier.
     usage_tracking_enabled: bool = True  # kill-switch insert api_usage_events
