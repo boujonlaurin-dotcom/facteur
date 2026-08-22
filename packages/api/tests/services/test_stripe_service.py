@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from app.config import get_settings
 from app.services.stripe_service import (
+    _support_session_idempotency_key,
     construct_event,
     create_support_subscription_session,
 )
@@ -29,23 +30,26 @@ async def test_create_session_passes_expected_args(stripe_configured):
     fake_create = MagicMock(
         return_value=SimpleNamespace(url="https://checkout.stripe.com/x")
     )
-    with patch.object(stripe.checkout.Session, "create", fake_create):
+    with patch.object(
+        stripe.checkout._session_service.SessionService, "create", fake_create
+    ):
         url = await create_support_subscription_session("user-1", "a@b.co", 500)
 
     assert url == "https://checkout.stripe.com/x"
-    kwargs = fake_create.call_args.kwargs
-    assert kwargs["mode"] == "subscription"
-    assert kwargs["client_reference_id"] == "user-1"
-    assert kwargs["customer_email"] == "a@b.co"
-    price_data = kwargs["line_items"][0]["price_data"]
+    params = fake_create.call_args.kwargs["params"]
+    assert params["mode"] == "subscription"
+    assert params["client_reference_id"] == "user-1"
+    assert params["customer_email"] == "a@b.co"
+    price_data = params["line_items"][0]["price_data"]
     assert price_data["currency"] == "eur"
     assert price_data["product"] == "prod_abc"
     assert price_data["unit_amount"] == 500
     assert price_data["recurring"] == {"interval": "month"}
-    assert kwargs["subscription_data"]["metadata"]["user_id"] == "user-1"
-    assert kwargs["metadata"]["user_id"] == "user-1"
-    assert "{CHECKOUT_SESSION_ID}" in kwargs["success_url"]
-    assert kwargs["idempotency_key"]  # présent
+    assert params["subscription_data"]["metadata"]["user_id"] == "user-1"
+    assert params["metadata"]["user_id"] == "user-1"
+    assert "{CHECKOUT_SESSION_ID}" in params["success_url"]
+    options = fake_create.call_args.kwargs["options"]
+    assert options["idempotency_key"]  # présent
 
 
 @pytest.mark.asyncio
@@ -74,7 +78,7 @@ def test_construct_event_valid(monkeypatch):
     monkeypatch.setattr(get_settings(), "stripe_webhook_secret", "whsec_x")
     fake_event = {"id": "evt_1", "type": "invoice.paid", "data": {"object": {}}}
     with patch.object(
-        stripe.Webhook, "construct_event", MagicMock(return_value=fake_event)
+        stripe.StripeClient, "construct_event", MagicMock(return_value=fake_event)
     ):
         assert construct_event(b"{}", "sig") == fake_event
 
@@ -83,7 +87,9 @@ def test_construct_event_invalid_signature_401(monkeypatch):
     monkeypatch.setattr(get_settings(), "stripe_webhook_secret", "whsec_x")
     err = stripe.error.SignatureVerificationError("bad sig", "sig-header")
     with (
-        patch.object(stripe.Webhook, "construct_event", MagicMock(side_effect=err)),
+        patch.object(
+            stripe.StripeClient, "construct_event", MagicMock(side_effect=err)
+        ),
         pytest.raises(HTTPException) as exc,
     ):
         construct_event(b"{}", "bad")
@@ -102,19 +108,37 @@ async def test_message_carried_in_session_metadata(stripe_configured):
     fake_create = MagicMock(
         return_value=SimpleNamespace(url="https://checkout.stripe.com/x")
     )
-    with patch.object(stripe.checkout.Session, "create", fake_create):
+    with patch.object(
+        stripe.checkout._session_service.SessionService, "create", fake_create
+    ):
         await create_support_subscription_session(
             "user-1", "a@b.co", 500, message="  Bravo pour le projet  "
         )
-    md = fake_create.call_args.kwargs["metadata"]
+    md = fake_create.call_args.kwargs["params"]["metadata"]
     assert md["support_message"] == "Bravo pour le projet"  # trim appliqué
 
 
 @pytest.mark.asyncio
 async def test_blank_message_omitted_from_metadata(stripe_configured):
     fake_create = MagicMock(return_value=SimpleNamespace(url="u"))
-    with patch.object(stripe.checkout.Session, "create", fake_create):
+    with patch.object(
+        stripe.checkout._session_service.SessionService, "create", fake_create
+    ):
         await create_support_subscription_session(
             "user-1", "a@b.co", 500, message="   "
         )
-    assert "support_message" not in fake_create.call_args.kwargs["metadata"]
+    assert "support_message" not in fake_create.call_args.kwargs["params"]["metadata"]
+
+
+def test_idempotency_key_stable_for_same_request_within_window():
+    """Un double-clic/retry avec les mêmes paramètres doit produire la même clé."""
+    key1 = _support_session_idempotency_key("user-1", 500, "hello")
+    key2 = _support_session_idempotency_key("user-1", 500, "hello")
+    assert key1 == key2
+
+
+def test_idempotency_key_differs_for_different_requests():
+    key_a = _support_session_idempotency_key("user-1", 500, "hello")
+    key_b = _support_session_idempotency_key("user-2", 500, "hello")
+    key_c = _support_session_idempotency_key("user-1", 1000, "hello")
+    assert len({key_a, key_b, key_c}) == 3
